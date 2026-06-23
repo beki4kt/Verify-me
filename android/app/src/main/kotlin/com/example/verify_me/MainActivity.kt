@@ -1,4 +1,4 @@
-package com.leulverify.verify_me
+package com.example.verify_me
 
 import io.flutter.embedding.android.FlutterActivity
 
