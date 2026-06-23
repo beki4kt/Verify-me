@@ -13,10 +13,11 @@ class ApiService {
   static const String baseUrl = "https://verifyapi.leulzenebe.pro"; 
   static const String apiKey = "sk_live_7ebe516799b67c8a30b6861a4131caca8d1ae6bce7f3a6b9"; 
 
-  static Future<VerificationResult> verifyTransaction(String transactionId) async {
+  // Now requires the dynamic endpoint from the UI (e.g., '/verify-cbe' or '/verify-telebirr')
+  static Future<VerificationResult> verifyTransaction(String transactionId, String endpoint) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-telebirr'), 
+        Uri.parse('$baseUrl$endpoint'), 
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey, 

@@ -109,20 +109,17 @@ class _ScannerScreenState extends State<ScannerScreen> {
     setState(() => _isExtracting = true);
 
     try {
-      // 1. Capture and Process Image
       final XFile imageFile = await _cameraController!.takePicture();
       final inputImage = InputImage.fromFilePath(imageFile.path);
       final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
-      // 2. Parse Text
       ParsedReceipt parsedData = ReceiptParser.parse(recognizedText.text);
       
       setState(() => _isExtracting = false);
 
-      // 3. Open Editing Sheet (Even if ID is null, let user type it)
-      _showVerificationSheet(parsedData.transactionId ?? "");
+      _showVerificationSheet(parsedData);
 
     } catch (e) {
       setState(() => _isExtracting = false);
@@ -130,10 +127,22 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
   }
 
-  void _showVerificationSheet(String initialId) {
-    TextEditingController idController = TextEditingController(text: initialId);
+  void _showVerificationSheet(ParsedReceipt parsedData) {
+    TextEditingController idController = TextEditingController(text: parsedData.transactionId ?? "");
+    String selectedEndpoint = parsedData.endpoint ?? '/verify-telebirr';
     bool isVerifying = false;
     String? errorText;
+
+    // Map the UI names to the exact backend endpoints from your Node.js server
+    final Map<String, String> bankEndpoints = {
+      'Telebirr': '/verify-telebirr',
+      'CBE (Mobile Banking)': '/verify-cbe',
+      'CBE Birr': '/verify-cbebirr',
+      'Dashen': '/verify-dashen',
+      'Bank of Abyssinia': '/verify-abyssinia',
+      'M-Pesa': '/verify-mpesa',
+      'Universal / Unknown': '/verify',
+    };
 
     showModalBottomSheet(
       context: context,
@@ -148,7 +157,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           builder: (context, setSheetState) {
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24, // Push up when keyboard opens
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
                 left: 24, right: 24, top: 24
               ),
               child: Column(
@@ -156,11 +165,37 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text('Confirm Details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-                  const SizedBox(height: 8),
-                  const Text('OCR sometimes misreads characters (like S instead of 5). Please tap the box below to correct the ID if needed.', style: TextStyle(color: Colors.grey, fontSize: 14)),
                   const SizedBox(height: 16),
                   
-                  // Editable Text Field
+                  // 1. Bank Selector Dropdown
+                  const Text('Detected Payment Method:', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    value: selectedEndpoint,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.black54,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    dropdownColor: const Color(0xFF2C2C2C),
+                    items: bankEndpoints.entries.map((entry) {
+                      return DropdownMenuItem<String>(
+                        value: entry.value,
+                        child: Text(entry.key, style: const TextStyle(color: Colors.white)),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setSheetState(() => selectedEndpoint = newValue);
+                      }
+                    },
+                  ),
+                  
+                  const SizedBox(height: 16),
+
+                  // 2. ID Editor
+                  const Text('Detected Transaction ID:', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  const SizedBox(height: 4),
                   TextField(
                     controller: idController,
                     textCapitalization: TextCapitalization.characters,
@@ -169,8 +204,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
                       filled: true,
                       fillColor: Colors.black54,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      labelText: 'Transaction ID',
-                      labelStyle: const TextStyle(color: Colors.blueAccent),
                     ),
                   ),
                   
@@ -193,12 +226,14 @@ class _ScannerScreenState extends State<ScannerScreen> {
                         errorText = null;
                       });
                       
-                      // Hit the API
-                      VerificationResult result = await ApiService.verifyTransaction(idController.text.trim());
+                      VerificationResult result = await ApiService.verifyTransaction(
+                        idController.text.trim(), 
+                        selectedEndpoint // Pass the selected bank to the API
+                      );
                       
                       if (result.isSuccess) {
                          if (!mounted) return;
-                         Navigator.pop(context); // Close sheet
+                         Navigator.pop(context);
                          ScaffoldMessenger.of(context).showSnackBar(
                            const SnackBar(content: Text('Transaction Verified Successfully!', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green)
                          );
@@ -267,7 +302,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-// --- ORIGINAL ENGINE LAB ---
+// --- ENGINE LAB ---
 class EngineTestScreen extends StatefulWidget {
   const EngineTestScreen({super.key});
   @override
@@ -297,6 +332,8 @@ class _EngineTestScreenState extends State<EngineTestScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
+                      Text('Detected Bank: ${_result!.detectedBankName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueAccent)),
+                      const SizedBox(height: 8),
                       Text('Extracted ID: ${_result!.transactionId ?? 'Not Found'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     ],
                   ),
