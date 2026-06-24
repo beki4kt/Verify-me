@@ -17,12 +17,13 @@ class ApiService {
   static Future<VerificationResult> verifyTransaction(String transactionId, String endpoint) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl$endpoint'), 
+        Uri.parse('$baseUrl$endpoint'),
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey, 
+          "x-api-key": apiKey,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         },
-        body: jsonEncode({"reference": transactionId}), 
+        body: jsonEncode({"reference": transactionId}),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {

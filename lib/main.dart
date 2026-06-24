@@ -3,6 +3,37 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'receipt_parser.dart';
 import 'api_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'pin_login_screen.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Replace with your actual Supabase URL and Anon Key
+  await Supabase.initialize(
+    url: 'https://lpbdxtzyzlaioggefscc.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwYmR4dHp5emxhaW9nZ2Vmc2NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTMyMDUsImV4cCI6MjA5Nzg2OTIwNX0.X9d4_FkisQRQXYFhyVJ_-5XSsbkS1VCHMLLybfGfpzs',
+  );
+
+  runApp(const VerifyMeApp());
+}
+
+class VerifyMeApp extends StatelessWidget {
+  const VerifyMeApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Verify-Me',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primaryColor: const Color(0xFF6366F1), // The modern indigo from our slides
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+      ),
+      home: const PinLoginScreen(),
+    );
+  }
+}
 
 List<CameraDescription> cameras = [];
 
@@ -171,7 +202,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   const Text('Detected Payment Method:', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    value: selectedEndpoint,
+                    initialValue: selectedEndpoint,
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.black54,
