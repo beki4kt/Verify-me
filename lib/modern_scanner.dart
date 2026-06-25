@@ -197,7 +197,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                       } else {
                          // Haptic Resolution: Harsh long vibration for failure
                          if (await Vibration.hasVibrator() ?? false) {
-                           Vibration.vibrate(duration: 500, amplitudes: [255]);
+                           Vibration.vibrate(duration: 500);
                          }
                          setSheetState(() {
                             isVerifying = false;
