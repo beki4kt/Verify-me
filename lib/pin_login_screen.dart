@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'waiter_dashboard.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'main.dart'; // <-- Add this to link your files!
 // import 'waiter_scanner_screen.dart'; // We will build this next
 
 class PinLoginScreen extends StatefulWidget {
@@ -53,8 +55,11 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
           SnackBar(content: Text('Welcome, ${response['full_name']}')),
         );
 
-        if (role == 'waiter') {
-          // Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => WaiterScannerScreen(staffId: staffId)));
+       if (role == 'waiter') {
+          Navigator.pushReplacement(
+            context, 
+            MaterialPageRoute(builder: (context) => WaiterDashboard()) // <-- Updated!
+          );
         } else if (role == 'cashier') {
           // Route to Cashier Dashboard
         }

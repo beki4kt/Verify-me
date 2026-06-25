@@ -6,14 +6,24 @@ import 'api_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'pin_login_screen.dart';
 
+// Global variable for cameras
+List<CameraDescription> cameras = [];
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Replace with your actual Supabase URL and Anon Key
+  // 1. Initialize Supabase
   await Supabase.initialize(
     url: 'https://lpbdxtzyzlaioggefscc.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwYmR4dHp5emxhaW9nZ2Vmc2NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTMyMDUsImV4cCI6MjA5Nzg2OTIwNX0.X9d4_FkisQRQXYFhyVJ_-5XSsbkS1VCHMLLybfGfpzs',
   );
+
+  // 2. Initialize Cameras
+  try {
+    cameras = await availableCameras();
+  } catch (e) {
+    debugPrint('Error initializing cameras: $e');
+  }
 
   runApp(const VerifyMeApp());
 }
@@ -25,45 +35,20 @@ class VerifyMeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Verify-Me',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        primaryColor: const Color(0xFF6366F1), // The modern indigo from our slides
+        primaryColor: const Color(0xFF6366F1), 
         scaffoldBackgroundColor: const Color(0xFF0F172A),
       ),
-      home: const PinLoginScreen(),
+      // Starts on the new PIN Login Screen. 
+      // Once logged in, you will route them to MainNavigationScreen()
+      home: const PinLoginScreen(), 
     );
   }
 }
 
-List<CameraDescription> cameras = [];
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    cameras = await availableCameras();
-  } catch (e) {
-    debugPrint('Error initializing cameras: $e');
-  }
-  runApp(const VerifyMeApp());
-}
-
-class VerifyMeApp extends StatelessWidget {
-  const VerifyMeApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Verify Me Engine',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xff121212),
-        primaryColor: Colors.blue,
-      ),
-      home: const MainNavigationScreen(),
-    );
-  }
-}
-
+// --- LIVE SCANNER UI (Kept exactly as you built it) ---
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -94,7 +79,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- LIVE SCANNER UI ---
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
 
@@ -164,7 +148,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
     bool isVerifying = false;
     String? errorText;
 
-    // Map the UI names to the exact backend endpoints from your Node.js server
     final Map<String, String> bankEndpoints = {
       'Telebirr': '/verify-telebirr',
       'CBE (Mobile Banking)': '/verify-cbe',
@@ -198,7 +181,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   const Text('Confirm Details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
                   const SizedBox(height: 16),
                   
-                  // 1. Bank Selector Dropdown
                   const Text('Detected Payment Method:', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
@@ -224,7 +206,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   
                   const SizedBox(height: 16),
 
-                  // 2. ID Editor
                   const Text('Detected Transaction ID:', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 4),
                   TextField(
@@ -259,7 +240,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                       
                       VerificationResult result = await ApiService.verifyTransaction(
                         idController.text.trim(), 
-                        selectedEndpoint // Pass the selected bank to the API
+                        selectedEndpoint 
                       );
                       
                       if (result.isSuccess) {
@@ -333,7 +314,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-// --- ENGINE LAB ---
+// --- ENGINE LAB (Kept exactly as you built it) ---
 class EngineTestScreen extends StatefulWidget {
   const EngineTestScreen({super.key});
   @override
