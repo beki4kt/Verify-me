@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'modern_scanner.dart';
+import 'pin_login_screen.dart'; // For logging out
 
 class WaiterDashboard extends StatelessWidget {
   const WaiterDashboard({super.key});
@@ -13,9 +14,18 @@ class WaiterDashboard extends StatelessWidget {
         elevation: 0,
         title: Row(
           children: [
-            const CircleAvatar(
-              backgroundColor: Color(0xFF1E293B),
-              child: Icon(Icons.person, color: Colors.white70),
+            // Clickable Avatar for Profile
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context, 
+                  MaterialPageRoute(builder: (context) => const WaiterProfileScreen())
+                );
+              },
+              child: const CircleAvatar(
+                backgroundColor: Color(0xFF1E293B),
+                child: Icon(Icons.person, color: Colors.white70),
+              ),
             ),
             const SizedBox(width: 12),
             const Column(
@@ -26,7 +36,6 @@ class WaiterDashboard extends StatelessWidget {
               ],
             ),
             const Spacer(),
-            // Pulsing Live Connection Dot
             Container(
               width: 10,
               height: 10,
@@ -45,7 +54,6 @@ class WaiterDashboard extends StatelessWidget {
         children: [
           const Expanded(flex: 3, child: SizedBox()), 
           
-          // THE MASSIVE HERO BUTTON
           Center(
             child: GestureDetector(
               onTap: () {
@@ -97,7 +105,6 @@ class WaiterDashboard extends StatelessWidget {
           
           const Expanded(flex: 2, child: SizedBox()), 
 
-          // THE BOTTOM SHEET: Shift History
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
             decoration: const BoxDecoration(
@@ -141,6 +148,110 @@ class WaiterDashboard extends StatelessWidget {
         ),
         const Spacer(),
         Text(time, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+}
+
+// --- NEW: Waiter Profile Screen ---
+class WaiterProfileScreen extends StatelessWidget {
+  const WaiterProfileScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF020617),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          children: [
+            const SizedBox(height: 20),
+            Center(
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF6366F1), width: 4),
+                ),
+                child: const Icon(Icons.person, size: 64, color: Colors.white70),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text('Henok', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20)
+              ),
+              child: const Text('WAITER', style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.bold, letterSpacing: 2)),
+            ),
+            const SizedBox(height: 48),
+            
+            // Stats Board
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatColumn('SCANS TODAY', '42'),
+                  Container(width: 1, height: 40, color: const Color(0xFF1E293B)),
+                  _buildStatColumn('SHIFT TIME', '4h 12m'),
+                ],
+              ),
+            ),
+            
+            const Spacer(),
+            
+            // Logout Button
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () {
+                  // Navigate back to the PIN login screen and clear history
+                  Navigator.pushAndRemoveUntil(
+                    context, 
+                    MaterialPageRoute(builder: (context) => const PinLoginScreen()), 
+                    (route) => false
+                  );
+                },
+                icon: const Icon(Icons.logout, color: Color(0xFFEF4444)),
+                label: const Text('END SHIFT & LOGOUT', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  backgroundColor: const Color(0xFFEF4444).withOpacity(0.1),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatColumn(String label, String value) {
+    return Column(
+      children: [
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
       ],
     );
   }

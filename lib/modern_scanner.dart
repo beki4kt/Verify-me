@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:lottie/lottie.dart';
 import 'package:vibration/vibration.dart';
 import 'main.dart'; 
 import 'receipt_parser.dart';
@@ -57,7 +56,6 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
     if (_cameraController == null || !_cameraController!.value.isInitialized) return;
     setState(() => _isExtracting = true);
     
-    // Light Haptic tap when they hit the button
     if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(duration: 50);
 
     try {
@@ -76,50 +74,102 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
     }
   }
 
-  void _showResultAnimation(bool isSuccess, String message) {
+  // --- NEW: Native Success Dialog ---
+  void _showSuccessDialog(Map<String, dynamic>? data, String transactionId) {
+    // Attempt to extract details from your backend response, with safe fallbacks
+    final amount = data?['amount']?.toString() ?? 'Verified';
+    final sender = data?['sender'] ?? data?['payer'] ?? 'Digital Payment';
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black87,
       builder: (context) {
-        // Auto-dismiss after 2.5 seconds
-        Future.delayed(const Duration(milliseconds: 2500), () {
-          if (mounted) {
-            Navigator.pop(context); // Close animation
-            if (isSuccess) Navigator.pop(context); // Return to dashboard only if success
-          }
-        });
-
-        return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Lottie.network(
-                isSuccess 
-                  ? 'https://lottie.host/8e209827-0205-4f46-8dd3-1456a00df890/ZlKjL9tH1F.json' // Success Checkmark
-                  : 'https://lottie.host/7f7e915b-188d-4a11-8e54-3e9a5944d180/gL4t16QvB3.json', // Error Cross
-                width: 200,
-                height: 200,
-                repeat: false,
-              ),
-              const SizedBox(height: 16),
-              Material(
-                color: Colors.transparent,
-                child: Text(
-                  message.toUpperCase(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2
+        return Dialog(
+          backgroundColor: const Color(0xFF0F172A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Color(0xFF10B981), width: 2), // Green border
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Animated Checkmark
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.elasticOut,
+                  builder: (context, value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withOpacity(0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 64),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                const Text('PAYMENT SUCCESS', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)),
+                const SizedBox(height: 16),
+                
+                // Transaction Details Box
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(16)),
+                  child: Column(
+                    children: [
+                      _buildDetailRow('AMOUNT', amount, isHighlight: true),
+                      const Divider(color: Color(0xFF1E293B), height: 24),
+                      _buildDetailRow('ID', transactionId),
+                      const Divider(color: Color(0xFF1E293B), height: 24),
+                      _buildDetailRow('FROM', sender),
+                    ],
                   ),
                 ),
-              )
-            ],
+                
+                const SizedBox(height: 32),
+                
+                // Finish Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context); // Close the dialog
+                      Navigator.pop(context); // Close the scanner, return to dashboard
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: const Text('FINISH', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)),
+                  ),
+                )
+              ],
+            ),
           ),
         );
       }
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, {bool isHighlight = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+        Text(value, style: TextStyle(
+          color: isHighlight ? Colors.white : const Color(0xFFCBD5E1), 
+          fontSize: isHighlight ? 20 : 14, 
+          fontWeight: isHighlight ? FontWeight.w900 : FontWeight.bold
+        )),
+      ],
     );
   }
 
@@ -187,15 +237,13 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                       VerificationResult result = await ApiService.verifyTransaction(idController.text.trim(), selectedEndpoint);
                       
                       if (result.isSuccess) {
-                         // Haptic Resolution: Double pulse for success
                          if (await Vibration.hasVibrator() ?? false) {
                            Vibration.vibrate(pattern: [0, 100, 100, 100]);
                          }
                          if (!mounted) return;
-                         Navigator.pop(context); // Close sheet
-                         _showResultAnimation(true, "Payment Verified");
+                         Navigator.pop(context); // Close bottom sheet
+                         _showSuccessDialog(result.data, idController.text.trim()); // Trigger Native Dialog
                       } else {
-                         // Haptic Resolution: Harsh long vibration for failure
                          if (await Vibration.hasVibrator() ?? false) {
                            Vibration.vibrate(duration: 500);
                          }
@@ -203,8 +251,6 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                             isVerifying = false;
                             errorText = result.errorMessage;
                          });
-                         // Optional: Show giant red cross Lottie on failure
-                         // _showResultAnimation(false, "Verification Failed"); 
                       }
                     },
                     style: ElevatedButton.styleFrom(
