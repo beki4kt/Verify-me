@@ -5,9 +5,17 @@ import 'package:vibration/vibration.dart';
 import 'main.dart'; 
 import 'receipt_parser.dart';
 import 'api_service.dart';
+import 'offline_storage.dart';
 
 class ModernScannerScreen extends StatefulWidget {
-  const ModernScannerScreen({super.key});
+  final String targetBank;
+  final String targetEndpoint;
+
+  const ModernScannerScreen({
+    super.key, 
+    required this.targetBank, 
+    required this.targetEndpoint
+  });
 
   @override
   State<ModernScannerScreen> createState() => _ModernScannerScreenState();
@@ -65,7 +73,13 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
-      ParsedReceipt parsedData = ReceiptParser.parse(recognizedText.text);
+      // PARSING IS NOW TARGETED TO THE SPECIFIC BANK
+      ParsedReceipt parsedData = ReceiptParser.parse(
+        recognizedText.text, 
+        widget.targetBank, 
+        widget.targetEndpoint
+      );
+      
       setState(() => _isExtracting = false);
       _showVerificationSheet(parsedData);
 
@@ -74,9 +88,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
     }
   }
 
-  // --- NEW: Native Success Dialog ---
   void _showSuccessDialog(Map<String, dynamic>? data, String transactionId) {
-    // Attempt to extract details from your backend response, with safe fallbacks
     final amount = data?['amount']?.toString() ?? 'Verified';
     final sender = data?['sender'] ?? data?['payer'] ?? 'Digital Payment';
 
@@ -88,14 +100,13 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
           backgroundColor: const Color(0xFF0F172A),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
-            side: const BorderSide(color: Color(0xFF10B981), width: 2), // Green border
+            side: const BorderSide(color: Color(0xFF10B981), width: 2), 
           ),
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Animated Checkmark
                 TweenAnimationBuilder<double>(
                   tween: Tween<double>(begin: 0.0, end: 1.0),
                   duration: const Duration(milliseconds: 500),
@@ -118,7 +129,6 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                 const Text('PAYMENT SUCCESS', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)),
                 const SizedBox(height: 16),
                 
-                // Transaction Details Box
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(16)),
@@ -128,20 +138,19 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                       const Divider(color: Color(0xFF1E293B), height: 24),
                       _buildDetailRow('ID', transactionId),
                       const Divider(color: Color(0xFF1E293B), height: 24),
-                      _buildDetailRow('FROM', sender),
+                      _buildDetailRow('BANK', widget.targetBank),
                     ],
                   ),
                 ),
                 
                 const SizedBox(height: 32),
                 
-                // Finish Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.pop(context); // Close the dialog
-                      Navigator.pop(context); // Close the scanner, return to dashboard
+                      Navigator.pop(context); 
+                      Navigator.pop(context); 
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF10B981),
@@ -159,14 +168,78 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
     );
   }
 
+  void _showOfflineSavedDialog(String transactionId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF0F172A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Color(0xFFF59E0B), width: 2), 
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), shape: BoxShape.circle),
+                  child: const Icon(Icons.wifi_off, color: Color(0xFFF59E0B), size: 48),
+                ),
+                const SizedBox(height: 24),
+                const Text('SAVED LOCALLY', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)),
+                const SizedBox(height: 8),
+                const Text('Network error. Ticket queued for sync.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF64748B), fontSize: 14)),
+                const SizedBox(height: 24),
+                
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(16)),
+                  child: Column(
+                    children: [
+                      _buildDetailRow('ID', transactionId),
+                      const Divider(color: Color(0xFF1E293B), height: 16),
+                      _buildDetailRow('STATUS', 'Pending Sync', isHighlight: true),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 32),
+                
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context); 
+                      Navigator.pop(context); 
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF59E0B),
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: const Text('CONTINUE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)),
+                  ),
+                )
+              ],
+            ),
+          ),
+        );
+      }
+    );
+  }
+
   Widget _buildDetailRow(String label, String value, {bool isHighlight = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
         Text(value, style: TextStyle(
-          color: isHighlight ? Colors.white : const Color(0xFFCBD5E1), 
-          fontSize: isHighlight ? 20 : 14, 
+          color: isHighlight ? (value == 'Pending Sync' ? const Color(0xFFF59E0B) : Colors.white) : const Color(0xFFCBD5E1), 
+          fontSize: isHighlight ? 16 : 14, 
           fontWeight: isHighlight ? FontWeight.w900 : FontWeight.bold
         )),
       ],
@@ -175,15 +248,8 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
 
   void _showVerificationSheet(ParsedReceipt parsedData) {
     TextEditingController idController = TextEditingController(text: parsedData.transactionId ?? "");
-    String selectedEndpoint = parsedData.endpoint ?? '/verify-telebirr';
     bool isVerifying = false;
     String? errorText;
-
-    final Map<String, String> bankEndpoints = {
-      'Telebirr': '/verify-telebirr',
-      'CBE': '/verify-cbe',
-      'Universal': '/verify',
-    };
 
     showModalBottomSheet(
       context: context,
@@ -199,7 +265,17 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('CONFIRM PAYMENT', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF6366F1), letterSpacing: 2)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('CONFIRM PAYMENT', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF6366F1), letterSpacing: 2)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
+                        child: Text(widget.targetBank, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      )
+                    ],
+                  ),
                   const SizedBox(height: 24),
                   
                   TextField(
@@ -234,19 +310,30 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                         errorText = null;
                       });
                       
-                      VerificationResult result = await ApiService.verifyTransaction(idController.text.trim(), selectedEndpoint);
+                      VerificationResult result = await ApiService.verifyTransaction(idController.text.trim(), widget.targetEndpoint);
                       
                       if (result.isSuccess) {
-                         if (await Vibration.hasVibrator() ?? false) {
-                           Vibration.vibrate(pattern: [0, 100, 100, 100]);
-                         }
+                         if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+                         
                          if (!mounted) return;
-                         Navigator.pop(context); // Close bottom sheet
-                         _showSuccessDialog(result.data, idController.text.trim()); // Trigger Native Dialog
+                         Navigator.pop(context); 
+                         _showSuccessDialog(result.data, idController.text.trim());
+                      } else if (result.errorMessage != null && result.errorMessage!.contains('Network Error')) {
+                         if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(duration: 150);
+                         
+                         final pendingTicket = PendingTicket(
+                           transactionId: idController.text.trim(),
+                           endpoint: widget.targetEndpoint,
+                           timestamp: DateTime.now().millisecondsSinceEpoch,
+                         );
+                         await SyncManager.instance.enqueueTicket(pendingTicket);
+                         
+                         if (!mounted) return;
+                         Navigator.pop(context); 
+                         _showOfflineSavedDialog(idController.text.trim()); 
                       } else {
-                         if (await Vibration.hasVibrator() ?? false) {
-                           Vibration.vibrate(duration: 500);
-                         }
+                         if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(duration: 500);
+                         
                          setSheetState(() {
                             isVerifying = false;
                             errorText = result.errorMessage;
@@ -299,7 +386,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                         icon: const Icon(Icons.close, color: Colors.white, size: 32),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text('ALIGN RECEIPT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 4)),
+                      Text('SCANNING ${widget.targetBank.toUpperCase()}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 2)),
                       const SizedBox(width: 48),
                     ],
                   ),
