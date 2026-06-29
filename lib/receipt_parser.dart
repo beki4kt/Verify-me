@@ -1,73 +1,72 @@
 class ParsedReceipt {
   final String? transactionId;
-  final String? detectedBankName;
+  final String detectedBankName;
   final String? endpoint;
   final bool isValid;
+  final String? amount;
 
   ParsedReceipt({
     this.transactionId,
-    this.detectedBankName,
+    required this.detectedBankName,
     this.endpoint,
     required this.isValid,
+    this.amount,
   });
 }
 
 class ReceiptParser {
-  static ParsedReceipt parse(String rawText) {
-    String? txId;
-    String detectedBank = 'Telebirr'; // Default fallback
-    String endpoint = '/verify-telebirr'; 
-
-    final textLower = rawText.toLowerCase();
-
-    // 1. Auto-Detect the Bank based on Keywords
-    if (textLower.contains('commercial bank') || textLower.contains('cbe') && !textLower.contains('birr')) {
-      detectedBank = 'CBE (Mobile Banking)';
-      endpoint = '/verify-cbe';
-    } else if (textLower.contains('cbebirr') || textLower.contains('cbe birr')) {
-      detectedBank = 'CBE Birr';
-      endpoint = '/verify-cbebirr';
-    } else if (textLower.contains('dashen') || textLower.contains('amole')) {
-      detectedBank = 'Dashen';
-      endpoint = '/verify-dashen';
-    } else if (textLower.contains('abyssinia') || textLower.contains('boa')) {
-      detectedBank = 'Bank of Abyssinia';
-      endpoint = '/verify-abyssinia';
-    } else if (textLower.contains('m-pesa') || textLower.contains('mpesa') || textLower.contains('safaricom')) {
-      detectedBank = 'M-Pesa';
-      endpoint = '/verify-mpesa';
-    } else if (textLower.contains('telebirr')) {
-      detectedBank = 'Telebirr';
-      endpoint = '/verify-telebirr';
-    }
-
-    // 2. Extract Transaction ID
-    // Broadened to 8-16 characters since different banks use different ID lengths (e.g., CBE uses FT...)
-    final txRegex = RegExp(r'\b[A-Z0-9]{8,16}\b', caseSensitive: false);
-    final matches = txRegex.allMatches(rawText);
+  static ParsedReceipt parse(String text, String targetBank, String targetEndpoint) {
+    String upperText = text.toUpperCase();
+    String? id;
     
-    for (final match in matches) {
-      String candidate = match.group(0)!.toUpperCase();
+    // 1. TELEBIRR TARGETING
+    if (targetBank == 'Telebirr') {
+      // Telebirr IDs are typically 10 alphanumeric characters (e.g., 7A43B2C9X1)
+      RegExp regExp = RegExp(r'\b[A-Z0-9]{10}\b');
+      var match = regExp.firstMatch(upperText);
+      if (match != null) id = match.group(0);
+    } 
+    // 2. CBE / CBE BIRR TARGETING
+    else if (targetBank == 'CBE' || targetBank == 'CBE Birr') {
+      // CBE Mobile Banking often starts with FT followed by numbers
+      RegExp ftRegExp = RegExp(r'\bFT\d{8,14}\b');
+      var ftMatch = ftRegExp.firstMatch(upperText);
       
-      // Filter out common receipt words that happen to be the same length as IDs
-      List<String> ignoreWords = [
-        'TRANSACTION', 'SUCCESSFUL', 'COMPLETED', 'TRANSFER', 'REFERENCE', 
-        'COMMERCIAL', 'TELEBIRR', 'ABYSSINIA', 'DASHEN'
-      ];
-      if (ignoreWords.contains(candidate)) continue;
-
-      // An ID MUST contain at least one number (prevents grabbing pure text words)
-      if (RegExp(r'\d').hasMatch(candidate)) {
-        txId = candidate;
-        break; 
+      if (ftMatch != null) {
+        id = ftMatch.group(0);
+      } else {
+        // Fallback for purely numeric CBE reference numbers
+        RegExp numRegExp = RegExp(r'\b\d{10,14}\b');
+        var numMatch = numRegExp.firstMatch(upperText);
+        if (numMatch != null) id = numMatch.group(0);
       }
+    } 
+    // 3. DASHEN TARGETING
+    else if (targetBank == 'Dashen') {
+      // Dashen formats vary but are usually 9-12 alphanumeric
+      RegExp regExp = RegExp(r'\b[A-Z0-9]{9,12}\b');
+      var match = regExp.firstMatch(upperText);
+      if (match != null) id = match.group(0);
+    } 
+    // 4. M-PESA TARGETING
+    else if (targetBank == 'M-Pesa') {
+      // Safaricom M-Pesa standard ID format (usually 10 chars starting with letters)
+      RegExp regExp = RegExp(r'\b[A-Z0-9]{10}\b');
+      var match = regExp.firstMatch(upperText);
+      if (match != null) id = match.group(0);
+    }
+    // 5. UNIVERSAL FALLBACK
+    else {
+      RegExp regExp = RegExp(r'\b[A-Z0-9]{8,15}\b');
+      var match = regExp.firstMatch(upperText);
+      if (match != null) id = match.group(0);
     }
 
     return ParsedReceipt(
-      transactionId: txId,
-      detectedBankName: detectedBank,
-      endpoint: endpoint,
-      isValid: txId != null,
+      transactionId: id,
+      detectedBankName: targetBank,
+      endpoint: targetEndpoint,
+      isValid: id != null,
     );
   }
 }

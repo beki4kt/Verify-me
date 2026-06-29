@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'receipt_parser.dart';
 import 'api_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'pin_login_screen.dart';
+import 'offline_storage.dart';
+import 'role_selection.dart';
+import 'localization_service.dart';
 
 // Global variable for cameras
 List<CameraDescription> cameras = [];
@@ -18,14 +22,26 @@ Future<void> main() async {
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwYmR4dHp5emxhaW9nZ2Vmc2NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTMyMDUsImV4cCI6MjA5Nzg2OTIwNX0.X9d4_FkisQRQXYFhyVJ_-5XSsbkS1VCHMLLybfGfpzs',
   );
 
-  // 2. Initialize Cameras
+  // 2. Initialize Offline Storage Queue
+  await SyncManager.initialize();
+  SyncManager.instance.startBackgroundSync();
+
+  // 3. Initialize Cameras
   try {
     cameras = await availableCameras();
   } catch (e) {
     debugPrint('Error initializing cameras: $e');
   }
 
-  runApp(const VerifyMeApp());
+  // 4. Run App with Localization Provider
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => LocalizationService()),
+      ],
+      child: const VerifyMeApp(),
+    ),
+  );
 }
 
 class VerifyMeApp extends StatelessWidget {
@@ -40,15 +56,15 @@ class VerifyMeApp extends StatelessWidget {
         brightness: Brightness.dark,
         primaryColor: const Color(0xFF6366F1), 
         scaffoldBackgroundColor: const Color(0xFF0F172A),
+        fontFamily: 'Roboto', // Ensures Amharic characters render properly
       ),
-      // Starts on the new PIN Login Screen. 
-      // Once logged in, you will route them to MainNavigationScreen()
-      home: const PinLoginScreen(), 
+      // Starts on the new Role Selection Screen. 
+      home: const RoleSelectionScreen(), 
     );
   }
 }
 
-// --- LIVE SCANNER UI (Kept exactly as you built it) ---
+// --- LIVE SCANNER UI & ENGINE LAB (Restored exactly as you built it) ---
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -223,7 +239,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+                      decoration: BoxDecoration(color: Colors.red.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
                       child: Text(errorText!, style: const TextStyle(color: Colors.redAccent)),
                     )
                   ],
@@ -314,7 +330,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-// --- ENGINE LAB (Kept exactly as you built it) ---
+// --- ENGINE LAB (Restored exactly as you built it) ---
 class EngineTestScreen extends StatefulWidget {
   const EngineTestScreen({super.key});
   @override
@@ -339,7 +355,7 @@ class _EngineTestScreenState extends State<EngineTestScreen> {
             const SizedBox(height: 24),
             if (_result != null)
               Card(
-                color: _result!.isValid ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+                color: _result!.isValid ? Colors.green.withOpacity(0.15) : Colors.red.withOpacity(0.15),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
