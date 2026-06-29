@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class VerificationResult {
   final bool isSuccess;
@@ -10,6 +11,9 @@ class VerificationResult {
 }
 
 class ApiService {
+  // ==========================================
+  // EXTERNAL API: RECEIPT VERIFICATION
+  // ==========================================
   static const String baseUrl = "https://verifyapi.leulzenebe.pro";
   static const String apiKey = "sk_live_7ebe516799b67c8a30b6861a4131caca8d1ae6bce7f3a6b9";
 
@@ -41,5 +45,49 @@ class ApiService {
     } catch (e) {
       return VerificationResult(isSuccess: false, errorMessage: 'Network Error: Please check your connection.');
     }
+  }
+
+  // ==========================================
+  // INTERNAL API: SUPABASE ADMIN CONTROLS
+  // ==========================================
+  static final _supabase = Supabase.instance.client;
+
+  // 1. Stream the real-time revenue stats for today
+  static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    return _supabase
+        .from('tickets')
+        .stream(primaryKey: ['ticket_id'])
+        .gte('created_at', '${todayStr}T00:00:00Z');
+  }
+
+  // 2. Stream the complete staff roster
+  static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
+    return _supabase
+        .from('staff')
+        .stream(primaryKey: ['staff_number'])
+        .order('created_at', ascending: false);
+  }
+
+  // 3. Action: Provision a new team member
+  static Future<void> createStaffMember({
+    required String pin,
+    required String name,
+    required String role,
+  }) async {
+    await _supabase.from('staff').insert({
+      'staff_number': pin,
+      'name': name,
+      'role': role,
+      'is_active': true,
+    });
+  }
+
+  // 4. Action: Toggle staff activation status
+  static Future<void> toggleStaffStatus(String pin, bool currentStatus) async {
+    await _supabase
+        .from('staff')
+        .update({'is_active': !currentStatus})
+        .eq('staff_number', pin);
   }
 }
