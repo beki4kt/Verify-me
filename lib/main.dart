@@ -9,6 +9,8 @@ import 'api_service.dart';
 import 'offline_storage.dart';
 import 'role_selection.dart';
 import 'localization_service.dart';
+import 'pin_login_screen.dart';
+import 'dual_login_screen.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -53,7 +55,7 @@ class VerifyMeApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0F172A),
         fontFamily: 'Roboto',
       ),
-      home: const RoleSelectionScreen(), 
+      home: const DualLoginScreen(), 
     );
   }
 }

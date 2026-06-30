@@ -48,7 +48,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    initialValue: _selectedRole, 
+                    value: _selectedRole,
                     dropdownColor: const Color(0xFF0F172A),
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                     decoration: _buildInputDecoration('SYSTEM ROLE', Icons.badge_outlined),
@@ -71,12 +71,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         );
                         _nameController.clear();
                         _pinController.clear();
-                        
-                        if (!context.mounted) return;
-                        Navigator.pop(context);
+                        if (context.mounted) Navigator.pop(context);
                       } catch (e) {
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.toString(), style: const TextStyle(color: Colors.white)), backgroundColor: Colors.redAccent)
+                          );
+                        }
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -166,7 +167,66 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ),
 
-          // Section 2: Live Staff Management Stream
+          // Section 2: SaaS Package & Staff Limits
+          SliverToBoxAdapter(
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: ApiService.streamStaffRoster(),
+              builder: (context, snapshot) {
+                int activeStaffCount = snapshot.hasData ? snapshot.data!.length : 0;
+                int maxLimit = ApiService.currentBusinessMaxStaff ?? 5;
+                double capacity = activeStaffCount / maxLimit;
+                
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('LICENSE USAGE & UPGRADES', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5)),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(20)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Staff Seats Provisioned', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                Text('$activeStaffCount / $maxLimit', style: TextStyle(color: capacity >= 1.0 ? Colors.redAccent : const Color(0xFF10B981), fontWeight: FontWeight.w900)),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            LinearProgressIndicator(
+                              value: capacity.clamp(0.0, 1.0),
+                              backgroundColor: const Color(0xFF020617),
+                              color: capacity >= 1.0 ? Colors.redAccent : const Color(0xFF10B981),
+                              minHeight: 8,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 160,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            _buildPackageCard('STARTER', '5 Waiters', 'Basic Analytics\nStandard Support', const Color(0xFF64748B), false),
+                            _buildPackageCard('PRO', '20 Waiters', 'Advanced Analytics\nPriority Routing', const Color(0xFF6366F1), true),
+                            _buildPackageCard('ENTERPRISE', 'Unlimited', 'Dedicated Server\nCustom API Setup', const Color(0xFFF59E0B), false),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // Section 3: Live Staff Management Stream
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -259,6 +319,36 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Text(title, style: const TextStyle(color: Color(0xFF64748B), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
           const SizedBox(height: 12),
           Text(val, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPackageCard(String title, String capacity, String perks, Color accent, bool isRecommended) {
+    return Container(
+      width: 160,
+      margin: const EdgeInsets.only(right: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isRecommended ? accent.withValues(alpha: 0.1) : const Color(0xFF0F172A),
+        border: Border.all(color: isRecommended ? accent : Colors.transparent, width: 1.5),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: TextStyle(color: accent, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1)),
+          const SizedBox(height: 8),
+          Text(capacity, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          Text(perks, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11, height: 1.4)),
+          const SizedBox(height: 8),
+          if (isRecommended)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(4)),
+              child: const Text('RECOMMENDED', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1)),
+            )
         ],
       ),
     );
