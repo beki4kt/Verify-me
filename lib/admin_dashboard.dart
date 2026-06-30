@@ -48,7 +48,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: _selectedRole,
+                    initialValue: _selectedRole, 
                     dropdownColor: const Color(0xFF0F172A),
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                     decoration: _buildInputDecoration('SYSTEM ROLE', Icons.badge_outlined),
@@ -71,8 +71,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         );
                         _nameController.clear();
                         _pinController.clear();
-                        if (mounted) Navigator.pop(context);
+                        
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
                       } catch (e) {
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
                       }
                     },
@@ -197,7 +200,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       child: Row(
                         children: [
                           CircleAvatar(
-                            backgroundColor: isActive ? const Color(0xFF6366F1).withOpacity(0.1) : Colors.black12,
+                            backgroundColor: isActive ? const Color(0xFF6366F1).withValues(alpha: 0.1) : Colors.black12,
                             child: Icon(Icons.person, color: isActive ? const Color(0xFF6366F1) : Colors.white24),
                           ),
                           const SizedBox(width: 16),
@@ -223,7 +226,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ),
                           Switch.adaptive(
                             value: isActive,
-                            activeColor: const Color(0xFF10B981),
+                            activeTrackColor: const Color(0xFF10B981),
                             onChanged: (val) async {
                               await ApiService.toggleStaffStatus(pin, isActive);
                             },

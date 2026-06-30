@@ -10,30 +10,25 @@ import 'offline_storage.dart';
 import 'role_selection.dart';
 import 'localization_service.dart';
 
-// Global variable for cameras
 List<CameraDescription> cameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 1. Initialize Supabase
   await Supabase.initialize(
     url: 'https://lpbdxtzyzlaioggefscc.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwYmR4dHp5emxhaW9nZ2Vmc2NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTMyMDUsImV4cCI6MjA5Nzg2OTIwNX0.X9d4_FkisQRQXYFhyVJ_-5XSsbkS1VCHMLLybfGfpzs',
   );
 
-  // 2. Initialize Offline Storage Queue
   await SyncManager.initialize();
   SyncManager.instance.startBackgroundSync();
 
-  // 3. Initialize Cameras
   try {
     cameras = await availableCameras();
   } catch (e) {
     debugPrint('Error initializing cameras: $e');
   }
 
-  // 4. Run App with Localization Provider
   runApp(
     MultiProvider(
       providers: [
@@ -56,15 +51,13 @@ class VerifyMeApp extends StatelessWidget {
         brightness: Brightness.dark,
         primaryColor: const Color(0xFF6366F1), 
         scaffoldBackgroundColor: const Color(0xFF0F172A),
-        fontFamily: 'Roboto', // Ensures Amharic characters render properly
+        fontFamily: 'Roboto',
       ),
-      // Starts on the new Role Selection Screen. 
       home: const RoleSelectionScreen(), 
     );
   }
 }
 
-// --- LIVE SCANNER UI & ENGINE LAB (Restored exactly as you built it) ---
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -146,14 +139,15 @@ class _ScannerScreenState extends State<ScannerScreen> {
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
-      ParsedReceipt parsedData = ReceiptParser.parse(recognizedText.text);
+      ParsedReceipt parsedData = ReceiptParser.parse(recognizedText.text, 'Universal / Unknown', '/verify');
       
       setState(() => _isExtracting = false);
-
+      if (!mounted) return;
       _showVerificationSheet(parsedData);
 
     } catch (e) {
       setState(() => _isExtracting = false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
@@ -200,7 +194,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   const Text('Detected Payment Method:', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedEndpoint,
+                    value: selectedEndpoint,
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.black54,
@@ -239,7 +233,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.red.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                      decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
                       child: Text(errorText!, style: const TextStyle(color: Colors.redAccent)),
                     )
                   ],
@@ -259,8 +253,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
                         selectedEndpoint 
                       );
                       
+                      if (!mounted) return;
+                      
                       if (result.isSuccess) {
-                         if (!mounted) return;
                          Navigator.pop(context);
                          ScaffoldMessenger.of(context).showSnackBar(
                            const SnackBar(content: Text('Transaction Verified Successfully!', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green)
@@ -330,7 +325,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-// --- ENGINE LAB (Restored exactly as you built it) ---
 class EngineTestScreen extends StatefulWidget {
   const EngineTestScreen({super.key});
   @override
@@ -340,7 +334,7 @@ class _EngineTestScreenState extends State<EngineTestScreen> {
   final TextEditingController _textController = TextEditingController();
   ParsedReceipt? _result;
 
-  void _runParser() => setState(() => _result = ReceiptParser.parse(_textController.text));
+  void _runParser() => setState(() => _result = ReceiptParser.parse(_textController.text, 'Universal / Unknown', '/verify'));
 
   @override
   Widget build(BuildContext context) {
@@ -355,7 +349,7 @@ class _EngineTestScreenState extends State<EngineTestScreen> {
             const SizedBox(height: 24),
             if (_result != null)
               Card(
-                color: _result!.isValid ? Colors.green.withOpacity(0.15) : Colors.red.withOpacity(0.15),
+                color: _result!.isValid ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(

@@ -15,14 +15,12 @@ class CashierDashboard extends StatefulWidget {
 class _CashierDashboardState extends State<CashierDashboard> {
   String? _selectedTransactionId;
   
-  // Simulated Real-Time Stream (To be replaced by Supabase Stream)
   final StreamController<List<Map<String, dynamic>>> _livePaymentsController = StreamController();
-  List<Map<String, dynamic>> _mockPayments = [
+  final List<Map<String, dynamic>> _mockPayments = [
     {'id': 'TXN-8842', 'amount': '1,250 ETB', 'bank': 'Telebirr', 'time': 'Just now', 'waiter_id': null},
     {'id': 'TXN-9931', 'amount': '450 ETB', 'bank': 'CBE', 'time': '2 min ago', 'waiter_id': null},
   ];
 
-  // The Cleared Ledger Data
   final List<Map<String, dynamic>> _clearedLedger = [
     {'waiter': 'Waiter 1', 'id': 'TXN-1101', 'amount': '800 ETB', 'bank': 'CBE'},
     {'waiter': 'Waiter 2', 'id': 'TXN-2234', 'amount': '1,500 ETB', 'bank': 'Telebirr'},
@@ -39,7 +37,6 @@ class _CashierDashboardState extends State<CashierDashboard> {
     super.initState();
     _livePaymentsController.add(_mockPayments);
     
-    // Simulate incoming payments every 15 seconds
     Timer.periodic(const Duration(seconds: 15), (timer) {
       if (!mounted) return;
       _mockPayments.insert(0, {
@@ -61,13 +58,14 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
   void _assignToWaiter(String waiterName) async {
     if (_selectedTransactionId == null) return;
-    if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(pattern: [0, 50, 100, 50]);
+    
+    final assignVib = await Vibration.hasVibrator();
+    if (assignVib == true) Vibration.vibrate(pattern: [0, 50, 100, 50]);
     
     setState(() {
       final payment = _mockPayments.firstWhere((p) => p['id'] == _selectedTransactionId);
       _mockPayments.removeWhere((p) => p['id'] == _selectedTransactionId);
       
-      // Move to Ledger
       _clearedLedger.insert(0, {
         'waiter': waiterName,
         'id': payment['id'],
@@ -100,7 +98,9 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
   void _rejectPayment() async {
     if (_selectedTransactionId == null) return;
-    if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(duration: 200);
+    
+    final rejectVib = await Vibration.hasVibrator();
+    if (rejectVib == true) Vibration.vibrate(duration: 200);
     
     setState(() {
       _mockPayments.removeWhere((p) => p['id'] == _selectedTransactionId);
@@ -151,7 +151,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF10B981),
                   shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: const Color(0xFF10B981).withOpacity(0.5), blurRadius: 10)]
+                  boxShadow: [BoxShadow(color: const Color(0xFF10B981).withValues(alpha: 0.5), blurRadius: 10)]
                 ),
               ),
               const SizedBox(width: 12),
@@ -177,7 +177,6 @@ class _CashierDashboardState extends State<CashierDashboard> {
         ),
         body: TabBarView(
           children: [
-            // TAB 1: LIVE TRIAGE FEED
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -203,7 +202,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEF4444).withOpacity(0.2), 
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.2), 
                                   borderRadius: BorderRadius.circular(8), 
                                   border: Border.all(color: const Color(0xFFEF4444))
                                 ),
@@ -221,7 +220,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         child: StreamBuilder<List<Map<String, dynamic>>>(
                           stream: _livePaymentsController.stream,
                           builder: (context, snapshot) {
-                            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                            final dataList = snapshot.data;
+                            if (dataList == null || dataList.isEmpty) {
                               return Center(
                                 child: Text(
                                   loc.translate('queue_clear'), 
@@ -231,16 +231,19 @@ class _CashierDashboardState extends State<CashierDashboard> {
                             }
                             return ListView.builder(
                               scrollDirection: Axis.horizontal,
-                              itemCount: snapshot.data!.length,
+                              itemCount: dataList.length,
                               itemBuilder: (context, index) {
-                                final payment = snapshot.data![index];
+                                final payment = dataList[index];
                                 final isSelected = _selectedTransactionId == payment['id'];
                                 final bankColor = _getBankColor(payment['bank']);
                                 
                                 return GestureDetector(
-                                  onTap: () {
+                                  onTap: () async {
                                     setState(() => _selectedTransactionId = isSelected ? null : payment['id']);
-                                    if (isSelected == false) Vibration.vibrate(duration: 30);
+                                    if (!isSelected) {
+                                      final cardVib = await Vibration.hasVibrator();
+                                      if (cardVib == true) Vibration.vibrate(duration: 30);
+                                    }
                                   },
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 200),
@@ -248,7 +251,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                     width: 220,
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      color: isSelected ? const Color(0xFF10B981).withOpacity(0.1) : const Color(0xFF0F172A),
+                                      color: isSelected ? const Color(0xFF10B981).withValues(alpha: 0.1) : const Color(0xFF0F172A),
                                       borderRadius: BorderRadius.circular(16),
                                       border: Border.all(color: isSelected ? const Color(0xFF10B981) : const Color(0xFF1E293B), width: 2),
                                     ),
@@ -261,7 +264,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                           children: [
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), 
-                                              decoration: BoxDecoration(color: bankColor.withOpacity(0.2), borderRadius: BorderRadius.circular(4)), 
+                                              decoration: BoxDecoration(color: bankColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)), 
                                               child: Text(payment['bank'], style: TextStyle(color: bankColor, fontSize: 10, fontWeight: FontWeight.w900))
                                             ),
                                             Text(payment['time'], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.bold)),
@@ -322,7 +325,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                   decoration: BoxDecoration(
                                     color: canAssign ? const Color(0xFF1E293B) : const Color(0xFF020617), 
                                     borderRadius: BorderRadius.circular(16), 
-                                    border: Border.all(color: canAssign ? const Color(0xFF3B82F6).withOpacity(0.5) : const Color(0xFF1E293B))
+                                    border: Border.all(color: canAssign ? const Color(0xFF3B82F6).withValues(alpha: 0.5) : const Color(0xFF1E293B))
                                   ),
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -351,7 +354,6 @@ class _CashierDashboardState extends State<CashierDashboard> {
               ],
             ),
             
-            // TAB 2: CLEARED LEDGER
             ListView.builder(
               padding: const EdgeInsets.all(24),
               itemCount: _clearedLedger.length,
@@ -381,7 +383,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: bankColor.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+                                decoration: BoxDecoration(color: bankColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
                                 child: Text(entry['bank'], style: TextStyle(color: bankColor, fontSize: 10, fontWeight: FontWeight.bold))
                               ),
                               const SizedBox(width: 8),

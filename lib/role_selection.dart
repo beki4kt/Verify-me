@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'cashier_dashboard.dart';
 import 'waiter_dashboard.dart';
+import 'admin_dashboard.dart'; 
 import 'localization_service.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
@@ -23,16 +24,16 @@ class RoleSelectionScreen extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF1E293B),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: color.withOpacity(0.5), width: 2),
+          border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
           boxShadow: [
-            BoxShadow(color: color.withOpacity(0.1), blurRadius: 20, spreadRadius: 2),
+            BoxShadow(color: color.withValues(alpha: 0.1), blurRadius: 20, spreadRadius: 2),
           ]
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: color.withOpacity(0.2), shape: BoxShape.circle),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
               child: Icon(icon, color: color, size: 32),
             ),
             const SizedBox(width: 24),
@@ -46,7 +47,7 @@ class RoleSelectionScreen extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios, color: color.withOpacity(0.5)),
+            Icon(Icons.arrow_forward_ios, color: color.withValues(alpha: 0.5)),
           ],
         ),
       ),
@@ -70,10 +71,9 @@ class RoleSelectionScreen extends StatelessWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                    decoration: BoxDecoration(color: const Color(0xFF3B82F6).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
                     child: Text(loc.translate('app_title'), style: const TextStyle(color: Color(0xFF3B82F6), fontWeight: FontWeight.bold, letterSpacing: 2)),
                   ),
-                  // Language Toggle Button
                   GestureDetector(
                     onTap: () => loc.toggleLanguage(),
                     child: Container(
@@ -118,9 +118,7 @@ class RoleSelectionScreen extends StatelessWidget {
                 subtitle: loc.translate('admin_sub'),
                 icon: CupertinoIcons.lock_shield,
                 color: const Color(0xFFF59E0B), 
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Admin Web Portal is handled by Henok.')));
-                },
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminDashboard())), // Now routes to Henok's new file
               ),
             ],
           ),

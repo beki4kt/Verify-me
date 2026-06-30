@@ -64,7 +64,8 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
     if (_cameraController == null || !_cameraController!.value.isInitialized) return;
     setState(() => _isExtracting = true);
     
-    if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(duration: 50);
+    final designVibrator = await Vibration.hasVibrator();
+    if (designVibrator == true) Vibration.vibrate(duration: 50);
 
     try {
       final XFile imageFile = await _cameraController!.takePicture();
@@ -73,24 +74,24 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
-      // PARSING IS NOW TARGETED TO THE SPECIFIC BANK
       ParsedReceipt parsedData = ReceiptParser.parse(
         recognizedText.text, 
         widget.targetBank, 
         widget.targetEndpoint
       );
       
+      if (!mounted) return;
       setState(() => _isExtracting = false);
       _showVerificationSheet(parsedData);
 
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isExtracting = false);
     }
   }
 
   void _showSuccessDialog(Map<String, dynamic>? data, String transactionId) {
     final amount = data?['amount']?.toString() ?? 'Verified';
-    final sender = data?['sender'] ?? data?['payer'] ?? 'Digital Payment';
 
     showDialog(
       context: context,
@@ -117,7 +118,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withOpacity(0.15),
+                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 64),
@@ -186,7 +187,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: const Color(0xFFF59E0B).withValues(alpha: 0.15), shape: BoxShape.circle),
                   child: const Icon(Icons.wifi_off, color: Color(0xFFF59E0B), size: 48),
                 ),
                 const SizedBox(height: 24),
@@ -295,7 +296,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                     const SizedBox(height: 24),
                     Container(
                       padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: const Color(0xFFEF4444).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(color: const Color(0xFFEF4444).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
                       child: Text(errorText!, style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
                     )
                   ],
@@ -312,14 +313,16 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                       
                       VerificationResult result = await ApiService.verifyTransaction(idController.text.trim(), widget.targetEndpoint);
                       
+                      if (!mounted) return;
+                      
                       if (result.isSuccess) {
-                         if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(pattern: [0, 100, 100, 100]);
-                         
-                         if (!mounted) return;
+                         final verifyVib = await Vibration.hasVibrator();
+                         if (verifyVib == true) Vibration.vibrate(pattern: [0, 100, 100, 100]);
                          Navigator.pop(context); 
                          _showSuccessDialog(result.data, idController.text.trim());
                       } else if (result.errorMessage != null && result.errorMessage!.contains('Network Error')) {
-                         if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(duration: 150);
+                         final saveVib = await Vibration.hasVibrator();
+                         if (saveVib == true) Vibration.vibrate(duration: 150);
                          
                          final pendingTicket = PendingTicket(
                            transactionId: idController.text.trim(),
@@ -332,7 +335,8 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                          Navigator.pop(context); 
                          _showOfflineSavedDialog(idController.text.trim()); 
                       } else {
-                         if (await Vibration.hasVibrator() ?? false) Vibration.vibrate(duration: 500);
+                         final failVib = await Vibration.hasVibrator();
+                         if (failVib == true) Vibration.vibrate(duration: 500);
                          
                          setSheetState(() {
                             isVerifying = false;
@@ -372,7 +376,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
           if (_cameraController != null && _cameraController!.value.isInitialized)
             SizedBox.expand(child: CameraPreview(_cameraController!)),
 
-          Container(color: Colors.black.withOpacity(0.7)), 
+          Container(color: Colors.black.withValues(alpha: 0.7)), 
           
           SafeArea(
             child: Column(
@@ -407,7 +411,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                       borderRadius: BorderRadius.circular(28),
                       child: Stack(
                         children: [
-                          Container(color: Colors.black.withOpacity(0.01)), 
+                          Container(color: Colors.black.withValues(alpha: 0.01)), 
                           AnimatedBuilder(
                             animation: _laserAnimation,
                             builder: (context, child) {
@@ -420,7 +424,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF6366F1),
                                     boxShadow: [
-                                      BoxShadow(color: const Color(0xFF6366F1).withOpacity(0.8), blurRadius: 20, spreadRadius: 5)
+                                      BoxShadow(color: const Color(0xFF6366F1).withValues(alpha: 0.8), blurRadius: 20, spreadRadius: 5)
                                     ]
                                   ),
                                 ),
@@ -447,7 +451,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with SingleTi
                         color: _isExtracting ? const Color(0xFF1E293B) : const Color(0xFF6366F1),
                         border: Border.all(color: Colors.white, width: 4),
                         boxShadow: [
-                          if (!_isExtracting) BoxShadow(color: const Color(0xFF6366F1).withOpacity(0.5), blurRadius: 30, spreadRadius: 5)
+                          if (!_isExtracting) BoxShadow(color: const Color(0xFF6366F1).withValues(alpha: 0.5), blurRadius: 30, spreadRadius: 5)
                         ]
                       ),
                       child: _isExtracting 

@@ -83,7 +83,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
                   final bank = banks[index];
                   return GestureDetector(
                     onTap: () {
-                      Navigator.pop(context); // Close sheet
+                      Navigator.pop(context); 
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -98,7 +98,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
                       decoration: BoxDecoration(
                         color: const Color(0xFF0F172A),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: bank['color'].withOpacity(0.5), width: 2),
+                        border: Border.all(color: bank['color'].withValues(alpha: 0.5), width: 2),
                       ),
                       child: Center(
                         child: Text(
@@ -136,10 +136,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(_pulseAnimation.value),
+                    color: const Color(0xFF10B981).withValues(alpha: _pulseAnimation.value),
                     shape: BoxShape.circle,
                     boxShadow: [
-                      BoxShadow(color: const Color(0xFF10B981).withOpacity(_pulseAnimation.value * 0.5), blurRadius: 8, spreadRadius: 2)
+                      BoxShadow(color: const Color(0xFF10B981).withValues(alpha: _pulseAnimation.value * 0.5), blurRadius: 8, spreadRadius: 2)
                     ]
                   ),
                 );
@@ -153,7 +153,6 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
       ),
       body: Column(
         children: [
-          // THE MASSIVE OLED SCAN BUTTON
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
@@ -162,7 +161,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
               border: Border(bottom: BorderSide(color: Color(0xFF1E293B), width: 2))
             ),
             child: GestureDetector(
-              onTap: () => _showBankSelectionSheet(context), // Triggers Bank Selection Now
+              onTap: () => _showBankSelectionSheet(context), 
               child: Container(
                 height: MediaQuery.of(context).size.height * 0.35, 
                 decoration: BoxDecoration(
@@ -172,7 +171,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(32),
-                  boxShadow: [BoxShadow(color: const Color(0xFF6366F1).withOpacity(0.4), blurRadius: 30, spreadRadius: 5)]
+                  boxShadow: [BoxShadow(color: const Color(0xFF6366F1).withValues(alpha: 0.4), blurRadius: 30, spreadRadius: 5)]
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -185,8 +184,6 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
               ),
             ),
           ),
-
-          // THE "MY SCANS" FEED
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
@@ -228,7 +225,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(color: statusColor.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                                  decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
                                   child: Row(
                                     children: [
                                       Container(width: 8, height: 8, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
