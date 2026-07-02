@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // Added flutter_animate
 import 'modern_scanner.dart';
 import 'localization_service.dart';
 
@@ -148,7 +149,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
             const SizedBox(width: 12),
             Text(loc.translate('waiter_dashboard'), style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 16)),
           ],
-        ),
+        ).animate().fadeIn(duration: 500.ms), // Animated Appbar Title
         leading: IconButton(icon: const Icon(CupertinoIcons.back), onPressed: () => Navigator.pop(context)),
       ),
       body: Column(
@@ -182,7 +183,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
                   ],
                 ),
               ),
-            ),
+            ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack).fadeIn(duration: 500.ms), // Animated Big Button
           ),
           Expanded(
             child: Padding(
@@ -190,7 +191,8 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(loc.translate('my_scans'), style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 14)),
+                  Text(loc.translate('my_scans'), style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 14))
+                      .animate().fadeIn(delay: 300.ms), // Animated Header
                   const SizedBox(height: 16),
                   
                   if (_myScans.isEmpty)
@@ -236,7 +238,9 @@ class _WaiterDashboardState extends State<WaiterDashboard> with SingleTickerProv
                                 )
                               ],
                             ),
-                          );
+                          ).animate() // Staggered List Animation
+                           .fadeIn(delay: (50 * index).ms, duration: 300.ms)
+                           .slideY(begin: 0.2, end: 0, delay: (50 * index).ms, curve: Curves.easeOutQuad);
                         },
                       ),
                     )

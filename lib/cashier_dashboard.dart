@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:vibration/vibration.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:async';
 import 'localization_service.dart';
 
@@ -160,7 +161,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 16)
               ),
             ],
-          ),
+          ).animate().fadeIn(duration: 500.ms),
           leading: IconButton(
             icon: const Icon(CupertinoIcons.back), 
             onPressed: () => Navigator.pop(context)
@@ -211,7 +212,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                   style: const TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.bold)
                                 ),
                               ),
-                            )
+                            ).animate().fadeIn().scale(curve: Curves.easeOutBack)
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -277,7 +278,9 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                       ],
                                     ),
                                   ),
-                                );
+                                ).animate(key: ValueKey(payment['id']))
+                                 .fadeIn(delay: (100 * index).ms, duration: 300.ms)
+                                 .slideX(begin: 0.1, end: 0, delay: (100 * index).ms);
                               },
                             );
                           }
@@ -303,7 +306,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                               Text(
                                 loc.translate('assign_prompt'), 
                                 style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 12)
-                              ),
+                              ).animate().fadeIn().slideY(begin: -0.2, end: 0),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -342,8 +345,10 @@ class _CashierDashboardState extends State<CashierDashboard> {
                                       ),
                                     ],
                                   ),
-                                ),
-                              );
+                                ), // Closed AnimatedContainer correctly here
+                              ).animate() // Attached animate() correctly to the GestureDetector here
+                               .fadeIn(delay: (30 * index).ms)
+                               .scale(delay: (30 * index).ms, duration: 300.ms, curve: Curves.easeOutBack);
                             },
                           ),
                         )
@@ -398,7 +403,9 @@ class _CashierDashboardState extends State<CashierDashboard> {
                       ),
                     ],
                   ),
-                );
+                ).animate()
+                 .fadeIn(delay: (50 * index).ms, duration: 300.ms)
+                 .slideX(begin: 0.1, end: 0, delay: (50 * index).ms);
               },
             ),
           ],

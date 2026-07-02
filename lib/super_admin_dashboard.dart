@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
@@ -128,7 +129,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('GOD MODE: SYSTEM CONTROL', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2)),
+        title: const Text('GOD MODE: SYSTEM CONTROL', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2))
+            .animate().fadeIn(duration: 500.ms),
       ),
       body: CustomScrollView(
         slivers: [
@@ -147,9 +149,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                  ),
+                  ).animate().scale(delay: 200.ms, duration: 400.ms, curve: Curves.easeOutCubic),
+                  
                   const SizedBox(height: 32),
-                  const Text('CLIENT DIRECTORY & KILL SWITCHES', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                  const Text('CLIENT DIRECTORY & KILL SWITCHES', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold, letterSpacing: 1.5))
+                      .animate().fadeIn(delay: 400.ms),
                 ],
               ),
             ),
@@ -174,6 +178,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     final isActive = business['is_active'] as bool? ?? true;
                     final tier = business['package_tier'].toString().toUpperCase();
 
+                    // The Staggered Animation Magic
                     return Container(
                       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
                       padding: const EdgeInsets.all(16),
@@ -201,7 +206,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                           )
                         ],
                       ),
-                    );
+                    ).animate() // Trigger animation for each row
+                     .fadeIn(delay: (100 * index).ms, duration: 400.ms)
+                     .slideX(begin: 0.1, end: 0, delay: (100 * index).ms, curve: Curves.easeOutQuad);
                   },
                   childCount: snapshot.data!.length,
                 ),

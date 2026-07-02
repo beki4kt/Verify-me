@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'admin_dashboard.dart';
 import 'waiter_dashboard.dart'; 
@@ -21,10 +22,10 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  // ... (Keep your _handlePinLogin, _handlePhoneLogin, and _routeUser functions exactly the same as before) ...
   Future<void> _handlePinLogin() async {
     if (_pinController.text.isEmpty) return;
     setState(() { _isLoading = true; _errorMessage = null; });
-
     try {
       final sessionData = await ApiService.loginWithPin(_pinController.text.trim());
       if (sessionData == null) {
@@ -42,13 +43,8 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
   Future<void> _handlePhoneLogin() async {
     if (_phoneController.text.isEmpty || _passwordController.text.isEmpty) return;
     setState(() { _isLoading = true; _errorMessage = null; });
-
     try {
-      final role = await ApiService.loginWithPhone(
-        _phoneController.text.trim(), 
-        _passwordController.text.trim()
-      );
-
+      final role = await ApiService.loginWithPhone(_phoneController.text.trim(), _passwordController.text.trim());
       if (role == null) {
         setState(() => _errorMessage = "Invalid Credentials.");
         return;
@@ -64,24 +60,13 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
   void _routeUser(String role) {
     if (!mounted) return;
     Widget destination;
-    
     switch (role) {
-      case 'super_admin': 
-        destination = const SuperAdminDashboard(); 
-        break;
-      case 'admin': 
-        destination = const AdminDashboard(); 
-        break;
-      case 'cashier': 
-        destination = CashierDashboard(); // Removed const modifier here
-        break;
-      case 'waiter': 
-        destination = WaiterDashboard(); // Removed const modifier here
-        break;
-      default: 
-        return;
+      case 'super_admin': destination = const SuperAdminDashboard(); break;
+      case 'admin': destination = const AdminDashboard(); break;
+      case 'cashier': destination = CashierDashboard(); break;
+      case 'waiter': destination = WaiterDashboard(); break;
+      default: return;
     }
-    
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => destination));
   }
 
@@ -96,18 +81,33 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.verified_user_rounded, size: 80, color: Color(0xFF6366F1)),
+              // Animated Logo
+              const Icon(Icons.verified_user_rounded, size: 80, color: Color(0xFF6366F1))
+                  .animate()
+                  .scale(duration: 600.ms, curve: Curves.easeOutBack)
+                  .fadeIn(duration: 600.ms),
+              
               const SizedBox(height: 24),
-              const Text('VERIFY-ME', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 4)),
+              
+              const Text('VERIFY-ME', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 4))
+                  .animate()
+                  .fadeIn(delay: 200.ms, duration: 500.ms)
+                  .slideY(begin: 0.2, end: 0),
+                  
               const SizedBox(height: 48),
 
               if (_errorMessage != null) ...[
-                Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))
+                    .animate()
+                    .shakeX(duration: 300.ms),
                 const SizedBox(height: 16),
               ],
 
+              // Animated Form Switcher
               AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
+                duration: const Duration(milliseconds: 400),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
                 child: _isPinMode ? _buildPinForm() : _buildPhoneForm(),
               ),
 
@@ -124,7 +124,7 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
                   _isPinMode ? 'Secure Admin Login' : 'Switch to Staff PIN',
                   style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold),
                 ),
-              )
+              ).animate().fadeIn(delay: 600.ms, duration: 400.ms)
             ],
           ),
         ),
@@ -150,7 +150,7 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
         const SizedBox(height: 24),
         _buildSubmitButton('ACCESS TERMINAL', _handlePinLogin),
       ],
-    );
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0);
   }
 
   Widget _buildPhoneForm() {
@@ -176,7 +176,7 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
         const SizedBox(height: 24),
         _buildSubmitButton('SECURE LOGIN', _handlePhoneLogin),
       ],
-    );
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0);
   }
 
   InputDecoration _inputDecoration() {
