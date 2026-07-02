@@ -3,7 +3,7 @@ import 'api_service.dart';
 import 'admin_dashboard.dart';
 import 'waiter_dashboard.dart'; 
 import 'cashier_dashboard.dart';
-import 'super_admin_dashboard.dart'; // We will build this next
+import 'super_admin_dashboard.dart'; 
 
 class DualLoginScreen extends StatefulWidget {
   const DualLoginScreen({super.key});
@@ -13,7 +13,7 @@ class DualLoginScreen extends StatefulWidget {
 }
 
 class _DualLoginScreenState extends State<DualLoginScreen> {
-  bool _isPinMode = true; // Toggles between Face A and Face B
+  bool _isPinMode = true; 
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -66,11 +66,20 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
     Widget destination;
     
     switch (role) {
-      case 'super_admin': destination = const SuperAdminDashboard(); break;
-      case 'admin': destination = const AdminDashboard(); break;
-      case 'cashier': destination = const CashierDashboard(); break;
-      case 'waiter': destination = const WaiterDashboard(); break;
-      default: return;
+      case 'super_admin': 
+        destination = const SuperAdminDashboard(); 
+        break;
+      case 'admin': 
+        destination = const AdminDashboard(); 
+        break;
+      case 'cashier': 
+        destination = CashierDashboard(); // Removed const modifier here
+        break;
+      case 'waiter': 
+        destination = WaiterDashboard(); // Removed const modifier here
+        break;
+      default: 
+        return;
     }
     
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => destination));

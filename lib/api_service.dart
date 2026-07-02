@@ -12,7 +12,7 @@ class VerificationResult {
 
 class ApiService {
   // ==========================================
-  // BEREKET'S DOMAIN: EXTERNAL OCR VERIFICATION
+  // EXTERNAL API: RECEIPT VERIFICATION
   // ==========================================
   static const String baseUrl = "https://verifyapi.leulzenebe.pro";
   static const String apiKey = "sk_live_7ebe516799b67c8a30b6861a4131caca8d1ae6bce7f3a6b9";
@@ -42,21 +42,21 @@ class ApiService {
         return VerificationResult(isSuccess: false, errorMessage: data['error'] ?? data['message'] ?? 'Server rejected the request');
       }
     } catch (e) {
-      return VerificationResult(isSuccess: false, errorMessage: 'Network Error: Please check your connection.');
+      return VerificationResult(isSuccess: false, errorMessage: 'Network Error.');
     }
   }
 
   // ==========================================
-  // HENOK'S DOMAIN: INTERNAL SUPABASE SaaS CONTROLS
+  // INTERNAL API: SUPABASE SaaS CONTROLS
   // ==========================================
   static final _supabase = Supabase.instance.client;
 
-  // Global Session State
   static String? currentBusinessId;
   static String? currentStaffNumber;
   static String? currentUserRole;
   static int? currentBusinessMaxStaff; 
 
+  // --- PIN LOGIN (For Floor Staff) ---
   static Future<Map<String, dynamic>?> loginWithPin(String pin) async {
     final response = await _supabase
         .from('staff')
@@ -73,9 +73,9 @@ class ApiService {
     }
     return null;
   }
-// 1.5 Dual-Face Authentication: Phone & Password
+
+  // --- PHONE LOGIN (For Super Admins & Managers) ---
   static Future<String?> loginWithPhone(String phone, String password) async {
-    // Check 1: Is this the Developer / Super Admin?
     final superAdminCheck = await _supabase
         .from('super_admins')
         .select()
@@ -88,7 +88,6 @@ class ApiService {
       return 'super_admin';
     }
 
-    // Check 2: Is this a Restaurant Manager / Admin?
     final adminCheck = await _supabase
         .from('staff')
         .select('*, businesses(max_staff_limit, is_active)')
@@ -104,29 +103,67 @@ class ApiService {
       currentBusinessMaxStaff = adminCheck['businesses']['max_staff_limit'];
       return 'admin';
     }
+    return null;
+  }
 
-    return null; // Login failed
-  }  
+  // ==========================================
+  // SUPER ADMIN SPECIFIC FUNCTIONS
+  // ==========================================
 
+  // Stream all restaurants in the system
+  static Stream<List<Map<String, dynamic>>> streamAllBusinesses() {
+    return _supabase.from('businesses').stream(primaryKey: ['business_id']).order('created_at', ascending: false);
+  }
+
+  // The Master Provisioning Logic (Dual-Insert)
+  static Future<void> provisionNewBusiness({
+    required String businessName,
+    required String packageTier,
+    required int maxStaff,
+    required String adminName,
+    required String adminPhone,
+    required String adminPassword,
+    required String adminPin,
+  }) async {
+    // 1. Create the Tenant
+    final businessResponse = await _supabase.from('businesses').insert({
+      'name': businessName,
+      'package_tier': packageTier,
+      'max_staff_limit': maxStaff,
+      'is_active': true,
+    }).select().single();
+
+    final newBusinessId = businessResponse['business_id'];
+
+    // 2. Create the Master Admin for this Tenant
+    await _supabase.from('staff').insert({
+      'staff_number': adminPin,
+      'business_id': newBusinessId,
+      'name': adminName,
+      'phone_number': adminPhone,
+      'password': adminPassword,
+      'role': 'admin',
+      'is_active': true,
+    });
+  }
+
+  // The Global Kill Switch
+  static Future<void> toggleBusinessStatus(String businessId, bool currentStatus) async {
+    await _supabase.from('businesses').update({'is_active': !currentStatus}).eq('business_id', businessId);
+  }
+
+  // ==========================================
+  // RESTAURANT ADMIN & STAFF FUNCTIONS
+  // ==========================================
+  
   static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
-    if (currentBusinessId == null) throw Exception("No active business session");
-    
-    return _supabase
-        .from('tickets')
-        .stream(primaryKey: ['ticket_id'])
-        .eq('business_id', currentBusinessId!) 
-        .order('created_at', ascending: false)
-        .limit(100); 
+    if (currentBusinessId == null) throw Exception("No active session");
+    return _supabase.from('tickets').stream(primaryKey: ['ticket_id']).eq('business_id', currentBusinessId!).order('created_at', ascending: false).limit(100); 
   }
 
   static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
-    if (currentBusinessId == null) throw Exception("No active business session");
-
-    return _supabase
-        .from('staff')
-        .stream(primaryKey: ['staff_number'])
-        .eq('business_id', currentBusinessId!)
-        .order('created_at', ascending: false);
+    if (currentBusinessId == null) throw Exception("No active session");
+    return _supabase.from('staff').stream(primaryKey: ['staff_number']).eq('business_id', currentBusinessId!).order('created_at', ascending: false);
   }
 
   static Future<void> createStaffMember({
@@ -134,13 +171,11 @@ class ApiService {
     required String name,
     required String role,
   }) async {
-    if (currentBusinessId == null) throw Exception("No active business session");
+    if (currentBusinessId == null) throw Exception("No active session");
 
     final countResponse = await _supabase.from('staff').select('staff_number').eq('business_id', currentBusinessId!).count(CountOption.exact);
-    final currentStaffCount = countResponse.count ?? 0;
-
-    if (currentStaffCount >= (currentBusinessMaxStaff ?? 0)) {
-      throw Exception("Upgrade Required: Your business has reached its maximum staff limit of $currentBusinessMaxStaff.");
+    if ((countResponse.count ?? 0) >= (currentBusinessMaxStaff ?? 0)) {
+      throw Exception("Upgrade Required: Limit Reached.");
     }
 
     await _supabase.from('staff').insert({
@@ -153,12 +188,7 @@ class ApiService {
   }
 
   static Future<void> toggleStaffStatus(String pin, bool currentStatus) async {
-    if (currentBusinessId == null) throw Exception("No active business session");
-
-    await _supabase
-        .from('staff')
-        .update({'is_active': !currentStatus})
-        .eq('staff_number', pin)
-        .eq('business_id', currentBusinessId!); 
+    if (currentBusinessId == null) throw Exception("No active session");
+    await _supabase.from('staff').update({'is_active': !currentStatus}).eq('staff_number', pin).eq('business_id', currentBusinessId!); 
   }
 }

@@ -7,10 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'receipt_parser.dart';
 import 'api_service.dart';
 import 'offline_storage.dart';
-import 'role_selection.dart';
 import 'localization_service.dart';
-import 'pin_login_screen.dart';
-import 'dual_login_screen.dart';
+import 'dual_login_screen.dart'; // The new secure gateway
 
 List<CameraDescription> cameras = [];
 
@@ -55,7 +53,7 @@ class VerifyMeApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0F172A),
         fontFamily: 'Roboto',
       ),
-      home: const DualLoginScreen(), 
+      home: const DualLoginScreen(), // Boots straight to firewall
     );
   }
 }
