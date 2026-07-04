@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
+import 'dual_login_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -9,11 +11,14 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
-  final _pinController = TextEditingController();
-  final _nameController = TextEditingController();
-  String _selectedRole = 'waiter';
 
+  // --- 1. PROVISION NEW STAFF ---
   void _showAddStaffSheet() {
+    final _pinController = TextEditingController();
+    final _nameController = TextEditingController();
+    String _selectedRole = 'waiter';
+    bool _isSubmitting = false;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -61,23 +66,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   const SizedBox(height: 32),
                   ElevatedButton(
-                    onPressed: () async {
+                    onPressed: _isSubmitting ? null : () async {
                       if (_nameController.text.isEmpty || _pinController.text.length < 4) return;
+                      setSheetState(() => _isSubmitting = true);
                       try {
                         await ApiService.createStaffMember(
                           pin: _pinController.text.trim(),
                           name: _nameController.text.trim(),
                           role: _selectedRole,
                         );
-                        _nameController.clear();
-                        _pinController.clear();
                         if (context.mounted) Navigator.pop(context);
                       } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(e.toString(), style: const TextStyle(color: Colors.white)), backgroundColor: Colors.redAccent)
-                          );
-                        }
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: Colors.redAccent));
+                      } finally {
+                        setSheetState(() => _isSubmitting = false);
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -85,7 +87,84 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: const Text('SAVE USER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                    child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SAVE USER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                  )
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- 2. EDIT EXISTING STAFF ---
+  void _showEditStaffSheet(Map<String, dynamic> staffMember) {
+    final _nameController = TextEditingController(text: staffMember['name']);
+    String _selectedRole = staffMember['role'];
+    bool _isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0F172A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                left: 24, right: 24, top: 32
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('MANAGE STAFF: ${staffMember['staff_number']}', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _nameController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _buildInputDecoration('FULL NAME', Icons.person_outline),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: _selectedRole,
+                    dropdownColor: const Color(0xFF0F172A),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    decoration: _buildInputDecoration('SYSTEM ROLE', Icons.badge_outlined),
+                    items: const [
+                      DropdownMenuItem(value: 'waiter', child: Text('Waiter')),
+                      DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
+                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                    ],
+                    onChanged: (val) => setSheetState(() => _selectedRole = val!),
+                  ),
+                  const SizedBox(height: 32),
+                  ElevatedButton(
+                    onPressed: _isSubmitting ? null : () async {
+                      if (_nameController.text.isEmpty) return;
+                      setSheetState(() => _isSubmitting = true);
+                      try {
+                        await ApiService.updateStaffProfile(
+                          staffMember['staff_number'], 
+                          _nameController.text.trim(), 
+                          _selectedRole
+                        );
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent));
+                      } finally {
+                        setSheetState(() => _isSubmitting = false);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('UPDATE STAFF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                   )
                 ],
               ),
@@ -114,7 +193,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('MASTER OPERATIONS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)),
+        title: const Text('MASTER OPERATIONS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)).animate().fadeIn(),
+        leading: IconButton(
+          icon: const Icon(Icons.logout, color: Colors.redAccent),
+          onPressed: () {
+            ApiService.currentBusinessId = null;
+            ApiService.currentStaffNumber = null;
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DualLoginScreen()));
+          }
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF6366F1)),
@@ -162,12 +249,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       _buildMetricCard('OPEN TABLES CURRENTLY IN SYSTEM', '$pendingCount ACTIVE BILLS', const Color(0xFFF59E0B), isFullWidth: true),
                     ],
                   ),
-                );
+                ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.1, end: 0);
               },
             ),
           ),
 
-          // Section 2: SaaS Package & Staff Limits
+          // Section 2: SaaS Package & Staff Limits (RESTORED)
           SliverToBoxAdapter(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: ApiService.streamStaffRoster(),
@@ -221,16 +308,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                     ],
                   ),
-                );
+                ).animate().fadeIn(delay: 200.ms);
               },
             ),
           ),
 
-          // Section 3: Live Staff Management Stream
+          // Section 3: Live Staff Management Stream (WITH INTERACTIVITY)
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Text('TEAM DIRECTORY & SECURITY CONTROL', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5)),
+              child: Text('TEAM DIRECTORY (TAP TO EDIT)', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5)),
             ),
           ),
 
@@ -253,47 +340,50 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     final role = member['role'].toString().toUpperCase();
                     final isActive = member['is_active'] as bool? ?? true;
 
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(20)),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: isActive ? const Color(0xFF6366F1).withValues(alpha: 0.1) : Colors.black12,
-                            child: Icon(Icons.person, color: isActive ? const Color(0xFF6366F1) : Colors.white24),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(name, style: TextStyle(color: isActive ? Colors.white : Colors.white38, fontWeight: FontWeight.bold, fontSize: 16)),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(8)),
-                                      child: Text(role, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1)),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text('PIN: $pin', style: const TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ],
+                    return GestureDetector(
+                      onTap: () => _showEditStaffSheet(member),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white10)),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: isActive ? const Color(0xFF6366F1).withValues(alpha: 0.1) : Colors.black12,
+                              child: Icon(Icons.person, color: isActive ? const Color(0xFF6366F1) : Colors.white24),
                             ),
-                          ),
-                          Switch.adaptive(
-                            value: isActive,
-                            activeTrackColor: const Color(0xFF10B981),
-                            onChanged: (val) async {
-                              await ApiService.toggleStaffStatus(pin, isActive);
-                            },
-                          )
-                        ],
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(name, style: TextStyle(color: isActive ? Colors.white : Colors.white38, fontWeight: FontWeight.bold, fontSize: 16)),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(8)),
+                                        child: Text(role, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1)),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text('PIN: $pin', style: const TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: isActive,
+                              activeTrackColor: const Color(0xFF10B981),
+                              onChanged: (val) async {
+                                await ApiService.toggleStaffStatus(pin, isActive);
+                              },
+                            )
+                          ],
+                        ),
                       ),
-                    );
+                    ).animate().fadeIn(delay: (50 * index).ms).slideX(begin: 0.1, end: 0, delay: (50 * index).ms);
                   },
                   childCount: snapshot.data!.length,
                 ),
