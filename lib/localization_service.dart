@@ -1,70 +1,64 @@
 import 'package:flutter/material.dart';
 
 class LocalizationService extends ChangeNotifier {
-  Locale _currentLocale = const Locale('en');
-  Locale get currentLocale => _currentLocale;
+  String _currentLanguage = 'en';
+  String get currentLanguage => _currentLanguage;
 
-  bool get isAmharic => _currentLocale.languageCode == 'am';
+  final Map<String, Map<String, String>> _localizedValues = {
+    'en': {
+      // General
+      'secure_login': 'SECURE SYSTEM LOGIN',
+      'phone_hint': 'Phone Number',
+      'password_hint': 'Password',
+      'authenticate': 'AUTHENTICATE',
+      'switch_lang': 'አማርኛ',
+      // Admin Dashboard
+      'master_operations': 'MASTER OPERATIONS',
+      'real_time_metrics': 'REAL-TIME METRICS (TODAY)',
+      'revenue': 'REVENUE',
+      'tips_logged': 'TIPS LOGGED',
+      'open_tables': 'OPEN TABLES CURRENTLY IN SYSTEM',
+      'active_bills': 'ACTIVE BILLS',
+      'license_usage': 'LICENSE USAGE & UPGRADES',
+      'seats_provisioned': 'Staff Seats Provisioned',
+      'team_directory': 'TEAM DIRECTORY (TAP TO EDIT)',
+      'provision_staff': 'PROVISION NEW STAFF',
+      'full_name': 'FULL NAME',
+      'system_role': 'SYSTEM ROLE',
+      'save_user': 'SAVE USER',
+      'update_staff': 'UPDATE STAFF',
+    },
+    'am': {
+      // General
+      'secure_login': 'ወደ ሲስተም ይግቡ',
+      'phone_hint': 'ስልክ ቁጥር',
+      'password_hint': 'የይለፍ ቃል',
+      'authenticate': 'ግባ',
+      'switch_lang': 'English',
+      // Admin Dashboard
+      'master_operations': 'ዋና ስራዎች (Admin)',
+      'real_time_metrics': 'የእለቱ ገቢ ትንታኔ',
+      'revenue': 'አጠቃላይ ገቢ',
+      'tips_logged': 'ቲፕ (ጉርሻ)',
+      'open_tables': 'በስርዓቱ ውስጥ ያሉ ክፍት ሂሳቦች',
+      'active_bills': 'ያልተዘጉ ሂሳቦች',
+      'license_usage': 'የፍቃድ አጠቃቀም',
+      'seats_provisioned': 'የተመዘገቡ ሰራተኞች',
+      'team_directory': 'የሰራተኞች ማውጫ (ለማስተካከል ይጫኑ)',
+      'provision_staff': 'አዲስ ሰራተኛ መዝግብ',
+      'full_name': 'ሙሉ ስም',
+      'system_role': 'የስራ ድርሻ',
+      'save_user': 'አስቀምጥ',
+      'update_staff': 'አዘምን',
+    }
+  };
 
   void toggleLanguage() {
-    _currentLocale = isAmharic ? const Locale('en') : const Locale('am');
+    _currentLanguage = _currentLanguage == 'en' ? 'am' : 'en';
     notifyListeners();
   }
 
   String translate(String key) {
-    return _localizedValues[_currentLocale.languageCode]?[key] ?? key;
+    return _localizedValues[_currentLanguage]?[key] ?? key;
   }
-
-  static final Map<String, Map<String, String>> _localizedValues = {
-    'en': {
-      'app_title': 'VERIFY-ME V1.0',
-      'select_workspace': 'Select\nWorkspace.',
-      'waiter': 'WAITER',
-      'waiter_sub': 'Mobile receipt scanning & queuing',
-      'cashier': 'CASHIER',
-      'cashier_sub': 'Live payment feed & table linking',
-      'admin': 'ADMIN',
-      'admin_sub': 'Analytics & system management',
-      'cashier_terminal': 'CASHIER TERMINAL',
-      'unassigned': 'UNASSIGNED VERIFICATIONS',
-      'active_waitstaff': 'ACTIVE WAITSTAFF',
-      'cleared_ledger': 'CLEARED LEDGER',
-      'flag_reject': 'FLAG / REJECT',
-      'live_feed': 'LIVE FEED',
-      'waiter_dashboard': 'WAITER DASHBOARD',
-      'my_scans': 'MY SCANS',
-      'scan_receipt': 'SCAN RECEIPT',
-      'pending': 'Pending',
-      'cleared': 'Cleared',
-      'rejected': 'Rejected',
-      'assign_prompt': 'Tap waiter to assign payment',
-      'queue_clear': 'Queue is clear. Waiting for scans.',
-      'no_scans': 'No scans yet today.',
-    },
-    'am': {
-      'app_title': 'ቬሪፋይ-ሚ (VERIFY-ME)',
-      'select_workspace': 'የስራ ቦታ\nይምረጡ።',
-      'waiter': 'አስተናጋጅ',
-      'waiter_sub': 'የሞባይል ደረሰኝ ስካን እና ማረጋገጫ',
-      'cashier': 'ካሼር (ገንዘብ ተቀባይ)',
-      'cashier_sub': 'የቀጥታ ክፍያዎች እና አስተናጋጅ ማገናኛ',
-      'admin': 'አስተዳዳሪ (ADMIN)',
-      'admin_sub': 'የስርዓት እና የሂሳብ አስተዳደር',
-      'cashier_terminal': 'የካሼር ተርሚናል',
-      'unassigned': 'ያልተመደቡ ክፍያዎች',
-      'active_waitstaff': 'ንቁ አስተናጋጆች',
-      'cleared_ledger': 'የተረጋገጡ ዝርዝሮች',
-      'flag_reject': 'አግድ / ውድቅ አድርግ',
-      'live_feed': 'የቀጥታ ክፍያዎች',
-      'waiter_dashboard': 'አስተናጋጅ ዳሽቦርድ',
-      'my_scans': 'የእኔ ቅኝቶች (Scans)',
-      'scan_receipt': 'ደረሰኝ ስካን አድርግ',
-      'pending': 'በመጠባበቅ ላይ',
-      'cleared': 'ተረጋግጧል',
-      'rejected': 'ውድቅ ተደርጓል',
-      'assign_prompt': 'ክፍያውን ለመመደብ አስተናጋጁን ይንኩ',
-      'queue_clear': 'ምንም አዲስ ክፍያ የለም።',
-      'no_scans': 'ዛሬ ምንም ስካን አላደረጉም።',
-    }
-  };
 }

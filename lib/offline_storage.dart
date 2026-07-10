@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -17,10 +18,15 @@ class PendingTicket extends HiveObject {
   @HiveField(2)
   final int timestamp;
 
+  // NEW: Holds the full ticket data (Amount, Waiter ID, Bank) for the Cashier
+  @HiveField(3)
+  final String? ticketDataJson; 
+
   PendingTicket({
     required this.transactionId,
     required this.endpoint,
     required this.timestamp,
+    this.ticketDataJson,
   });
 }
 
@@ -39,10 +45,22 @@ class SyncManager {
     await Hive.openBox<PendingTicket>(_boxName);
   }
 
+  // --- ORIGINAL METHOD (For standard verifications) ---
   Future<void> enqueueTicket(PendingTicket ticket) async {
     final box = Hive.box<PendingTicket>(_boxName);
     await box.add(ticket);
     debugPrint("Ticket queued offline: ${ticket.transactionId}");
+  }
+
+  // --- NEW METHOD (For the Cashier Ledger fallback) ---
+  Future<void> saveOfflineTicket(Map<String, dynamic> ticketData) async {
+    final ticket = PendingTicket(
+      transactionId: ticketData['transaction_ref'],
+      endpoint: 'CASHIER_SUBMISSION', // Identifier flag
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      ticketDataJson: jsonEncode(ticketData),
+    );
+    await enqueueTicket(ticket);
   }
 
   void startBackgroundSync() {
@@ -69,22 +87,42 @@ class SyncManager {
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
       for (var ticket in pendingTickets) {
-        // Attempt to verify via the existing ApiService
-        VerificationResult result = await ApiService.verifyTransaction(
-          ticket.transactionId,
-          ticket.endpoint,
-        );
+        
+        // Scenario A: It's a full ticket submission for the Cashier
+        if (ticket.endpoint == 'CASHIER_SUBMISSION' && ticket.ticketDataJson != null) {
+           try {
+             final data = jsonDecode(ticket.ticketDataJson!);
+             await ApiService.submitVerifiedTicket(
+               transactionId: data['transaction_ref'],
+               amount: data['bill_amount'].toString(),
+               bankName: data['bank']
+             );
+             // If the above line succeeds, delete it from the offline queue
+             debugPrint("Offline Cashier Ticket synced successfully: ${ticket.transactionId}");
+             await ticket.delete();
+           } catch (e) {
+             // Network failed during sync, keep it in the queue for the next timer cycle
+             break; 
+           }
+        } 
+        
+        // Scenario B: It's a standard verification
+        else {
+          VerificationResult result = await ApiService.verifyTransaction(
+            ticket.transactionId,
+            ticket.endpoint,
+          );
 
-        if (result.isSuccess) {
-          debugPrint("Offline ticket synced successfully: ${ticket.transactionId}");
-          await ticket.delete(); 
-        } else if (result.errorMessage != null && !result.errorMessage!.contains('Network Error')) {
-          // If it failed for a hard reason (e.g., invalid ID, already used), remove it so it doesn't block the queue
-          debugPrint("Offline ticket rejected by server: ${ticket.transactionId}. Removing from queue.");
-          await ticket.delete();
-        } else {
-          // Network error persists, break loop and try next cycle
-          break;
+          if (result.isSuccess) {
+            debugPrint("Offline ticket synced successfully: ${ticket.transactionId}");
+            await ticket.delete(); 
+          } else if (result.errorMessage != null && !result.errorMessage!.contains('Network Error')) {
+            debugPrint("Offline ticket rejected by server: ${ticket.transactionId}. Removing from queue.");
+            await ticket.delete();
+          } else {
+            // Network error persists, break loop and try next cycle
+            break;
+          }
         }
       }
     } catch (e) {

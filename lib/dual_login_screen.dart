@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
+import 'localization_service.dart';
 import 'api_service.dart';
 import 'admin_dashboard.dart';
 import 'waiter_dashboard.dart'; 
@@ -14,41 +16,34 @@ class DualLoginScreen extends StatefulWidget {
 }
 
 class _DualLoginScreenState extends State<DualLoginScreen> {
-  bool _isPinMode = true; 
+  bool _isStaffMode = true; // The Double Face Toggle is back
   bool _isLoading = false;
   String? _errorMessage;
 
-  final _pinController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  // ... (Keep your _handlePinLogin, _handlePhoneLogin, and _routeUser functions exactly the same as before) ...
-  Future<void> _handlePinLogin() async {
-    if (_pinController.text.isEmpty) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
-    try {
-      final sessionData = await ApiService.loginWithPin(_pinController.text.trim());
-      if (sessionData == null) {
-        setState(() => _errorMessage = "Invalid Access Code or Inactive Account.");
-        return;
-      }
-      _routeUser(ApiService.currentUserRole!);
-    } catch (e) {
-      setState(() => _errorMessage = "Connection Error.");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _handlePhoneLogin() async {
+  Future<void> _handleLogin() async {
     if (_phoneController.text.isEmpty || _passwordController.text.isEmpty) return;
     setState(() { _isLoading = true; _errorMessage = null; });
+    
     try {
       final role = await ApiService.loginWithPhone(_phoneController.text.trim(), _passwordController.text.trim());
+      
       if (role == null) {
-        setState(() => _errorMessage = "Invalid Credentials.");
+        setState(() => _errorMessage = "Invalid Credentials or Inactive Account.");
         return;
       }
+      
+      // UX Check: Prevent Waiters from logging into the Management face, and vice versa
+      if (_isStaffMode && (role == 'admin' || role == 'super_admin')) {
+        setState(() => _errorMessage = "Please switch to Management Portal.");
+        return;
+      } else if (!_isStaffMode && (role == 'waiter' || role == 'cashier')) {
+        setState(() => _errorMessage = "Please switch to Staff Terminal.");
+        return;
+      }
+
       _routeUser(role);
     } catch (e) {
       setState(() => _errorMessage = "Connection Error.");
@@ -63,15 +58,26 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
     switch (role) {
       case 'super_admin': destination = const SuperAdminDashboard(); break;
       case 'admin': destination = const AdminDashboard(); break;
-      case 'cashier': destination = CashierDashboard(); break;
-      case 'waiter': destination = WaiterDashboard(); break;
+      case 'cashier': destination = const CashierDashboard(); break;
+      case 'waiter': destination = const WaiterDashboard(); break;
       default: return;
     }
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => destination));
   }
 
+  void _toggleMode() {
+    setState(() {
+      _isStaffMode = !_isStaffMode;
+      _errorMessage = null;
+      _phoneController.clear();
+      _passwordController.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final loc = Provider.of<LocalizationService>(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFF020617),
       body: SafeArea(
@@ -81,50 +87,47 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Animated Logo
+              Align(
+                alignment: Alignment.topRight,
+                child: TextButton(
+                  onPressed: () => loc.toggleLanguage(),
+                  child: Text(loc.translate('switch_lang'), style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                ),
+              ),
+              const Spacer(),
+              
               const Icon(Icons.verified_user_rounded, size: 80, color: Color(0xFF6366F1))
-                  .animate()
-                  .scale(duration: 600.ms, curve: Curves.easeOutBack)
-                  .fadeIn(duration: 600.ms),
-              
+                  .animate().scale(duration: 600.ms, curve: Curves.easeOutBack).fadeIn(duration: 600.ms),
               const SizedBox(height: 24),
-              
               const Text('VERIFY-ME', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 4))
-                  .animate()
-                  .fadeIn(delay: 200.ms, duration: 500.ms)
-                  .slideY(begin: 0.2, end: 0),
-                  
+                  .animate().fadeIn(delay: 200.ms, duration: 500.ms).slideY(begin: 0.2, end: 0),
               const SizedBox(height: 48),
 
               if (_errorMessage != null) ...[
                 Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))
-                    .animate()
-                    .shakeX(duration: 300.ms),
+                    .animate().shakeX(duration: 300.ms),
                 const SizedBox(height: 16),
               ],
 
-              // Animated Form Switcher
+              // The Double Face Animated Switcher
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 400),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
-                child: _isPinMode ? _buildPinForm() : _buildPhoneForm(),
+                child: _isStaffMode ? _buildStaffForm(loc) : _buildManagementForm(loc),
               ),
 
               const SizedBox(height: 32),
               
               TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isPinMode = !_isPinMode;
-                    _errorMessage = null;
-                  });
-                },
+                onPressed: _toggleMode,
                 child: Text(
-                  _isPinMode ? 'Secure Admin Login' : 'Switch to Staff PIN',
+                  _isStaffMode ? 'Switch to Management Portal' : 'Switch to Staff Terminal',
                   style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold),
                 ),
-              ).animate().fadeIn(delay: 600.ms, duration: 400.ms)
+              ).animate().fadeIn(delay: 600.ms, duration: 400.ms),
+              
+              const Spacer(),
             ],
           ),
         ),
@@ -132,73 +135,73 @@ class _DualLoginScreenState extends State<DualLoginScreen> {
     );
   }
 
-  Widget _buildPinForm() {
+  Widget _buildStaffForm(LocalizationService loc) {
     return Column(
-      key: const ValueKey('pin'),
+      key: const ValueKey('staff_face'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('ENTER FLOOR ACCESS CODE', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const Text('STAFF FLOOR TERMINAL', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF10B981), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 16),
         TextField(
-          controller: _pinController,
-          obscureText: true,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
-          decoration: _inputDecoration(),
-          onSubmitted: (_) => _handlePinLogin(),
+          controller: _phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration(const Color(0xFF10B981)).copyWith(hintText: loc.translate('phone_hint')),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _passwordController, obscureText: true, style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration(const Color(0xFF10B981)).copyWith(hintText: loc.translate('password_hint')),
+          onSubmitted: (_) => _handleLogin(),
         ),
         const SizedBox(height: 24),
-        _buildSubmitButton('ACCESS TERMINAL', _handlePinLogin),
+        _buildSubmitButton(loc.translate('authenticate'), const Color(0xFF10B981)),
       ],
     ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0);
   }
 
-  Widget _buildPhoneForm() {
+  Widget _buildManagementForm(LocalizationService loc) {
     return Column(
-      key: const ValueKey('phone'),
+      key: const ValueKey('management_face'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('MANAGEMENT PORTAL', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const Text('MANAGEMENT PORTAL', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 16),
         TextField(
-          controller: _phoneController,
-          style: const TextStyle(color: Colors.white),
-          decoration: _inputDecoration().copyWith(hintText: 'Phone Number', hintStyle: const TextStyle(color: Colors.white30)),
+          controller: _phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration(const Color(0xFFF59E0B)).copyWith(hintText: loc.translate('phone_hint')),
         ),
         const SizedBox(height: 16),
         TextField(
-          controller: _passwordController,
-          obscureText: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: _inputDecoration().copyWith(hintText: 'Password', hintStyle: const TextStyle(color: Colors.white30)),
-          onSubmitted: (_) => _handlePhoneLogin(),
+          controller: _passwordController, obscureText: true, style: const TextStyle(color: Colors.white),
+          decoration: _inputDecoration(const Color(0xFFF59E0B)).copyWith(hintText: loc.translate('password_hint')),
+          onSubmitted: (_) => _handleLogin(),
         ),
         const SizedBox(height: 24),
-        _buildSubmitButton('SECURE LOGIN', _handlePhoneLogin),
+        _buildSubmitButton(loc.translate('secure_login'), const Color(0xFFF59E0B)),
       ],
     ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0);
   }
 
-  InputDecoration _inputDecoration() {
+  InputDecoration _inputDecoration(Color accentColor) {
     return InputDecoration(
-      filled: true,
-      fillColor: const Color(0xFF0F172A),
+      filled: true, fillColor: const Color(0xFF0F172A),
+      prefixIcon: Icon(Icons.lock_outline, color: accentColor),
+      hintStyle: const TextStyle(color: Colors.white30),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
       contentPadding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
     );
   }
 
-  Widget _buildSubmitButton(String label, VoidCallback onPressed) {
+  Widget _buildSubmitButton(String label, Color btnColor) {
     return ElevatedButton(
-      onPressed: _isLoading ? null : onPressed,
+      onPressed: _isLoading ? null : _handleLogin,
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF6366F1),
+        backgroundColor: btnColor,
         padding: const EdgeInsets.symmetric(vertical: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       child: _isLoading 
           ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-          : Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+          : Text(label, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
     );
   }
 }

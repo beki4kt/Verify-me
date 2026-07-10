@@ -5,30 +5,52 @@ import 'dual_login_screen.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
   const SuperAdminDashboard({super.key});
+  
   @override
   State<SuperAdminDashboard> createState() => _SuperAdminDashboardState();
 }
 
 class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
-  // --- EXISTING CREATION SHEET ---
+  late final Stream<List<Map<String, dynamic>>> _businessesStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _businessesStream = ApiService.streamAllBusinesses();
+  }
+
+  // --- UPDATED CREATION SHEET ---
   void _showProvisioningSheet() {
-    final bName = TextEditingController(); final bTier = TextEditingController(text: 'pro'); final bMaxStaff = TextEditingController(text: '10');
-    final aName = TextEditingController(); final aPhone = TextEditingController(); final aPassword = TextEditingController(); final aPin = TextEditingController();
+    final bName = TextEditingController(); 
+    final bTier = TextEditingController(text: 'pro'); 
+    final bMaxStaff = TextEditingController(text: '6');
+    bool hasCashierModule = true; // Default for Pro
+    
+    final aName = TextEditingController(); 
+    final aPhone = TextEditingController(); 
+    final aPassword = TextEditingController(); 
+    final aPin = TextEditingController();
     bool isSubmitting = false;
 
     showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
+      context: context, 
+      isScrollControlled: true, 
+      backgroundColor: const Color(0xFF0F172A),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 32),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24, 
+                left: 24, right: 24, top: 32
+              ),
               child: SingleChildScrollView(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min, 
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('PROVISION NEW RESTAURANT', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
+                    const Text('PROVISION NEW TENANT', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
                     const SizedBox(height: 16),
                     TextField(controller: bName, style: const TextStyle(color: Colors.white), decoration: _inputDeco('BUSINESS NAME')),
                     const SizedBox(height: 12),
@@ -38,6 +60,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                         const SizedBox(width: 12),
                         Expanded(child: TextField(controller: bMaxStaff, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: _inputDeco('STAFF LIMIT'))),
                       ],
+                    ),
+                    const SizedBox(height: 16),
+                    // NEW: Cashier Module Toggle
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Enable Cashier Dashboard', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+                          Switch.adaptive(
+                            value: hasCashierModule,
+                            activeTrackColor: const Color(0xFFF59E0B),
+                            onChanged: (val) => setSheetState(() => hasCashierModule = val),
+                          )
+                        ],
+                      ),
                     ),
                     const Divider(color: Colors.white24, height: 48),
                     const Text('MASTER ADMIN CREDENTIALS', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
@@ -60,8 +99,14 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                         setSheetState(() => isSubmitting = true);
                         try {
                           await ApiService.provisionNewBusiness(
-                            businessName: bName.text.trim(), packageTier: bTier.text.trim(), maxStaff: int.tryParse(bMaxStaff.text.trim()) ?? 5,
-                            adminName: aName.text.trim(), adminPhone: aPhone.text.trim(), adminPassword: aPassword.text.trim(), adminPin: aPin.text.trim(),
+                            businessName: bName.text.trim(), 
+                            packageTier: bTier.text.trim(), 
+                            maxStaff: int.tryParse(bMaxStaff.text.trim()) ?? 2,
+                            hasCashier: hasCashierModule, // Pass the flag
+                            adminName: aName.text.trim(), 
+                            adminPhone: aPhone.text.trim(), 
+                            adminPassword: aPassword.text.trim(), 
+                            adminPin: aPin.text.trim(),
                           );
                           if (mounted) Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tenant Created Successfully'), backgroundColor: Colors.green));
@@ -84,23 +129,30 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     );
   }
 
-  // --- NEW: MANAGEMENT SHEET ---
+  // --- UPDATED: MANAGEMENT SHEET ---
   void _showManageBusinessSheet(Map<String, dynamic> business) {
     final bName = TextEditingController(text: business['name']);
     final bTier = TextEditingController(text: business['package_tier']);
     final bMaxStaff = TextEditingController(text: business['max_staff_limit'].toString());
+    bool hasCashierModule = business['has_cashier_module'] ?? false;
     bool isSubmitting = false;
 
     showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
+      context: context, 
+      isScrollControlled: true, 
+      backgroundColor: const Color(0xFF0F172A),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 32),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24, 
+                left: 24, right: 24, top: 32
+              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min, 
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text('MANAGE TENANT CONFIGURATION', style: TextStyle(color: Color(0xFF3B82F6), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
                   const SizedBox(height: 24),
@@ -108,17 +160,33 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      Expanded(child: TextField(controller: bTier, style: const TextStyle(color: Colors.white), decoration: _inputDeco('TIER (starter/pro/enterprise)'))),
+                      Expanded(child: TextField(controller: bTier, style: const TextStyle(color: Colors.white), decoration: _inputDeco('TIER (starter/pro)'))),
                       const SizedBox(width: 12),
                       Expanded(child: TextField(controller: bMaxStaff, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: _inputDeco('MAX STAFF SEATS'))),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Enable Cashier Dashboard', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+                        Switch.adaptive(
+                          value: hasCashierModule,
+                          activeTrackColor: const Color(0xFF3B82F6),
+                          onChanged: (val) => setSheetState(() => hasCashierModule = val),
+                        )
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 32),
                   ElevatedButton(
                     onPressed: isSubmitting ? null : () async {
                       setSheetState(() => isSubmitting = true);
                       try {
-                        await ApiService.updateBusinessDetails(business['business_id'], bName.text.trim(), bTier.text.trim(), int.parse(bMaxStaff.text.trim()));
+                        await ApiService.updateBusinessDetails(business['business_id'], bName.text.trim(), bTier.text.trim(), int.parse(bMaxStaff.text.trim()), hasCashierModule);
                         if (mounted) Navigator.pop(context);
                       } catch (e) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
@@ -168,7 +236,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                   ElevatedButton.icon(
                     onPressed: _showProvisioningSheet,
                     icon: const Icon(Icons.add_business, color: Colors.black),
-                    label: const Text('PROVISION NEW RESTAURANT', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                    label: const Text('PROVISION NEW TENANT', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), padding: const EdgeInsets.symmetric(vertical: 24), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                   ).animate().scale(delay: 200.ms, duration: 400.ms, curve: Curves.easeOutCubic),
                   const SizedBox(height: 32),
@@ -179,9 +247,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
           ),
           
           StreamBuilder<List<Map<String, dynamic>>>(
-            stream: ApiService.streamAllBusinesses(),
+            stream: _businessesStream,
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
+              if (snapshot.connectionState == ConnectionState.waiting) return const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())));
               if (!snapshot.hasData || snapshot.data!.isEmpty) return const SliverToBoxAdapter(child: Center(child: Text('No active tenants.', style: TextStyle(color: Colors.white30))));
 
               return SliverList(
@@ -191,6 +259,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     final bId = business['business_id'].toString();
                     final bName = business['name'].toString();
                     final isActive = business['is_active'] as bool? ?? true;
+                    final hasCashier = business['has_cashier_module'] as bool? ?? false;
                     final tier = business['package_tier'].toString().toUpperCase();
 
                     return GestureDetector(
@@ -209,17 +278,20 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                                 children: [
                                   Text(bName, style: TextStyle(color: isActive ? Colors.white : Colors.white38, fontWeight: FontWeight.bold, fontSize: 16)),
                                   const SizedBox(height: 4),
-                                  Text('TIER: $tier | LIMIT: ${business['max_staff_limit']}', style: const TextStyle(color: Color(0xFF64748B), fontSize: 10, fontWeight: FontWeight.bold)),
+                                  Text('TIER: $tier | SEATS: ${business['max_staff_limit']} | CASHIER: ${hasCashier ? "ON" : "OFF"}', 
+                                    style: const TextStyle(color: Color(0xFF64748B), fontSize: 10, fontWeight: FontWeight.bold)
+                                  ),
                                 ],
                               ),
                             ),
                             Switch.adaptive(
-                              value: isActive, activeTrackColor: const Color(0xFF3B82F6),
+                              value: isActive, 
+                              activeTrackColor: const Color(0xFF3B82F6),
                               onChanged: (val) async => await ApiService.toggleBusinessStatus(bId, isActive),
                             )
                           ],
                         ),
-                      ).animate().fadeIn(delay: (100 * index).ms, duration: 400.ms).slideX(begin: 0.1, end: 0, delay: (100 * index).ms, curve: Curves.easeOutQuad),
+                      ).animate().fadeIn(delay: (50 * index).ms, duration: 400.ms).slideX(begin: 0.1, end: 0, delay: (50 * index).ms, curve: Curves.easeOutQuad),
                     );
                   },
                   childCount: snapshot.data!.length,

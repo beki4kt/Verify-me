@@ -20,19 +20,22 @@ class PendingTicketAdapter extends TypeAdapter<PendingTicket> {
       transactionId: fields[0] as String,
       endpoint: fields[1] as String,
       timestamp: fields[2] as int,
+      ticketDataJson: fields[3] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, PendingTicket obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(4)
       ..writeByte(0)
       ..write(obj.transactionId)
       ..writeByte(1)
       ..write(obj.endpoint)
       ..writeByte(2)
-      ..write(obj.timestamp);
+      ..write(obj.timestamp)
+      ..writeByte(3)
+      ..write(obj.ticketDataJson);
   }
 
   @override
