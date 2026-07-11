@@ -14,17 +14,18 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   late final Stream<List<Map<String, dynamic>>> _ticketsStream;
   late final Stream<List<Map<String, dynamic>>> _staffStream;
+  late final Stream<Map<String, dynamic>> _businessStream;
   
-  String _selectedTimeRange = 'Today'; // Time filter state
+  String _selectedTimeRange = 'Today';
 
   @override
   void initState() {
     super.initState();
     _ticketsStream = ApiService.streamTodayTickets();
     _staffStream = ApiService.streamStaffRoster();
+    _businessStream = ApiService.streamCurrentBusiness();
   }
 
-  // --- THE UX GATE: Dynamic Roles ---
   List<DropdownMenuItem<String>> _getAvailableRoles() {
     List<DropdownMenuItem<String>> roles = [
       const DropdownMenuItem(value: 'waiter', child: Text('Waiter')),
@@ -40,19 +41,92 @@ class _AdminDashboardState extends State<AdminDashboard> {
     if (bank.toLowerCase().contains('telebirr')) return const Color(0xFF0EA5E9);
     if (bank.toLowerCase().contains('cbe')) return const Color(0xFFA855F7);
     if (bank.toLowerCase().contains('dashen')) return const Color(0xFFF59E0B);
-    if (bank.toLowerCase().contains('abyssinia')) return const Color(0xFFEAB308);
-    if (bank.toLowerCase().contains('m-pesa')) return const Color(0xFF22C55E);
     return const Color(0xFF64748B);
   }
 
-  // --- STAFF PROVISIONING (Bulletproof) ---
+  // --- NEW: BANK ACCOUNT CONFIGURATION SHEET ---
+  void _showBankConfigSheet(Map<String, dynamic> currentAccounts) {
+    final tNum = TextEditingController(text: currentAccounts['telebirr_number'] ?? '');
+    final tName = TextEditingController(text: currentAccounts['telebirr_name'] ?? '');
+    final cNum = TextEditingController(text: currentAccounts['cbe_number'] ?? '');
+    final cName = TextEditingController(text: currentAccounts['cbe_name'] ?? '');
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 32),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('OFFICIAL BANK ACCOUNTS', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
+                    const SizedBox(height: 8),
+                    const Text('Scanned receipts will be cross-referenced against these exact details to prevent fraud.', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
+                    const SizedBox(height: 24),
+                    
+                    // Telebirr Section
+                    const Text('TELEBIRR', style: TextStyle(color: Color(0xFF0EA5E9), fontWeight: FontWeight.bold, fontSize: 12)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: tNum, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ACCOUNT NUMBER', Icons.numbers))),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextField(controller: tName, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('MERCHANT NAME', Icons.person))),
+                      ],
+                    ),
+                    const Divider(color: Colors.white10, height: 32, thickness: 2),
+
+                    // CBE Section
+                    const Text('CBE / CBE BIRR', style: TextStyle(color: Color(0xFFA855F7), fontWeight: FontWeight.bold, fontSize: 12)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: cNum, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ACCOUNT NUMBER', Icons.numbers))),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextField(controller: cName, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('MERCHANT NAME', Icons.person))),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 32),
+                    ElevatedButton(
+                      onPressed: isSubmitting ? null : () async {
+                        setSheetState(() => isSubmitting = true);
+                        try {
+                          await ApiService.updateBankAccounts({
+                            'telebirr_number': tNum.text.trim(), 'telebirr_name': tName.text.trim(),
+                            'cbe_number': cNum.text.trim(), 'cbe_name': cName.text.trim(),
+                          });
+                          if (context.mounted) Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bank Details Locked.'), backgroundColor: Color(0xFF10B981)));
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent));
+                        } finally {
+                          setSheetState(() => isSubmitting = false);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                      child: isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SAVE BANK DETAILS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- STAFF PROVISIONING (Unchanged) ---
   void _showAddStaffSheet() {
-    final _pinController = TextEditingController();
-    final _nameController = TextEditingController();
-    final _phoneController = TextEditingController();
-    final _passwordController = TextEditingController();
-    String _selectedRole = 'waiter';
-    bool _isSubmitting = false;
+    final _pinController = TextEditingController(); final _nameController = TextEditingController();
+    final _phoneController = TextEditingController(); final _passwordController = TextEditingController();
+    String _selectedRole = 'waiter'; bool _isSubmitting = false;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -83,8 +157,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     DropdownButtonFormField<String>(
                       value: _selectedRole, dropdownColor: const Color(0xFF0F172A),
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      decoration: _buildInputDecoration('SYSTEM ROLE', Icons.work),
-                      items: _getAvailableRoles(),
+                      decoration: _buildInputDecoration('SYSTEM ROLE', Icons.work), items: _getAvailableRoles(),
                       onChanged: (val) => setSheetState(() => _selectedRole = val!),
                     ),
                     const SizedBox(height: 32),
@@ -93,10 +166,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         if (_nameController.text.isEmpty || _pinController.text.length < 4 || _phoneController.text.isEmpty || _passwordController.text.isEmpty) return;
                         setSheetState(() => _isSubmitting = true);
                         try {
-                          await ApiService.createStaffMember(
-                            pin: _pinController.text.trim(), name: _nameController.text.trim(),
-                            phone: _phoneController.text.trim(), password: _passwordController.text.trim(), role: _selectedRole,
-                          );
+                          await ApiService.createStaffMember(pin: _pinController.text.trim(), name: _nameController.text.trim(), phone: _phoneController.text.trim(), password: _passwordController.text.trim(), role: _selectedRole);
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: Colors.redAccent));
@@ -106,72 +176,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                       child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SAVE USER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
-                    )
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _showEditStaffSheet(Map<String, dynamic> staffMember) {
-    final _nameController = TextEditingController(text: staffMember['name']?.toString() ?? '');
-    final _phoneController = TextEditingController(text: staffMember['phone_number']?.toString() ?? '');
-    final _passwordController = TextEditingController(text: staffMember['password']?.toString() ?? '');
-    String _selectedRole = staffMember['role'];
-    
-    if (_selectedRole == 'cashier' && ApiService.currentBusinessHasCashier != true) _selectedRole = 'waiter'; 
-    bool _isSubmitting = false;
-
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 32),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('MANAGE STAFF: ${staffMember['staff_number']}', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
-                    const SizedBox(height: 24),
-                    TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
-                    const SizedBox(height: 16),
-                    TextField(controller: _phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
-                    const SizedBox(height: 16),
-                    TextField(controller: _passwordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock)),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: _selectedRole, dropdownColor: const Color(0xFF0F172A),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      decoration: _buildInputDecoration('SYSTEM ROLE', Icons.work),
-                      items: _getAvailableRoles(), 
-                      onChanged: (val) => setSheetState(() => _selectedRole = val!),
-                    ),
-                    const SizedBox(height: 32),
-                    ElevatedButton(
-                      onPressed: _isSubmitting ? null : () async {
-                        if (_nameController.text.isEmpty || _phoneController.text.isEmpty || _passwordController.text.isEmpty) return;
-                        setSheetState(() => _isSubmitting = true);
-                        try {
-                          await ApiService.updateStaffProfile(
-                            staffMember['staff_number'].toString(), _nameController.text.trim(),
-                            _phoneController.text.trim(), _passwordController.text.trim(), _selectedRole
-                          );
-                          if (context.mounted) Navigator.pop(context);
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent));
-                        } finally {
-                          setSheetState(() => _isSubmitting = false);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                      child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('UPDATE STAFF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                     )
                   ],
                 ),
@@ -205,7 +209,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
             Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DualLoginScreen()));
           }
         ),
-        actions: [IconButton(icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF6366F1)), onPressed: _showAddStaffSheet)],
+        actions: [
+          StreamBuilder<Map<String, dynamic>>(
+            stream: _businessStream,
+            builder: (context, snapshot) {
+              final accounts = snapshot.data?['bank_accounts'] ?? {};
+              return IconButton(
+                icon: Icon(Icons.account_balance, color: accounts.isEmpty ? Colors.redAccent : const Color(0xFF10B981)), 
+                onPressed: () => _showBankConfigSheet(accounts)
+              );
+            }
+          ),
+          IconButton(icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF6366F1)), onPressed: _showAddStaffSheet)
+        ],
       ),
       body: CustomScrollView(
         slivers: [
@@ -223,8 +239,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       child: GestureDetector(
                         onTap: () => setState(() => _selectedTimeRange = range),
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(color: isSelected ? const Color(0xFF6366F1) : Colors.transparent, borderRadius: BorderRadius.circular(8)),
                           child: Center(child: Text(range.toUpperCase(), style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF64748B), fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1))),
                         ),
@@ -236,22 +251,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ).animate().fadeIn(duration: 400.ms),
           ),
 
-          // FINANCIAL ANALYTICS & BANK BREAKDOWN
+          // FINANCIAL ANALYTICS
           SliverToBoxAdapter(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _ticketsStream,
               builder: (context, snapshot) {
-                double totalRevenue = 0;
-                int pendingCount = 0;
-                Map<String, double> bankTotals = {}; // Tracks deposits per bank
+                double totalRevenue = 0; int pendingCount = 0;
+                Map<String, double> bankTotals = {}; 
 
                 if (snapshot.hasData) {
                   for (var ticket in snapshot.data!) {
-                    // Note: This operates on the live stream. In the future, we will fetch historical data when Weekly/Monthly is tapped.
                     if (ticket['status'] == 'settled') {
                       double amount = (ticket['bill_amount'] ?? 0).toDouble();
                       totalRevenue += amount;
-                      
                       String bankName = ticket['bank'] ?? 'Unknown';
                       bankTotals[bankName] = (bankTotals[bankName] ?? 0) + amount;
                     } else if (ticket['status'] == 'pending') {
@@ -273,20 +285,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         ],
                       ),
                       const SizedBox(height: 24),
-                      
-                      // THE BANK SETTLEMENT BREAKDOWN
                       const Text('BANK DEPOSIT BREAKDOWN', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5)),
                       const SizedBox(height: 16),
                       if (bankTotals.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(24)),
-                          child: const Center(child: Text('No verified transactions yet.', style: TextStyle(color: Color(0xFF64748B)))),
-                        )
+                        Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(24)), child: const Center(child: Text('No verified transactions yet.', style: TextStyle(color: Color(0xFF64748B)))))
                       else
                         Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(24)),
+                          padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(24)),
                           child: Column(
                             children: bankTotals.entries.map((entry) {
                               Color bColor = _getBankColor(entry.key);
@@ -312,121 +317,68 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ),
 
-          // SaaS Usage UI
-          SliverToBoxAdapter(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _staffStream,
-              builder: (context, snapshot) {
-                int activeStaffCount = snapshot.hasData ? snapshot.data!.length : 0;
-                int maxLimit = ApiService.currentBusinessMaxStaff ?? 5;
-                double capacity = activeStaffCount / maxLimit;
-                
-                return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('LICENSE USAGE', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5)),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(20)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('Staff Seats Provisioned', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                Text('$activeStaffCount / $maxLimit', style: TextStyle(color: capacity >= 1.0 ? Colors.redAccent : const Color(0xFF10B981), fontWeight: FontWeight.w900)),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            LinearProgressIndicator(
-                              value: capacity.clamp(0.0, 1.0), backgroundColor: const Color(0xFF020617),
-                              color: capacity >= 1.0 ? Colors.redAccent : const Color(0xFF10B981),
-                              minHeight: 8, borderRadius: BorderRadius.circular(4),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ).animate().fadeIn(delay: 200.ms);
-              },
-            ),
-          ),
-
-          // Team Directory
+          // THE MASTER TRANSACTION LEDGER
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Text('TEAM DIRECTORY (TAP TO EDIT)', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5)),
+              child: Text('MASTER TRANSACTION LEDGER', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5)),
             ),
           ),
 
           StreamBuilder<List<Map<String, dynamic>>>(
-            stream: _staffStream,
+            stream: _ticketsStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) return const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(32.0), child: CircularProgressIndicator(color: Color(0xFF6366F1)))));
-              if (!snapshot.hasData || snapshot.data!.isEmpty) return const SliverToBoxAdapter(child: Center(child: Text('No staff members registered.', style: TextStyle(color: Colors.white30))));
+              if (!snapshot.hasData || snapshot.data!.isEmpty) return const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(24.0), child: Text('Ledger is clear.', style: TextStyle(color: Colors.white30)))));
 
               return SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final member = snapshot.data![index];
-                    final pin = member['staff_number'].toString();
-                    final name = member['name'].toString();
-                    final role = member['role'].toString().toUpperCase();
-                    final phone = member['phone_number']?.toString() ?? 'No Phone';
-                    final isActive = member['is_active'] as bool? ?? true;
+                    final ticket = snapshot.data![index];
+                    final isSettled = ticket['status'] == 'settled';
+                    final isRejected = ticket['status'] == 'rejected';
+                    final bankColor = _getBankColor(ticket['bank'] ?? '');
+                    final statusColor = isSettled ? const Color(0xFF10B981) : (isRejected ? Colors.redAccent : const Color(0xFFF59E0B));
 
-                    return GestureDetector(
-                      onTap: () => _showEditStaffSheet(member),
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white10)),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              backgroundColor: isActive ? const Color(0xFF6366F1).withValues(alpha: 0.1) : Colors.black12,
-                              child: Icon(Icons.person, color: isActive ? const Color(0xFF6366F1) : Colors.white24),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Text(name, style: TextStyle(color: isActive ? Colors.white : Colors.white38, fontWeight: FontWeight.bold, fontSize: 16)),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(8)),
-                                        child: Text(role, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1)),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(phone, style: const TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
+                                  Icon(Icons.receipt_long, color: statusColor, size: 16),
+                                  const SizedBox(width: 8),
+                                  Text('${ticket['bill_amount']} ETB', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                                 ],
                               ),
-                            ),
-                            Switch.adaptive(
-                              value: isActive, activeTrackColor: const Color(0xFF10B981),
-                              onChanged: (val) async => await ApiService.toggleStaffStatus(pin, isActive),
-                            )
-                          ],
-                        ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Text(ticket['bank'] ?? 'N/A', style: TextStyle(color: bankColor, fontSize: 10, fontWeight: FontWeight.w900)),
+                                  const SizedBox(width: 8),
+                                  Text('REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0,8)}', style: const TextStyle(color: Color(0xFF64748B), fontSize: 10)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text('Waiter ID: ${ticket['waiter_id']} | Status: ${ticket['status'].toString().toUpperCase()}', style: const TextStyle(color: Color(0xFF475569), fontSize: 10, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ],
                       ),
-                    ).animate().fadeIn(delay: (50 * index).ms).slideX(begin: 0.1, end: 0, delay: (50 * index).ms);
+                    ).animate().fadeIn(delay: (20 * index).ms).slideX(begin: 0.1, end: 0, delay: (20 * index).ms);
                   },
                   childCount: snapshot.data!.length,
                 ),
               );
             },
-          )
+          ),
+          
+          const SliverToBoxAdapter(child: SizedBox(height: 40)) // Bottom padding
         ],
       ),
     );

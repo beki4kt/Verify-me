@@ -14,6 +14,18 @@ class ApiService {
   static const String baseUrl = "https://verifyapi.leulzenebe.pro";
   static const String apiKey = "sk_live_7ebe516799b67c8a30b6861a4131caca8d1ae6bce7f3a6b9";
 
+  // Streams the current restaurant's settings (including bank accounts)
+  static Stream<Map<String, dynamic>> streamCurrentBusiness() {
+    if (currentBusinessId == null) throw Exception("No session");
+    return _supabase.from('businesses').stream(primaryKey: ['business_id']).eq('business_id', currentBusinessId!).map((list) => list.first);
+  }
+
+  // Saves the Admin's bank configuration
+  static Future<void> updateBankAccounts(Map<String, dynamic> accounts) async {
+    if (currentBusinessId == null) throw Exception("No session");
+    await _supabase.from('businesses').update({'bank_accounts': accounts}).eq('business_id', currentBusinessId!);
+  }
+
   static Future<VerificationResult> verifyTransaction(String transactionId, String endpoint) async {
     try {
       final response = await http.post(
