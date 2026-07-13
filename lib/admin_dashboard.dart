@@ -12,18 +12,25 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
-  late final Stream<List<Map<String, dynamic>>> _ticketsStream;
-  late final Stream<List<Map<String, dynamic>>> _staffStream;
-  late final Stream<Map<String, dynamic>> _businessStream;
+  late Stream<List<Map<String, dynamic>>> _ticketsStream;
+  late Stream<List<Map<String, dynamic>>> _staffStream;
+  late Stream<Map<String, dynamic>> _businessStream;
   
   String _selectedTimeRange = 'Today';
 
   @override
   void initState() {
     super.initState();
-    _ticketsStream = ApiService.streamTodayTickets();
-    _staffStream = ApiService.streamStaffRoster();
-    _businessStream = ApiService.streamCurrentBusiness();
+    _refreshData();
+  }
+
+  // THE REFRESH METHOD
+  void _refreshData() {
+    setState(() {
+      _ticketsStream = ApiService.streamTodayTickets();
+      _staffStream = ApiService.streamStaffRoster();
+      _businessStream = ApiService.streamCurrentBusiness();
+    });
   }
 
   List<DropdownMenuItem<String>> _getAvailableRoles() {
@@ -44,13 +51,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return const Color(0xFF64748B);
   }
 
-  // --- NEW: BANK ACCOUNT CONFIGURATION SHEET ---
   void _showBankConfigSheet(Map<String, dynamic> currentAccounts) {
     final tNum = TextEditingController(text: currentAccounts['telebirr_number'] ?? '');
     final tName = TextEditingController(text: currentAccounts['telebirr_name'] ?? '');
     final cNum = TextEditingController(text: currentAccounts['cbe_number'] ?? '');
     final cName = TextEditingController(text: currentAccounts['cbe_name'] ?? '');
     bool isSubmitting = false;
+    String? _errorText;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -68,8 +75,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     const SizedBox(height: 8),
                     const Text('Scanned receipts will be cross-referenced against these exact details to prevent fraud.', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
                     const SizedBox(height: 24),
-                    
-                    // Telebirr Section
                     const Text('TELEBIRR', style: TextStyle(color: Color(0xFF0EA5E9), fontWeight: FontWeight.bold, fontSize: 12)),
                     const SizedBox(height: 8),
                     Row(
@@ -80,8 +85,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ],
                     ),
                     const Divider(color: Colors.white10, height: 32, thickness: 2),
-
-                    // CBE Section
                     const Text('CBE / CBE BIRR', style: TextStyle(color: Color(0xFFA855F7), fontWeight: FontWeight.bold, fontSize: 12)),
                     const SizedBox(height: 8),
                     Row(
@@ -91,20 +94,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         Expanded(child: TextField(controller: cName, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('MERCHANT NAME', Icons.person))),
                       ],
                     ),
+                    const SizedBox(height: 24),
                     
-                    const SizedBox(height: 32),
+                    if (_errorText != null)
+                      Container(
+                        padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent)),
+                        child: Text(_errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        setSheetState(() => isSubmitting = true);
+                        setSheetState(() { isSubmitting = true; _errorText = null; });
                         try {
                           await ApiService.updateBankAccounts({
                             'telebirr_number': tNum.text.trim(), 'telebirr_name': tName.text.trim(),
                             'cbe_number': cNum.text.trim(), 'cbe_name': cName.text.trim(),
                           });
                           if (context.mounted) Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bank Details Locked.'), backgroundColor: Color(0xFF10B981)));
                         } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent));
+                          setSheetState(() => _errorText = e.toString().replaceAll('Exception: ', ''));
                         } finally {
                           setSheetState(() => isSubmitting = false);
                         }
@@ -122,11 +131,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // --- STAFF PROVISIONING (Unchanged) ---
+  // --- FIXED: ADD STAFF SHEET WITH ERROR UI ---
   void _showAddStaffSheet() {
     final _pinController = TextEditingController(); final _nameController = TextEditingController();
     final _phoneController = TextEditingController(); final _passwordController = TextEditingController();
     String _selectedRole = 'waiter'; bool _isSubmitting = false;
+    String? _errorText;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -160,22 +170,118 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       decoration: _buildInputDecoration('SYSTEM ROLE', Icons.work), items: _getAvailableRoles(),
                       onChanged: (val) => setSheetState(() => _selectedRole = val!),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
+
+                    if (_errorText != null)
+                      Container(
+                        padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent)),
+                        child: Text(_errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+
                     ElevatedButton(
                       onPressed: _isSubmitting ? null : () async {
-                        if (_nameController.text.isEmpty || _pinController.text.length < 4 || _phoneController.text.isEmpty || _passwordController.text.isEmpty) return;
-                        setSheetState(() => _isSubmitting = true);
+                        // FIXED: Display clear validation errors instead of silent return
+                        if (_nameController.text.isEmpty || _phoneController.text.isEmpty || _passwordController.text.isEmpty) {
+                          setSheetState(() => _errorText = 'Please fill out all fields.');
+                          return;
+                        }
+                        if (_pinController.text.length < 4) {
+                          setSheetState(() => _errorText = 'Staff ID must be exactly 4 digits.');
+                          return;
+                        }
+
+                        setSheetState(() { _isSubmitting = true; _errorText = null; });
                         try {
-                          await ApiService.createStaffMember(pin: _pinController.text.trim(), name: _nameController.text.trim(), phone: _phoneController.text.trim(), password: _passwordController.text.trim(), role: _selectedRole);
+                          await ApiService.createStaffMember(
+                            pin: _pinController.text.trim(), name: _nameController.text.trim(), 
+                            phone: _phoneController.text.trim(), password: _passwordController.text.trim(), role: _selectedRole
+                          );
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: Colors.redAccent));
+                          setSheetState(() => _errorText = e.toString().replaceAll('Exception: ', ''));
                         } finally {
                           setSheetState(() => _isSubmitting = false);
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                       child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SAVE USER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditStaffSheet(Map<String, dynamic> staffMember) {
+    final _nameController = TextEditingController(text: staffMember['name']?.toString() ?? '');
+    final _phoneController = TextEditingController(text: staffMember['phone_number']?.toString() ?? '');
+    final _passwordController = TextEditingController(text: staffMember['password']?.toString() ?? '');
+    String _selectedRole = staffMember['role'];
+    if (_selectedRole == 'cashier' && ApiService.currentBusinessHasCashier != true) _selectedRole = 'waiter'; 
+    bool _isSubmitting = false;
+    String? _errorText;
+
+    showModalBottomSheet(
+      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 32),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('MANAGE STAFF: ${staffMember['staff_number']}', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
+                    const SizedBox(height: 24),
+                    TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
+                    const SizedBox(height: 16),
+                    TextField(controller: _phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
+                    const SizedBox(height: 16),
+                    TextField(controller: _passwordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock)),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _selectedRole, dropdownColor: const Color(0xFF0F172A),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      decoration: _buildInputDecoration('SYSTEM ROLE', Icons.work), items: _getAvailableRoles(), 
+                      onChanged: (val) => setSheetState(() => _selectedRole = val!),
+                    ),
+                    const SizedBox(height: 24),
+
+                    if (_errorText != null)
+                      Container(
+                        padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent)),
+                        child: Text(_errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+
+                    ElevatedButton(
+                      onPressed: _isSubmitting ? null : () async {
+                        if (_nameController.text.isEmpty || _phoneController.text.isEmpty || _passwordController.text.isEmpty) {
+                          setSheetState(() => _errorText = 'All fields are required.');
+                          return;
+                        }
+                        setSheetState(() { _isSubmitting = true; _errorText = null; });
+                        try {
+                          await ApiService.updateStaffProfile(
+                            staffMember['staff_number'].toString(), _nameController.text.trim(),
+                            _phoneController.text.trim(), _passwordController.text.trim(), _selectedRole
+                          );
+                          if (context.mounted) Navigator.pop(context);
+                        } catch (e) {
+                          setSheetState(() => _errorText = e.toString().replaceAll('Exception: ', ''));
+                        } finally {
+                          setSheetState(() => _isSubmitting = false);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                      child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('UPDATE STAFF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                     )
                   ],
                 ),
@@ -210,6 +316,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           }
         ),
         actions: [
+          IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _refreshData), // REFRESH BUTTON
           StreamBuilder<Map<String, dynamic>>(
             stream: _businessStream,
             builder: (context, snapshot) {
@@ -225,32 +332,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
       body: CustomScrollView(
         slivers: [
-          // TIME FILTER TOGGLES
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(12)),
-                child: Row(
-                  children: ['Today', 'Weekly', 'Monthly'].map((range) {
-                    bool isSelected = _selectedTimeRange == range;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedTimeRange = range),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(color: isSelected ? const Color(0xFF6366F1) : Colors.transparent, borderRadius: BorderRadius.circular(8)),
-                          child: Center(child: Text(range.toUpperCase(), style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF64748B), fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1))),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ).animate().fadeIn(duration: 400.ms),
-          ),
-
           // FINANCIAL ANALYTICS
           SliverToBoxAdapter(
             child: StreamBuilder<List<Map<String, dynamic>>>(

@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'localization_service.dart';
 import 'api_service.dart';
+import 'dual_login_screen.dart';
 
 class CashierDashboard extends StatefulWidget {
   const CashierDashboard({super.key});
@@ -18,14 +19,21 @@ class _CashierDashboardState extends State<CashierDashboard> {
   String? _selectedTransactionId;
   
   // The Bulletproof Streams
-  late final Stream<List<Map<String, dynamic>>> _ticketsStream;
-  late final Stream<List<Map<String, dynamic>>> _staffStream;
+  late Stream<List<Map<String, dynamic>>> _ticketsStream;
+  late Stream<List<Map<String, dynamic>>> _staffStream;
 
   @override
   void initState() {
     super.initState();
-    _ticketsStream = ApiService.streamTodayTickets();
-    _staffStream = ApiService.streamStaffRoster();
+    _refreshData();
+  }
+
+  // --- REFRESH DATA ENGINE ---
+  void _refreshData() {
+    setState(() {
+      _ticketsStream = ApiService.streamTodayTickets();
+      _staffStream = ApiService.streamStaffRoster();
+    });
   }
 
   Future<void> _assignToWaiter(String waiterId, String waiterName) async {
@@ -113,6 +121,17 @@ class _CashierDashboardState extends State<CashierDashboard> {
             ],
           ).animate().fadeIn(duration: 500.ms),
           leading: IconButton(icon: const Icon(CupertinoIcons.back), onPressed: () => Navigator.pop(context)),
+          actions: [
+            IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _refreshData),
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.redAccent),
+              onPressed: () {
+                ApiService.currentBusinessId = null;
+                ApiService.currentStaffNumber = null;
+                Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DualLoginScreen()));
+              },
+            )
+          ],
           bottom: TabBar(
             indicatorColor: const Color(0xFF10B981), labelColor: const Color(0xFF10B981), unselectedLabelColor: const Color(0xFF64748B),
             tabs: [Tab(text: loc.translate('live_feed')), Tab(text: loc.translate('cleared_ledger'))],
