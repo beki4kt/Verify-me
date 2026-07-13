@@ -139,11 +139,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
-      ParsedReceipt parsedData = ReceiptParser.parse(recognizedText.text, 'Universal / Unknown', '/verify');
+      //  NEW CORRECTED CODE
+      String? extractedId = ReceiptParser.extractTransactionId(recognizedText.text, 'Universal / Unknown');
       
       setState(() => _isExtracting = false);
       if (!mounted) return;
-      _showVerificationSheet(parsedData);
+      _showVerificationSheet(extractedId);
 
     } catch (e) {
       setState(() => _isExtracting = false);
@@ -152,9 +153,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
   }
 
-  void _showVerificationSheet(ParsedReceipt parsedData) {
-    TextEditingController idController = TextEditingController(text: parsedData.transactionId ?? "");
-    String selectedEndpoint = parsedData.endpoint ?? '/verify-telebirr';
+  void _showVerificationSheet(String? transactionId) {
+    TextEditingController idController = TextEditingController(text: transactionId ?? "");
+    String selectedEndpoint = '/verify-telebirr'; // Default fallback
     bool isVerifying = false;
     String? errorText;
 
@@ -332,9 +333,11 @@ class EngineTestScreen extends StatefulWidget {
 }
 class _EngineTestScreenState extends State<EngineTestScreen> {
   final TextEditingController _textController = TextEditingController();
-  ParsedReceipt? _result;
+  
+  //  NEW CORRECTED CODE
+  String? _result;
 
-  void _runParser() => setState(() => _result = ReceiptParser.parse(_textController.text, 'Universal / Unknown', '/verify'));
+  void _runParser() => setState(() => _result = ReceiptParser.extractTransactionId(_textController.text, 'Universal / Unknown'));
 
   @override
   Widget build(BuildContext context) {
@@ -349,14 +352,24 @@ class _EngineTestScreenState extends State<EngineTestScreen> {
             const SizedBox(height: 24),
             if (_result != null)
               Card(
-                color: _result!.isValid ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+                color: Colors.green.withValues(alpha: 0.15),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      Text('Detected Bank: ${_result!.detectedBankName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueAccent)),
-                      const SizedBox(height: 8),
-                      Text('Extracted ID: ${_result!.transactionId ?? 'Not Found'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('Extracted ID: $_result', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ),
+              )
+            else if (_textController.text.isNotEmpty)
+               Card(
+                color: Colors.red.withValues(alpha: 0.15),
+                child: const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Text('Extracted ID: Not Found', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     ],
                   ),
                 ),
