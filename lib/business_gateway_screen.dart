@@ -30,10 +30,22 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
     FocusScope.of(context).unfocus();
 
     try {
+      // --- GOD MODE BYPASS FOR SUPER ADMIN ---
+      if (code == 'MASTER99') {
+        await DeviceStorage.lockDeviceToBusiness('SYSTEM_MASTER', 'GOD MODE TERMINAL', 'MASTER99');
+        final hasVib = await Vibration.hasVibrator();
+        if (hasVib == true) Vibration.vibrate(pattern: [0, 50, 100, 50]);
+        if (mounted) {
+          Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => const StaffLoginScreen()));
+        }
+        return;
+      }
+      // ---------------------------------------
+
       final bizData = await ApiService.verifyBusinessCode(code);
       
       if (bizData != null) {
-        // Lock the device
+        // Lock the device to the database response
         await DeviceStorage.lockDeviceToBusiness(
           bizData['business_id'],
           bizData['name'],

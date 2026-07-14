@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart'; // REQUIRED FOR INPUT FORMATTERS
 import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'dual_login_screen.dart';
@@ -131,7 +132,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // --- FIXED: ADD STAFF SHEET WITH ERROR UI ---
+  // --- ADD STAFF SHEET ---
   void _showAddStaffSheet() {
     final pinController = TextEditingController(); final nameController = TextEditingController();
     final phoneController = TextEditingController(); final passwordController = TextEditingController();
@@ -154,7 +155,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     const SizedBox(height: 24),
                     TextField(controller: nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
                     const SizedBox(height: 16),
-                    TextField(controller: phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
+                    
+                    // FIXED: UI Prefix and 8-Digit Constraint
+                    TextField(
+                      controller: phoneController, 
+                      keyboardType: TextInputType.number, 
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly, 
+                        LengthLimitingTextInputFormatter(8)
+                      ],
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1), 
+                      decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone, prefixText: '+2519 ')
+                    ),
+                    
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -181,9 +194,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        // FIXED: Display clear validation errors instead of silent return
-                        if (nameController.text.isEmpty || phoneController.text.isEmpty || passwordController.text.isEmpty) {
-                          setSheetState(() => errorText = 'Please fill out all fields.');
+                        // FIXED: Ensure exactly 8 digits are entered
+                        if (nameController.text.isEmpty || phoneController.text.length != 8 || passwordController.text.isEmpty) {
+                          setSheetState(() => errorText = 'Please fill out all fields and ensure phone is 8 digits.');
                           return;
                         }
                         if (pinController.text.length < 4) {
@@ -194,8 +207,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         setSheetState(() { isSubmitting = true; errorText = null; });
                         try {
                           await ApiService.createStaffMember(
-                            pin: pinController.text.trim(), name: nameController.text.trim(), 
-                            phone: phoneController.text.trim(), password: passwordController.text.trim(), role: selectedRole
+                            pin: pinController.text.trim(), 
+                            name: nameController.text.trim(), 
+                            phone: '+2519${phoneController.text.trim()}', // FIXED: Safe Concatenation
+                            password: passwordController.text.trim(), 
+                            role: selectedRole
                           );
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
@@ -218,9 +234,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _showEditStaffSheet(Map<String, dynamic> staffMember) {
+    // FIXED: Safely strip the +2519 prefix before displaying in the text field
+    final dbPhone = staffMember['phone_number']?.toString() ?? '';
+    final displayPhone = dbPhone.startsWith('+2519') ? dbPhone.replaceFirst('+2519', '') : dbPhone;
+
     final nameController = TextEditingController(text: staffMember['name']?.toString() ?? '');
-    final phoneController = TextEditingController(text: staffMember['phone_number']?.toString() ?? '');
+    final phoneController = TextEditingController(text: displayPhone);
     final passwordController = TextEditingController(text: staffMember['password']?.toString() ?? '');
+    
     String selectedRole = staffMember['role'];
     if (selectedRole == 'cashier' && ApiService.currentBusinessHasCashier != true) selectedRole = 'waiter'; 
     bool isSubmitting = false;
@@ -242,7 +263,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     const SizedBox(height: 24),
                     TextField(controller: nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
                     const SizedBox(height: 16),
-                    TextField(controller: phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
+                    
+                    // FIXED: Applied formatters here too
+                    TextField(
+                      controller: phoneController, 
+                      keyboardType: TextInputType.number, 
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly, 
+                        LengthLimitingTextInputFormatter(8)
+                      ],
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1), 
+                      decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone, prefixText: '+2519 ')
+                    ),
+                    
                     const SizedBox(height: 16),
                     TextField(controller: passwordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock)),
                     const SizedBox(height: 16),
@@ -263,15 +296,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        if (nameController.text.isEmpty || phoneController.text.isEmpty || passwordController.text.isEmpty) {
-                          setSheetState(() => errorText = 'All fields are required.');
+                        // FIXED: Enforce exactly 8 digits
+                        if (nameController.text.isEmpty || phoneController.text.length != 8 || passwordController.text.isEmpty) {
+                          setSheetState(() => errorText = 'All fields are required and phone must be 8 digits.');
                           return;
                         }
                         setSheetState(() { isSubmitting = true; errorText = null; });
                         try {
                           await ApiService.updateStaffProfile(
-                            staffMember['staff_number'].toString(), nameController.text.trim(),
-                            phoneController.text.trim(), passwordController.text.trim(), selectedRole
+                            staffMember['staff_number'].toString(), 
+                            nameController.text.trim(),
+                            '+2519${phoneController.text.trim()}', // FIXED: Safe Concatenation
+                            passwordController.text.trim(), 
+                            selectedRole
                           );
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
@@ -293,10 +330,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  InputDecoration _buildInputDecoration(String label, IconData icon) {
+  InputDecoration _buildInputDecoration(String label, IconData icon, {String? prefixText}) {
     return InputDecoration(
       labelText: label, labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-      prefixIcon: Icon(icon, color: const Color(0xFF6366F1)), filled: true, fillColor: const Color(0xFF020617),
+      prefixIcon: Icon(icon, color: const Color(0xFF6366F1)), 
+      prefixText: prefixText, 
+      prefixStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1), 
+      filled: true, fillColor: const Color(0xFF020617),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
     );
   }

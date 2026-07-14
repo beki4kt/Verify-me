@@ -177,16 +177,23 @@ class ApiService {
   }
 
   static Future<void> provisionNewBusiness({
-    required String businessName, required String packageTier, required int maxStaff, required bool hasCashier,
+    required String businessName, required String businessCode, required String packageTier, required int maxStaff, required bool hasCashier,
     required String adminName, required String adminPhone, required String adminPassword, required String adminPin,
   }) async {
+    // 1. Check if the Business Code is already taken
+    final codeCheck = await _supabase.from('businesses').select('business_code').eq('business_code', businessCode).maybeSingle();
+    if (codeCheck != null) throw Exception("This Tenant Code is already in use by another restaurant.");
+
+    // 2. Check if Admin Phone/PIN is taken
     final existingCheck = await _supabase.from('staff').select('staff_number').or('staff_number.eq.$adminPin,phone_number.eq.$adminPhone').limit(1).maybeSingle();
     if (existingCheck != null) throw Exception("PIN or Phone Number is already in use.");
 
+    // 3. Create Business WITH the Business Code
     final businessResponse = await _supabase.from('businesses').insert({
-      'name': businessName, 'package_tier': packageTier, 'max_staff_limit': maxStaff, 'has_cashier_module': hasCashier, 'is_active': true,
+      'name': businessName, 'business_code': businessCode, 'package_tier': packageTier, 'max_staff_limit': maxStaff, 'has_cashier_module': hasCashier, 'is_active': true,
     }).select().single();
 
+    // 4. Create Root Admin
     await _supabase.from('staff').insert({
       'staff_number': adminPin, 'business_id': businessResponse['business_id'], 'name': adminName, 
       'phone_number': adminPhone, 'password': adminPassword, 'role': 'admin', 'is_active': true,

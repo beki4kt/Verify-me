@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dual_login_screen.dart';
+import 'api_service.dart';
+import 'business_gateway_screen.dart';
+import 'offline_storage.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
   const SuperAdminDashboard({super.key});
@@ -31,6 +34,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
   void _showCreateTenantSheet() {
     final nameController = TextEditingController();
+    final codeController = TextEditingController(); // NEW: Business Code Controller
     final addressController = TextEditingController();
     final adminPinController = TextEditingController();
     final adminNameController = TextEditingController();
@@ -41,7 +45,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     int staffLimit = 5;
     bool hasCashier = false;
     bool isSubmitting = false;
-    String? errorMessage; // NEW: Holds visible errors
+    String? errorMessage; 
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -60,13 +64,20 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     
                     TextField(controller: nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('RESTAURANT NAME', Icons.business)),
                     const SizedBox(height: 16),
+                    TextField(
+                      controller: codeController, 
+                      textCapitalization: TextCapitalization.characters,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2), 
+                      decoration: _buildInputDecoration('UNIQUE TENANT CODE (e.g. FIESTA)', Icons.vpn_key)
+                    ),
+                    const SizedBox(height: 16),
                     TextField(controller: addressController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('LOCATION', Icons.location_on)),
                     const SizedBox(height: 24),
                     
                     const Text('SAAS TIER', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 10)),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      initialValue: selectedTier, dropdownColor: const Color(0xFF0F172A), style: const TextStyle(color: Colors.white),
+                      value: selectedTier, dropdownColor: const Color(0xFF0F172A), style: const TextStyle(color: Colors.white),
                       decoration: _buildInputDecoration('', Icons.layers),
                       items: const [
                         DropdownMenuItem(value: 'starter', child: Text('Starter (1,500 ETB) - No Cashier')),
@@ -92,12 +103,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                       children: [
                         Expanded(flex: 2, child: TextField(controller: adminPasswordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock))),
                         const SizedBox(width: 12),
-                        Expanded(flex: 1, child: TextField(controller: adminPinController, keyboardType: TextInputType.number, maxLength: 4, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), decoration: _buildInputDecoration('ID', Icons.badge).copyWith(counterText: ""))),
+                        Expanded(flex: 1, child: TextField(controller: adminPinController, keyboardType: TextInputType.number, maxLength: 4, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2), decoration: _buildInputDecoration('ID', Icons.badge).copyWith(counterText: ""))),
                       ],
                     ),
                     const SizedBox(height: 24),
 
-                    // NEW: VISIBLE ERROR BANNER
                     if (errorMessage != null)
                       Container(
                         padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
@@ -107,33 +117,25 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        if (nameController.text.isEmpty || adminPinController.text.length < 4 || adminPasswordController.text.isEmpty) {
-                          setSheetState(() => errorMessage = 'Please fill all fields and use a 4-digit ID.');
+                        if (nameController.text.isEmpty || codeController.text.isEmpty || adminPinController.text.length < 4 || adminPasswordController.text.isEmpty) {
+                          setSheetState(() => errorMessage = 'Please fill all fields, add a code, and use a 4-digit ID.');
                           return;
                         }
                         
                         setSheetState(() { isSubmitting = true; errorMessage = null; });
                         try {
-                          // 1. Create Business
-                          final bizResponse = await Supabase.instance.client.from('businesses').insert({
-                            'name': nameController.text.trim(),
-                            'address': addressController.text.trim(),
-                            'subscription_tier': selectedTier,
-                            'max_staff_limit': staffLimit,
-                            'has_cashier_module': hasCashier,
-                            'is_active': true,
-                          }).select('business_id').single();
-
-                          // 2. Create Root Admin
-                          await Supabase.instance.client.from('staff').insert({
-                            'staff_number': adminPinController.text.trim(),
-                            'business_id': bizResponse['business_id'],
-                            'name': adminNameController.text.trim(),
-                            'phone_number': adminPhoneController.text.trim(),
-                            'password': adminPasswordController.text.trim(),
-                            'role': 'admin',
-                            'is_active': true,
-                          });
+                          // Clean architecture: Delegating to the Service Layer
+                          await ApiService.provisionNewBusiness(
+                            businessName: nameController.text.trim(),
+                            businessCode: codeController.text.trim().toUpperCase(),
+                            packageTier: selectedTier,
+                            maxStaff: staffLimit,
+                            hasCashier: hasCashier,
+                            adminName: adminNameController.text.trim(),
+                            adminPhone: adminPhoneController.text.trim(),
+                            adminPassword: adminPasswordController.text.trim(),
+                            adminPin: adminPinController.text.trim(),
+                          );
 
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
@@ -163,6 +165,17 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     );
   }
 
+  Future<void> _handleLogout() async {
+    ApiService.currentBusinessId = null;
+    ApiService.currentStaffNumber = null;
+    ApiService.currentUserRole = null;
+    await DeviceStorage.clearDeviceLock(); // Clear any god-mode locks
+    
+    if (mounted) {
+      Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => const BusinessGatewayScreen()));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -172,10 +185,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         title: const Text('GOD MODE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)).animate().fadeIn(),
         leading: IconButton(
           icon: const Icon(Icons.logout, color: Colors.redAccent),
-          onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DualLoginScreen())),
+          onPressed: _handleLogout,
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _refreshData), // REFRESH BUTTON
+          IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _refreshData),
           IconButton(icon: const Icon(Icons.add_business, color: Color(0xFF6366F1)), onPressed: _showCreateTenantSheet),
         ],
       ),
@@ -192,6 +205,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
               final biz = snapshot.data![index];
               final isActive = biz['is_active'] as bool? ?? true;
               final isPro = biz['subscription_tier'] == 'pro';
+              final bizCode = biz['business_code'] ?? 'PENDING';
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(20),
@@ -211,7 +225,23 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                         )
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
+                    
+                    // NEW: Display the Business Code for the Admin to see
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF334155))),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.key, color: Color(0xFF6366F1), size: 14),
+                          const SizedBox(width: 8),
+                          Text('CODE: $bizCode', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
                     Text('Location: ${biz['address']}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
                     const SizedBox(height: 16),
                     Row(
