@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart'; // REQUIRED FOR INPUT FORMATTERS
 import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'offline_storage.dart';
@@ -30,10 +31,19 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    final phone = _phoneController.text.trim();
+    final rawPhone = _phoneController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (phone.isEmpty || password.isEmpty) return;
+    if (rawPhone.isEmpty || password.isEmpty) return;
+    
+    // STRICT VALIDATION
+    if (rawPhone.length != 8) {
+      setState(() => _errorMessage = "Please enter exactly 8 digits.");
+      return;
+    }
+
+    // CONCATENATE FOR THE DATABASE
+    final formattedPhone = '+2519$rawPhone';
 
     setState(() {
       _isLoading = true;
@@ -45,7 +55,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     try {
       final role = await ApiService.loginStaffUnderBusiness(
         _lockedBusiness['id']!,
-        phone,
+        formattedPhone, // USING FORMATTED PHONE
         password,
       );
 
@@ -130,14 +140,33 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
+                    // FIXED: Persistent Visual Prefix Lock
                     TextField(
                       controller: _phoneController,
-                      keyboardType: TextInputType.phone,
-                      style: const TextStyle(color: Colors.white),
+                      keyboardType: TextInputType.number, 
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(8), 
+                      ],
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 2),
                       decoration: InputDecoration(
                         labelText: 'PHONE NUMBER',
                         labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-                        prefixIcon: const Icon(Icons.phone, color: Color(0xFF6366F1)),
+                        // THE UPGRADE: A permanent UI block instead of a disappearing hint
+                        prefixIcon: Padding(
+                          padding: const EdgeInsets.only(left: 16.0, right: 8.0),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.phone, color: Color(0xFF6366F1)),
+                              const SizedBox(width: 12),
+                              const Text('+2519', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
+                              const SizedBox(width: 8),
+                              Container(width: 2, height: 24, color: Colors.white10), // A sleek divider line
+                              const SizedBox(width: 12),
+                            ],
+                          ),
+                        ),
                         filled: true, fillColor: const Color(0xFF020617),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                       ),

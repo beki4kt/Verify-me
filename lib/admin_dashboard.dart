@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart'; // REQUIRED FOR INPUT FORMATTERS
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'dual_login_screen.dart';
@@ -16,8 +16,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   late Stream<List<Map<String, dynamic>>> _ticketsStream;
   late Stream<List<Map<String, dynamic>>> _staffStream;
   late Stream<Map<String, dynamic>> _businessStream;
-  
-  final String _selectedTimeRange = 'Today';
 
   @override
   void initState() {
@@ -25,7 +23,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _refreshData();
   }
 
-  // THE REFRESH METHOD
   void _refreshData() {
     setState(() {
       _ticketsStream = ApiService.streamTodayTickets();
@@ -132,7 +129,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // --- ADD STAFF SHEET ---
   void _showAddStaffSheet() {
     final pinController = TextEditingController(); final nameController = TextEditingController();
     final phoneController = TextEditingController(); final passwordController = TextEditingController();
@@ -160,12 +156,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     TextField(
                       controller: phoneController, 
                       keyboardType: TextInputType.number, 
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly, 
-                        LengthLimitingTextInputFormatter(8)
-                      ],
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1), 
-                      decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone, prefixText: '+2519 ')
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2), 
+                      decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone, isPhone: true)
                     ),
                     
                     const SizedBox(height: 16),
@@ -194,7 +187,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        // FIXED: Ensure exactly 8 digits are entered
                         if (nameController.text.isEmpty || phoneController.text.length != 8 || passwordController.text.isEmpty) {
                           setSheetState(() => errorText = 'Please fill out all fields and ensure phone is 8 digits.');
                           return;
@@ -209,7 +201,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           await ApiService.createStaffMember(
                             pin: pinController.text.trim(), 
                             name: nameController.text.trim(), 
-                            phone: '+2519${phoneController.text.trim()}', // FIXED: Safe Concatenation
+                            phone: '+2519${phoneController.text.trim()}', // SAFE CONCATENATION
                             password: passwordController.text.trim(), 
                             role: selectedRole
                           );
@@ -264,16 +256,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     TextField(controller: nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
                     const SizedBox(height: 16),
                     
-                    // FIXED: Applied formatters here too
                     TextField(
                       controller: phoneController, 
                       keyboardType: TextInputType.number, 
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly, 
-                        LengthLimitingTextInputFormatter(8)
-                      ],
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1), 
-                      decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone, prefixText: '+2519 ')
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(8)],
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2), 
+                      decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone, isPhone: true)
                     ),
                     
                     const SizedBox(height: 16),
@@ -296,7 +284,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        // FIXED: Enforce exactly 8 digits
                         if (nameController.text.isEmpty || phoneController.text.length != 8 || passwordController.text.isEmpty) {
                           setSheetState(() => errorText = 'All fields are required and phone must be 8 digits.');
                           return;
@@ -306,7 +293,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           await ApiService.updateStaffProfile(
                             staffMember['staff_number'].toString(), 
                             nameController.text.trim(),
-                            '+2519${phoneController.text.trim()}', // FIXED: Safe Concatenation
+                            '+2519${phoneController.text.trim()}', 
                             passwordController.text.trim(), 
                             selectedRole
                           );
@@ -330,12 +317,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  InputDecoration _buildInputDecoration(String label, IconData icon, {String? prefixText}) {
+  // FIXED: Persistent Visual Prefix Lock
+  InputDecoration _buildInputDecoration(String label, IconData icon, {bool isPhone = false}) {
     return InputDecoration(
       labelText: label, labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-      prefixIcon: Icon(icon, color: const Color(0xFF6366F1)), 
-      prefixText: prefixText, 
-      prefixStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1), 
+      prefixIcon: isPhone 
+        ? Padding(
+            padding: const EdgeInsets.only(left: 16.0, right: 8.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: const Color(0xFF6366F1)),
+                const SizedBox(width: 12),
+                const Text('+2519', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1)),
+                const SizedBox(width: 8),
+                Container(width: 2, height: 24, color: Colors.white10),
+                const SizedBox(width: 12),
+              ],
+            ),
+          )
+        : Icon(icon, color: const Color(0xFF6366F1)), 
       filled: true, fillColor: const Color(0xFF020617),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
     );
@@ -356,7 +357,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           }
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _refreshData), // REFRESH BUTTON
+          IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _refreshData),
           StreamBuilder<Map<String, dynamic>>(
             stream: _businessStream,
             builder: (context, snapshot) {
@@ -372,7 +373,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
       body: CustomScrollView(
         slivers: [
-          // FINANCIAL ANALYTICS
           SliverToBoxAdapter(
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _ticketsStream,
@@ -438,7 +438,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ),
 
-          // THE MASTER TRANSACTION LEDGER
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -499,7 +498,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             },
           ),
           
-          const SliverToBoxAdapter(child: SizedBox(height: 40)) // Bottom padding
+          const SliverToBoxAdapter(child: SizedBox(height: 40))
         ],
       ),
     );
