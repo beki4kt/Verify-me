@@ -145,13 +145,14 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with WidgetsB
     final sensorOrientation = camera.sensorOrientation;
     
     InputImageRotation? rotation;
-    if (sensorOrientation == 90) rotation = InputImageRotation.rotation90deg;
-    else if (sensorOrientation == 180) rotation = InputImageRotation.rotation180deg;
+    if (sensorOrientation == 90) {
+      rotation = InputImageRotation.rotation90deg;
+    } else if (sensorOrientation == 180) rotation = InputImageRotation.rotation180deg;
     else if (sensorOrientation == 270) rotation = InputImageRotation.rotation270deg;
     else rotation = InputImageRotation.rotation0deg;
 
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null || rotation == null) return null;
+    if (format == null) return null;
 
     if (image.planes.isEmpty) return null;
 

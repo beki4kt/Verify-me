@@ -16,7 +16,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   late Stream<List<Map<String, dynamic>>> _staffStream;
   late Stream<Map<String, dynamic>> _businessStream;
   
-  String _selectedTimeRange = 'Today';
+  final String _selectedTimeRange = 'Today';
 
   @override
   void initState() {
@@ -57,7 +57,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final cNum = TextEditingController(text: currentAccounts['cbe_number'] ?? '');
     final cName = TextEditingController(text: currentAccounts['cbe_name'] ?? '');
     bool isSubmitting = false;
-    String? _errorText;
+    String? errorText;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -96,16 +96,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     ),
                     const SizedBox(height: 24),
                     
-                    if (_errorText != null)
+                    if (errorText != null)
                       Container(
                         padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent)),
-                        child: Text(_errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        child: Text(errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
 
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        setSheetState(() { isSubmitting = true; _errorText = null; });
+                        setSheetState(() { isSubmitting = true; errorText = null; });
                         try {
                           await ApiService.updateBankAccounts({
                             'telebirr_number': tNum.text.trim(), 'telebirr_name': tName.text.trim(),
@@ -113,7 +113,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           });
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
-                          setSheetState(() => _errorText = e.toString().replaceAll('Exception: ', ''));
+                          setSheetState(() => errorText = e.toString().replaceAll('Exception: ', ''));
                         } finally {
                           setSheetState(() => isSubmitting = false);
                         }
@@ -133,10 +133,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   // --- FIXED: ADD STAFF SHEET WITH ERROR UI ---
   void _showAddStaffSheet() {
-    final _pinController = TextEditingController(); final _nameController = TextEditingController();
-    final _phoneController = TextEditingController(); final _passwordController = TextEditingController();
-    String _selectedRole = 'waiter'; bool _isSubmitting = false;
-    String? _errorText;
+    final pinController = TextEditingController(); final nameController = TextEditingController();
+    final phoneController = TextEditingController(); final passwordController = TextEditingController();
+    String selectedRole = 'waiter'; bool isSubmitting = false;
+    String? errorText;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -152,60 +152,60 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   children: [
                     const Text('PROVISION NEW STAFF', style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
                     const SizedBox(height: 24),
-                    TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
+                    TextField(controller: nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
                     const SizedBox(height: 16),
-                    TextField(controller: _phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
+                    TextField(controller: phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        Expanded(flex: 2, child: TextField(controller: _passwordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock))),
+                        Expanded(flex: 2, child: TextField(controller: passwordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock))),
                         const SizedBox(width: 12),
-                        Expanded(flex: 1, child: TextField(controller: _pinController, keyboardType: TextInputType.number, maxLength: 4, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2), decoration: _buildInputDecoration('ID', Icons.badge).copyWith(counterText: ""))),
+                        Expanded(flex: 1, child: TextField(controller: pinController, keyboardType: TextInputType.number, maxLength: 4, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2), decoration: _buildInputDecoration('ID', Icons.badge).copyWith(counterText: ""))),
                       ],
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _selectedRole, dropdownColor: const Color(0xFF0F172A),
+                      initialValue: selectedRole, dropdownColor: const Color(0xFF0F172A),
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                       decoration: _buildInputDecoration('SYSTEM ROLE', Icons.work), items: _getAvailableRoles(),
-                      onChanged: (val) => setSheetState(() => _selectedRole = val!),
+                      onChanged: (val) => setSheetState(() => selectedRole = val!),
                     ),
                     const SizedBox(height: 24),
 
-                    if (_errorText != null)
+                    if (errorText != null)
                       Container(
                         padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent)),
-                        child: Text(_errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        child: Text(errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
 
                     ElevatedButton(
-                      onPressed: _isSubmitting ? null : () async {
+                      onPressed: isSubmitting ? null : () async {
                         // FIXED: Display clear validation errors instead of silent return
-                        if (_nameController.text.isEmpty || _phoneController.text.isEmpty || _passwordController.text.isEmpty) {
-                          setSheetState(() => _errorText = 'Please fill out all fields.');
+                        if (nameController.text.isEmpty || phoneController.text.isEmpty || passwordController.text.isEmpty) {
+                          setSheetState(() => errorText = 'Please fill out all fields.');
                           return;
                         }
-                        if (_pinController.text.length < 4) {
-                          setSheetState(() => _errorText = 'Staff ID must be exactly 4 digits.');
+                        if (pinController.text.length < 4) {
+                          setSheetState(() => errorText = 'Staff ID must be exactly 4 digits.');
                           return;
                         }
 
-                        setSheetState(() { _isSubmitting = true; _errorText = null; });
+                        setSheetState(() { isSubmitting = true; errorText = null; });
                         try {
                           await ApiService.createStaffMember(
-                            pin: _pinController.text.trim(), name: _nameController.text.trim(), 
-                            phone: _phoneController.text.trim(), password: _passwordController.text.trim(), role: _selectedRole
+                            pin: pinController.text.trim(), name: nameController.text.trim(), 
+                            phone: phoneController.text.trim(), password: passwordController.text.trim(), role: selectedRole
                           );
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
-                          setSheetState(() => _errorText = e.toString().replaceAll('Exception: ', ''));
+                          setSheetState(() => errorText = e.toString().replaceAll('Exception: ', ''));
                         } finally {
-                          setSheetState(() => _isSubmitting = false);
+                          setSheetState(() => isSubmitting = false);
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                      child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SAVE USER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                      child: isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SAVE USER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                     )
                   ],
                 ),
@@ -218,13 +218,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _showEditStaffSheet(Map<String, dynamic> staffMember) {
-    final _nameController = TextEditingController(text: staffMember['name']?.toString() ?? '');
-    final _phoneController = TextEditingController(text: staffMember['phone_number']?.toString() ?? '');
-    final _passwordController = TextEditingController(text: staffMember['password']?.toString() ?? '');
-    String _selectedRole = staffMember['role'];
-    if (_selectedRole == 'cashier' && ApiService.currentBusinessHasCashier != true) _selectedRole = 'waiter'; 
-    bool _isSubmitting = false;
-    String? _errorText;
+    final nameController = TextEditingController(text: staffMember['name']?.toString() ?? '');
+    final phoneController = TextEditingController(text: staffMember['phone_number']?.toString() ?? '');
+    final passwordController = TextEditingController(text: staffMember['password']?.toString() ?? '');
+    String selectedRole = staffMember['role'];
+    if (selectedRole == 'cashier' && ApiService.currentBusinessHasCashier != true) selectedRole = 'waiter'; 
+    bool isSubmitting = false;
+    String? errorText;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -240,48 +240,48 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   children: [
                     Text('MANAGE STAFF: ${staffMember['staff_number']}', style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
                     const SizedBox(height: 24),
-                    TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
+                    TextField(controller: nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('FULL NAME', Icons.person_outline)),
                     const SizedBox(height: 16),
-                    TextField(controller: _phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
+                    TextField(controller: phoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PHONE NUMBER', Icons.phone)),
                     const SizedBox(height: 16),
-                    TextField(controller: _passwordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock)),
+                    TextField(controller: passwordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock)),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _selectedRole, dropdownColor: const Color(0xFF0F172A),
+                      initialValue: selectedRole, dropdownColor: const Color(0xFF0F172A),
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                       decoration: _buildInputDecoration('SYSTEM ROLE', Icons.work), items: _getAvailableRoles(), 
-                      onChanged: (val) => setSheetState(() => _selectedRole = val!),
+                      onChanged: (val) => setSheetState(() => selectedRole = val!),
                     ),
                     const SizedBox(height: 24),
 
-                    if (_errorText != null)
+                    if (errorText != null)
                       Container(
                         padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent)),
-                        child: Text(_errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        child: Text(errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
 
                     ElevatedButton(
-                      onPressed: _isSubmitting ? null : () async {
-                        if (_nameController.text.isEmpty || _phoneController.text.isEmpty || _passwordController.text.isEmpty) {
-                          setSheetState(() => _errorText = 'All fields are required.');
+                      onPressed: isSubmitting ? null : () async {
+                        if (nameController.text.isEmpty || phoneController.text.isEmpty || passwordController.text.isEmpty) {
+                          setSheetState(() => errorText = 'All fields are required.');
                           return;
                         }
-                        setSheetState(() { _isSubmitting = true; _errorText = null; });
+                        setSheetState(() { isSubmitting = true; errorText = null; });
                         try {
                           await ApiService.updateStaffProfile(
-                            staffMember['staff_number'].toString(), _nameController.text.trim(),
-                            _phoneController.text.trim(), _passwordController.text.trim(), _selectedRole
+                            staffMember['staff_number'].toString(), nameController.text.trim(),
+                            phoneController.text.trim(), passwordController.text.trim(), selectedRole
                           );
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
-                          setSheetState(() => _errorText = e.toString().replaceAll('Exception: ', ''));
+                          setSheetState(() => errorText = e.toString().replaceAll('Exception: ', ''));
                         } finally {
-                          setSheetState(() => _isSubmitting = false);
+                          setSheetState(() => isSubmitting = false);
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                      child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('UPDATE STAFF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                      child: isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('UPDATE STAFF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                     )
                   ],
                 ),

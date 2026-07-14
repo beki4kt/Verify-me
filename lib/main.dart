@@ -195,7 +195,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   const Text('Detected Payment Method:', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    value: selectedEndpoint,
+                    initialValue: selectedEndpoint,
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.black54,

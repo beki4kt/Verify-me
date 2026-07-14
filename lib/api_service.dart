@@ -13,19 +13,33 @@ class VerificationResult {
 class ApiService {
   static const String baseUrl = "https://verifyapi.leulzenebe.pro";
   static const String apiKey = "sk_live_7ebe516799b67c8a30b6861a4131caca8d1ae6bce7f3a6b9";
+  static final _supabase = Supabase.instance.client;
 
-  // Streams the current restaurant's settings (including bank accounts)
-  static Stream<Map<String, dynamic>> streamCurrentBusiness() {
-    if (currentBusinessId == null) throw Exception("No session");
-    return _supabase.from('businesses').stream(primaryKey: ['business_id']).eq('business_id', currentBusinessId!).map((list) => list.first);
+  static String? currentBusinessId;
+  static String? currentStaffNumber;
+  static String? currentUserRole;
+  static int? currentBusinessMaxStaff; 
+  static bool? currentBusinessHasCashier; 
+
+  // --- 1. AUTHENTICATION ---
+  static Future<String?> loginWithPhone(String phone, String password) async {
+    final superAdminCheck = await _supabase.from('super_admins').select().eq('phone_number', phone).eq('password', password).maybeSingle();
+    if (superAdminCheck != null) { currentUserRole = 'super_admin'; return 'super_admin'; }
+    
+    final staffCheck = await _supabase.from('staff').select('*, businesses(max_staff_limit, is_active, has_cashier_module)').eq('phone_number', phone).eq('password', password).maybeSingle();
+    
+    if (staffCheck != null && staffCheck['is_active'] == true && staffCheck['businesses']['is_active'] == true) {
+      currentBusinessId = staffCheck['business_id'];
+      currentStaffNumber = staffCheck['staff_number']; 
+      currentUserRole = staffCheck['role'];
+      currentBusinessMaxStaff = staffCheck['businesses']['max_staff_limit'];
+      currentBusinessHasCashier = staffCheck['businesses']['has_cashier_module'];
+      return staffCheck['role'];
+    }
+    return null;
   }
 
-  // Saves the Admin's bank configuration
-  static Future<void> updateBankAccounts(Map<String, dynamic> accounts) async {
-    if (currentBusinessId == null) throw Exception("No session");
-    await _supabase.from('businesses').update({'bank_accounts': accounts}).eq('business_id', currentBusinessId!);
-  }
-
+  // --- 2. API VERIFICATION & TICKETS ---
   static Future<VerificationResult> verifyTransaction(String transactionId, String endpoint) async {
     try {
       final response = await http.post(
@@ -46,14 +60,6 @@ class ApiService {
     }
   }
 
-  static final _supabase = Supabase.instance.client;
-
-  static String? currentBusinessId;
-  static String? currentStaffNumber;
-  static String? currentUserRole;
-  static int? currentBusinessMaxStaff; 
-  static bool? currentBusinessHasCashier; // THE BILLING GATE
-
   static Future<void> submitVerifiedTicket({required String transactionId, required String amount, required String bankName}) async {
     if (currentBusinessId == null || currentStaffNumber == null) throw Exception("Session expired.");
     final ticketData = {
@@ -68,28 +74,69 @@ class ApiService {
     }
   }
 
-  static Future<String?> loginWithPhone(String phone, String password) async {
-    final superAdminCheck = await _supabase.from('super_admins').select().eq('phone_number', phone).eq('password', password).maybeSingle();
-    if (superAdminCheck != null) { currentUserRole = 'super_admin'; return 'super_admin'; }
-    
-    final staffCheck = await _supabase.from('staff').select('*, businesses(max_staff_limit, is_active, has_cashier_module)').eq('phone_number', phone).eq('password', password).maybeSingle();
-    
-    if (staffCheck != null && staffCheck['is_active'] == true && staffCheck['businesses']['is_active'] == true) {
-      currentBusinessId = staffCheck['business_id'];
-      currentStaffNumber = staffCheck['staff_number']; 
-      currentUserRole = staffCheck['role'];
-      currentBusinessMaxStaff = staffCheck['businesses']['max_staff_limit'];
-      currentBusinessHasCashier = staffCheck['businesses']['has_cashier_module'];
-      return staffCheck['role'];
-    }
-    return null;
+  static Future<void> updateTicketStatus(String ticketId, String status) async {
+    await _supabase.from('tickets').update({'status': status}).eq('ticket_id', ticketId);
+  }
+
+  // --- 3. DATA STREAMS ---
+  static Stream<Map<String, dynamic>> streamCurrentBusiness() {
+    if (currentBusinessId == null) throw Exception("No session");
+    return _supabase.from('businesses').stream(primaryKey: ['business_id']).eq('business_id', currentBusinessId!).map((list) => list.first);
   }
 
   static Stream<List<Map<String, dynamic>>> streamAllBusinesses() {
     return _supabase.from('businesses').stream(primaryKey: ['business_id']).order('created_at', ascending: false);
   }
 
-  // --- UPDATED: Passing the Cashier Module flag ---
+  static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
+    if (currentBusinessId == null) throw Exception("No active session");
+    return _supabase.from('tickets').stream(primaryKey: ['ticket_id']).eq('business_id', currentBusinessId!).order('created_at', ascending: false).limit(100); 
+  }
+
+  static Stream<List<Map<String, dynamic>>> streamWaiterTickets() {
+    if (currentBusinessId == null || currentStaffNumber == null) return const Stream.empty();
+    // FIXED: Use .map() for secondary client-side filtering
+    return _supabase
+        .from('tickets')
+        .stream(primaryKey: ['ticket_id'])
+        .eq('business_id', currentBusinessId!)
+        .order('created_at', ascending: false)
+        .map((tickets) => tickets.where((t) => t['waiter_id'] == currentStaffNumber).toList());
+  }
+
+  static Stream<List<Map<String, dynamic>>> streamPendingTickets() {
+    if (currentBusinessId == null) return const Stream.empty();
+    // FIXED: Use .map() for secondary client-side filtering
+    return _supabase
+        .from('tickets')
+        .stream(primaryKey: ['ticket_id'])
+        .eq('business_id', currentBusinessId!)
+        .order('created_at', ascending: false)
+        .map((tickets) => tickets.where((t) => t['status'] == 'pending').toList());
+  }
+
+  static Stream<List<Map<String, dynamic>>> streamSettledTickets() {
+    if (currentBusinessId == null) return const Stream.empty();
+    // FIXED: Use .map() for secondary client-side filtering
+    return _supabase
+        .from('tickets')
+        .stream(primaryKey: ['ticket_id'])
+        .eq('business_id', currentBusinessId!)
+        .order('created_at', ascending: false)
+        .map((tickets) => tickets.where((t) => t['status'] == 'settled').toList());
+  }
+
+  static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
+    if (currentBusinessId == null) throw Exception("No active session");
+    return _supabase.from('staff').stream(primaryKey: ['staff_number']).eq('business_id', currentBusinessId!).order('created_at', ascending: false);
+  }
+
+  // --- 4. TENANT & STAFF MANAGEMENT ---
+  static Future<void> updateBankAccounts(Map<String, dynamic> accounts) async {
+    if (currentBusinessId == null) throw Exception("No session");
+    await _supabase.from('businesses').update({'bank_accounts': accounts}).eq('business_id', currentBusinessId!);
+  }
+
   static Future<void> provisionNewBusiness({
     required String businessName, required String packageTier, required int maxStaff, required bool hasCashier,
     required String adminName, required String adminPhone, required String adminPassword, required String adminPin,
@@ -115,26 +162,17 @@ class ApiService {
     await _supabase.from('businesses').update({'is_active': !currentStatus}).eq('business_id', businessId);
   }
 
-  static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
-    if (currentBusinessId == null) throw Exception("No active session");
-    return _supabase.from('tickets').stream(primaryKey: ['ticket_id']).eq('business_id', currentBusinessId!).order('created_at', ascending: false).limit(100); 
-  }
-
-  static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
-    if (currentBusinessId == null) throw Exception("No active session");
-    return _supabase.from('staff').stream(primaryKey: ['staff_number']).eq('business_id', currentBusinessId!).order('created_at', ascending: false);
-  }
-
   static Future<void> createStaffMember({required String pin, required String name, required String phone, required String password, required String role}) async {
     if (currentBusinessId == null) throw Exception("Fatal: Session disconnected.");
     
-    // THE CASHIER GATE ENFORCEMENT
     if (role == 'cashier' && currentBusinessHasCashier != true) {
-      throw Exception("Starter Plan Restriction: Cashier module is disabled. Upgrade to Pro for 4,000 ETB.");
+      throw Exception("Starter Plan Restriction: Cashier module is disabled.");
     }
     
-    final countResponse = await _supabase.from('staff').select('staff_number').eq('business_id', currentBusinessId!).count(CountOption.exact);
-    if ((countResponse.count ?? 0) >= (currentBusinessMaxStaff ?? 0)) throw Exception("SaaS Limit Reached: Seat Upgrade Required.");
+    final staffCount = await _supabase.from('staff').count(CountOption.exact).eq('business_id', currentBusinessId!);
+    if (staffCount >= (currentBusinessMaxStaff ?? 0)) {
+      throw Exception("SaaS Limit Reached: Seat Upgrade Required.");
+    }
 
     final duplicateCheck = await _supabase.from('staff').select('staff_number').or('staff_number.eq.$pin,phone_number.eq.$phone').limit(1).maybeSingle();
     if (duplicateCheck != null) throw Exception("Floor ID or Phone Number is already in use.");

@@ -30,18 +30,18 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   }
 
   void _showCreateTenantSheet() {
-    final _nameController = TextEditingController();
-    final _addressController = TextEditingController();
-    final _adminPinController = TextEditingController();
-    final _adminNameController = TextEditingController();
-    final _adminPhoneController = TextEditingController();
-    final _adminPasswordController = TextEditingController();
+    final nameController = TextEditingController();
+    final addressController = TextEditingController();
+    final adminPinController = TextEditingController();
+    final adminNameController = TextEditingController();
+    final adminPhoneController = TextEditingController();
+    final adminPasswordController = TextEditingController();
     
-    String _selectedTier = 'starter';
-    int _staffLimit = 5;
-    bool _hasCashier = false;
-    bool _isSubmitting = false;
-    String? _errorMessage; // NEW: Holds visible errors
+    String selectedTier = 'starter';
+    int staffLimit = 5;
+    bool hasCashier = false;
+    bool isSubmitting = false;
+    String? errorMessage; // NEW: Holds visible errors
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
@@ -58,15 +58,15 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     const Text('PROVISION NEW TENANT', style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
                     const SizedBox(height: 24),
                     
-                    TextField(controller: _nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('RESTAURANT NAME', Icons.business)),
+                    TextField(controller: nameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('RESTAURANT NAME', Icons.business)),
                     const SizedBox(height: 16),
-                    TextField(controller: _addressController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('LOCATION', Icons.location_on)),
+                    TextField(controller: addressController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('LOCATION', Icons.location_on)),
                     const SizedBox(height: 24),
                     
                     const Text('SAAS TIER', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 10)),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: _selectedTier, dropdownColor: const Color(0xFF0F172A), style: const TextStyle(color: Colors.white),
+                      initialValue: selectedTier, dropdownColor: const Color(0xFF0F172A), style: const TextStyle(color: Colors.white),
                       decoration: _buildInputDecoration('', Icons.layers),
                       items: const [
                         DropdownMenuItem(value: 'starter', child: Text('Starter (1,500 ETB) - No Cashier')),
@@ -74,9 +74,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                       ],
                       onChanged: (val) {
                         setSheetState(() {
-                          _selectedTier = val!;
-                          if (_selectedTier == 'starter') { _staffLimit = 5; _hasCashier = false; }
-                          else { _staffLimit = 50; _hasCashier = true; }
+                          selectedTier = val!;
+                          if (selectedTier == 'starter') { staffLimit = 5; hasCashier = false; }
+                          else { staffLimit = 50; hasCashier = true; }
                         });
                       },
                     ),
@@ -84,66 +84,66 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
                     const Text('ROOT ADMIN ACCOUNT', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 10)),
                     const SizedBox(height: 8),
-                    TextField(controller: _adminNameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ADMIN NAME', Icons.person)),
+                    TextField(controller: adminNameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ADMIN NAME', Icons.person)),
                     const SizedBox(height: 12),
-                    TextField(controller: _adminPhoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ADMIN PHONE', Icons.phone)),
+                    TextField(controller: adminPhoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ADMIN PHONE', Icons.phone)),
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(flex: 2, child: TextField(controller: _adminPasswordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock))),
+                        Expanded(flex: 2, child: TextField(controller: adminPasswordController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('PASSWORD', Icons.lock))),
                         const SizedBox(width: 12),
-                        Expanded(flex: 1, child: TextField(controller: _adminPinController, keyboardType: TextInputType.number, maxLength: 4, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), decoration: _buildInputDecoration('ID', Icons.badge).copyWith(counterText: ""))),
+                        Expanded(flex: 1, child: TextField(controller: adminPinController, keyboardType: TextInputType.number, maxLength: 4, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), decoration: _buildInputDecoration('ID', Icons.badge).copyWith(counterText: ""))),
                       ],
                     ),
                     const SizedBox(height: 24),
 
                     // NEW: VISIBLE ERROR BANNER
-                    if (_errorMessage != null)
+                    if (errorMessage != null)
                       Container(
                         padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.redAccent)),
-                        child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        child: Text(errorMessage!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
 
                     ElevatedButton(
-                      onPressed: _isSubmitting ? null : () async {
-                        if (_nameController.text.isEmpty || _adminPinController.text.length < 4 || _adminPasswordController.text.isEmpty) {
-                          setSheetState(() => _errorMessage = 'Please fill all fields and use a 4-digit ID.');
+                      onPressed: isSubmitting ? null : () async {
+                        if (nameController.text.isEmpty || adminPinController.text.length < 4 || adminPasswordController.text.isEmpty) {
+                          setSheetState(() => errorMessage = 'Please fill all fields and use a 4-digit ID.');
                           return;
                         }
                         
-                        setSheetState(() { _isSubmitting = true; _errorMessage = null; });
+                        setSheetState(() { isSubmitting = true; errorMessage = null; });
                         try {
                           // 1. Create Business
                           final bizResponse = await Supabase.instance.client.from('businesses').insert({
-                            'name': _nameController.text.trim(),
-                            'address': _addressController.text.trim(),
-                            'subscription_tier': _selectedTier,
-                            'max_staff_limit': _staffLimit,
-                            'has_cashier_module': _hasCashier,
+                            'name': nameController.text.trim(),
+                            'address': addressController.text.trim(),
+                            'subscription_tier': selectedTier,
+                            'max_staff_limit': staffLimit,
+                            'has_cashier_module': hasCashier,
                             'is_active': true,
                           }).select('business_id').single();
 
                           // 2. Create Root Admin
                           await Supabase.instance.client.from('staff').insert({
-                            'staff_number': _adminPinController.text.trim(),
+                            'staff_number': adminPinController.text.trim(),
                             'business_id': bizResponse['business_id'],
-                            'name': _adminNameController.text.trim(),
-                            'phone_number': _adminPhoneController.text.trim(),
-                            'password': _adminPasswordController.text.trim(),
+                            'name': adminNameController.text.trim(),
+                            'phone_number': adminPhoneController.text.trim(),
+                            'password': adminPasswordController.text.trim(),
                             'role': 'admin',
                             'is_active': true,
                           });
 
                           if (context.mounted) Navigator.pop(context);
                         } catch (e) {
-                          setSheetState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
+                          setSheetState(() => errorMessage = e.toString().replaceAll('Exception: ', ''));
                         } finally {
-                          setSheetState(() => _isSubmitting = false);
+                          setSheetState(() => isSubmitting = false);
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                      child: _isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('DEPLOY TENANT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                      child: isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('DEPLOY TENANT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                     )
                   ],
                 ),
