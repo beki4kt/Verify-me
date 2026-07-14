@@ -43,6 +43,7 @@ class SyncManager {
     await Hive.initFlutter();
     Hive.registerAdapter(PendingTicketAdapter());
     await Hive.openBox<PendingTicket>(_boxName);
+    await DeviceStorage.init(); // Initialize the Business Lock Storage
   }
 
   // --- ORIGINAL METHOD (For standard verifications) ---
@@ -134,5 +135,38 @@ class SyncManager {
 
   void stopBackgroundSync() {
     _syncTimer?.cancel();
+  }
+}
+
+// --- PHASE 1: BUSINESS LAYER DEVICE LOCKING ---
+class DeviceStorage {
+  static const String _boxName = 'device_settings';
+
+  static Future<void> init() async {
+    await Hive.openBox(_boxName);
+  }
+
+  static Future<void> lockDeviceToBusiness(String businessId, String businessName, String businessCode) async {
+    final box = Hive.box(_boxName);
+    await box.put('locked_business_id', businessId);
+    await box.put('locked_business_name', businessName);
+    await box.put('locked_business_code', businessCode);
+  }
+
+  static Future<void> clearDeviceLock() async {
+    final box = Hive.box(_boxName);
+    await box.delete('locked_business_id');
+    await box.delete('locked_business_name');
+    await box.delete('locked_business_code');
+  }
+
+  static Map<String, String?> getLockedBusiness() {
+    final box = Hive.box(_boxName);
+    if (!box.isOpen) return {'id': null, 'name': null, 'code': null}; 
+    return {
+      'id': box.get('locked_business_id'),
+      'name': box.get('locked_business_name'),
+      'code': box.get('locked_business_code'),
+    };
   }
 }

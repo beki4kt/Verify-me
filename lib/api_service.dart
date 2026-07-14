@@ -21,7 +21,49 @@ class ApiService {
   static int? currentBusinessMaxStaff; 
   static bool? currentBusinessHasCashier; 
 
-  // --- 1. AUTHENTICATION ---
+  // --- 1. AUTHENTICATION & BUSINESS LAYER ---
+
+  // NEW: Verifies the business code and returns the business details
+  static Future<Map<String, dynamic>?> verifyBusinessCode(String code) async {
+    final response = await _supabase
+        .from('businesses')
+        .select('business_id, name, business_code, is_active')
+        .eq('business_code', code.toUpperCase())
+        .maybeSingle();
+
+    if (response == null) throw Exception("Invalid Business Code.");
+    if (response['is_active'] != true) throw Exception("This business account is currently suspended.");
+
+    return response;
+  }
+
+  // NEW: Modified Login that enforces the locked Business ID
+  static Future<String?> loginStaffUnderBusiness(String lockedBusinessId, String phone, String password) async {
+    // Super Admin bypass
+    final superAdminCheck = await _supabase.from('super_admins').select().eq('phone_number', phone).eq('password', password).maybeSingle();
+    if (superAdminCheck != null) { currentUserRole = 'super_admin'; return 'super_admin'; }
+    
+    // Staff login STRICTLY scoped to the locked device's business ID
+    final staffCheck = await _supabase
+        .from('staff')
+        .select('*, businesses!inner(max_staff_limit, is_active, has_cashier_module)')
+        .eq('business_id', lockedBusinessId) 
+        .eq('phone_number', phone)
+        .eq('password', password)
+        .maybeSingle();
+    
+    if (staffCheck != null && staffCheck['is_active'] == true && staffCheck['businesses']['is_active'] == true) {
+      currentBusinessId = staffCheck['business_id'];
+      currentStaffNumber = staffCheck['staff_number']; 
+      currentUserRole = staffCheck['role'];
+      currentBusinessMaxStaff = staffCheck['businesses']['max_staff_limit'];
+      currentBusinessHasCashier = staffCheck['businesses']['has_cashier_module'];
+      return staffCheck['role'];
+    }
+    return null;
+  }
+
+  // LEGACY: Kept alive temporarily so your current DualLoginScreen doesn't break
   static Future<String?> loginWithPhone(String phone, String password) async {
     final superAdminCheck = await _supabase.from('super_admins').select().eq('phone_number', phone).eq('password', password).maybeSingle();
     if (superAdminCheck != null) { currentUserRole = 'super_admin'; return 'super_admin'; }
@@ -95,7 +137,6 @@ class ApiService {
 
   static Stream<List<Map<String, dynamic>>> streamWaiterTickets() {
     if (currentBusinessId == null || currentStaffNumber == null) return const Stream.empty();
-    // FIXED: Use .map() for secondary client-side filtering
     return _supabase
         .from('tickets')
         .stream(primaryKey: ['ticket_id'])
@@ -106,7 +147,6 @@ class ApiService {
 
   static Stream<List<Map<String, dynamic>>> streamPendingTickets() {
     if (currentBusinessId == null) return const Stream.empty();
-    // FIXED: Use .map() for secondary client-side filtering
     return _supabase
         .from('tickets')
         .stream(primaryKey: ['ticket_id'])
@@ -117,7 +157,6 @@ class ApiService {
 
   static Stream<List<Map<String, dynamic>>> streamSettledTickets() {
     if (currentBusinessId == null) return const Stream.empty();
-    // FIXED: Use .map() for secondary client-side filtering
     return _supabase
         .from('tickets')
         .stream(primaryKey: ['ticket_id'])
