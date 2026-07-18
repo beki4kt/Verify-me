@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
-import 'dual_login_screen.dart';
+import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -129,9 +128,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _showAddStaffSheet() {
-    final pinController = TextEditingController(); final nameController = TextEditingController();
-    final phoneController = TextEditingController(); final passwordController = TextEditingController();
-    String selectedRole = 'waiter'; bool isSubmitting = false;
+    final pinController = TextEditingController(); 
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController(); 
+    final passwordController = TextEditingController();
+    String selectedRole = 'waiter'; 
+    bool isSubmitting = false;
     String? errorText;
 
     showModalBottomSheet(
@@ -413,7 +415,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    // PHASE 3: WRAP IN TAB CONTROLLER
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -424,8 +425,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           leading: IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () {
-              ApiService.currentBusinessId = null; ApiService.currentStaffNumber = null;
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DualLoginScreen()));
+              ApiService.currentBusinessId = null; 
+              ApiService.currentStaffNumber = null;
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const StaffLoginScreen()));
             }
           ),
           actions: [
@@ -442,7 +444,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             IconButton(icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF6366F1)), onPressed: _showAddStaffSheet)
           ],
-          // THE NEW TOP TAB BAR
           bottom: const TabBar(
             indicatorColor: Color(0xFF6366F1),
             indicatorWeight: 3,

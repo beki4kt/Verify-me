@@ -5,7 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'api_service.dart';
 import 'receipt_parser.dart';
-import 'staff_login_screen.dart'; 
+import 'staff_login_screen.dart'; // FIXED: Points to the new login screen
 
 class WaiterDashboard extends StatefulWidget {
   const WaiterDashboard({super.key});
@@ -220,8 +220,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       _showSubmissionSheet(extractedId);
 
     } catch (e) {
-      setState(() => _isExtracting = false);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scanner Error: $e')));
+      if (mounted) {
+        setState(() => _isExtracting = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scanner Error: $e')));
+      }
     }
   }
 
@@ -257,7 +259,11 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         DropdownMenuItem(value: 'CBE', child: Text('CBE / CBE Birr')),
                         DropdownMenuItem(value: 'Dashen', child: Text('Dashen Bank')),
                       ],
-                      onChanged: (val) => setSheetState(() => selectedBank = val!),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setSheetState(() => selectedBank = val);
+                        }
+                      },
                     ),
                     const SizedBox(height: 16),
                     
@@ -297,17 +303,24 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         }
 
                         setSheetState(() { isSubmitting = true; errorText = null; });
+                        
                         try {
                           await ApiService.submitVerifiedTicket(
                             transactionId: refController.text.trim().toUpperCase(),
                             bankName: selectedBank,
-                            amount: billController.text.trim(), // FIXED: Passes as String directly
+                            amount: billController.text.trim(),
                           );
-                          if (context.mounted) Navigator.pop(context);
+                          
+                          // FIXED: Async gap protection
+                          if (!context.mounted) return;
+                          Navigator.pop(context);
+                          
                         } catch (e) {
                           setSheetState(() => errorText = e.toString().replaceAll('Exception: ', ''));
                         } finally {
-                          setSheetState(() => isSubmitting = false);
+                          if (mounted) {
+                            setSheetState(() => isSubmitting = false);
+                          }
                         }
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),

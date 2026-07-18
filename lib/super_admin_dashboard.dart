@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart'; // REQUIRED FOR INPUT FORMATTERS
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'api_service.dart';
@@ -34,7 +35,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
   void _showCreateTenantSheet() {
     final nameController = TextEditingController();
-    final codeController = TextEditingController(); // NEW: Business Code Controller
+    final codeController = TextEditingController();
     final addressController = TextEditingController();
     final adminPinController = TextEditingController();
     final adminNameController = TextEditingController();
@@ -97,7 +98,19 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     const SizedBox(height: 8),
                     TextField(controller: adminNameController, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ADMIN NAME', Icons.person)),
                     const SizedBox(height: 12),
-                    TextField(controller: adminPhoneController, keyboardType: TextInputType.phone, style: const TextStyle(color: Colors.white), decoration: _buildInputDecoration('ADMIN PHONE', Icons.phone)),
+                    
+                    // NEW: PHONE NUMBER FORMATTING AND VALIDATION
+                    TextField(
+                      controller: adminPhoneController, 
+                      keyboardType: TextInputType.number, 
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly, 
+                        LengthLimitingTextInputFormatter(8)
+                      ],
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1), 
+                      decoration: _buildInputDecoration('ADMIN PHONE', Icons.phone, prefixText: '+2519 ')
+                    ),
+                    
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -117,14 +130,14 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
                     ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
-                        if (nameController.text.isEmpty || codeController.text.isEmpty || adminPinController.text.length < 4 || adminPasswordController.text.isEmpty) {
-                          setSheetState(() => errorMessage = 'Please fill all fields, add a code, and use a 4-digit ID.');
+                        if (nameController.text.isEmpty || codeController.text.isEmpty || adminPinController.text.length < 4 || adminPasswordController.text.isEmpty || adminPhoneController.text.length != 8) {
+                          setSheetState(() => errorMessage = 'Please fill all fields, add a code, use 8 digits for phone, and a 4-digit ID.');
                           return;
                         }
                         
                         setSheetState(() { isSubmitting = true; errorMessage = null; });
                         try {
-                          // Clean architecture: Delegating to the Service Layer
+                          // Clean architecture: Delegating to the Service Layer with Concatenated Phone
                           await ApiService.provisionNewBusiness(
                             businessName: nameController.text.trim(),
                             businessCode: codeController.text.trim().toUpperCase(),
@@ -132,7 +145,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                             maxStaff: staffLimit,
                             hasCashier: hasCashier,
                             adminName: adminNameController.text.trim(),
-                            adminPhone: adminPhoneController.text.trim(),
+                            adminPhone: '+2519${adminPhoneController.text.trim()}', // CONCATENATED
                             adminPassword: adminPasswordController.text.trim(),
                             adminPin: adminPinController.text.trim(),
                           );
@@ -157,10 +170,14 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     );
   }
 
-  InputDecoration _buildInputDecoration(String label, IconData icon) {
+  // NEW: UPDATED INPUT DECORATION ACCEPTS PREFIX
+  InputDecoration _buildInputDecoration(String label, IconData icon, {String? prefixText}) {
     return InputDecoration(
       labelText: label, labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-      prefixIcon: Icon(icon, color: const Color(0xFF6366F1)), filled: true, fillColor: const Color(0xFF020617),
+      prefixIcon: Icon(icon, color: const Color(0xFF6366F1)), 
+      prefixText: prefixText, 
+      prefixStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1), 
+      filled: true, fillColor: const Color(0xFF020617),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
     );
   }
@@ -169,7 +186,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     ApiService.currentBusinessId = null;
     ApiService.currentStaffNumber = null;
     ApiService.currentUserRole = null;
-    await DeviceStorage.clearDeviceLock(); // Clear any god-mode locks
+    await DeviceStorage.clearDeviceLock();
     
     if (mounted) {
       Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => const BusinessGatewayScreen()));
@@ -227,7 +244,6 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     ),
                     const SizedBox(height: 12),
                     
-                    // NEW: Display the Business Code for the Admin to see
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF334155))),

@@ -23,7 +23,6 @@ class ApiService {
 
   // --- 1. AUTHENTICATION & BUSINESS LAYER ---
 
-  // NEW: Verifies the business code and returns the business details
   static Future<Map<String, dynamic>?> verifyBusinessCode(String code) async {
     final response = await _supabase
         .from('businesses')
@@ -37,13 +36,12 @@ class ApiService {
     return response;
   }
 
-  // NEW: Modified Login that enforces the locked Business ID
   static Future<String?> loginStaffUnderBusiness(String lockedBusinessId, String phone, String password) async {
     // Super Admin bypass
     final superAdminCheck = await _supabase.from('super_admins').select().eq('phone_number', phone).eq('password', password).maybeSingle();
     if (superAdminCheck != null) { currentUserRole = 'super_admin'; return 'super_admin'; }
     
-    // Staff login STRICTLY scoped to the locked device's business ID
+    // Staff login scoped to the locked device's business ID
     final staffCheck = await _supabase
         .from('staff')
         .select('*, businesses!inner(max_staff_limit, is_active, has_cashier_module)')
@@ -51,24 +49,6 @@ class ApiService {
         .eq('phone_number', phone)
         .eq('password', password)
         .maybeSingle();
-    
-    if (staffCheck != null && staffCheck['is_active'] == true && staffCheck['businesses']['is_active'] == true) {
-      currentBusinessId = staffCheck['business_id'];
-      currentStaffNumber = staffCheck['staff_number']; 
-      currentUserRole = staffCheck['role'];
-      currentBusinessMaxStaff = staffCheck['businesses']['max_staff_limit'];
-      currentBusinessHasCashier = staffCheck['businesses']['has_cashier_module'];
-      return staffCheck['role'];
-    }
-    return null;
-  }
-
-  // LEGACY: Kept alive temporarily so your current DualLoginScreen doesn't break
-  static Future<String?> loginWithPhone(String phone, String password) async {
-    final superAdminCheck = await _supabase.from('super_admins').select().eq('phone_number', phone).eq('password', password).maybeSingle();
-    if (superAdminCheck != null) { currentUserRole = 'super_admin'; return 'super_admin'; }
-    
-    final staffCheck = await _supabase.from('staff').select('*, businesses(max_staff_limit, is_active, has_cashier_module)').eq('phone_number', phone).eq('password', password).maybeSingle();
     
     if (staffCheck != null && staffCheck['is_active'] == true && staffCheck['businesses']['is_active'] == true) {
       currentBusinessId = staffCheck['business_id'];
@@ -104,10 +84,16 @@ class ApiService {
 
   static Future<void> submitVerifiedTicket({required String transactionId, required String amount, required String bankName}) async {
     if (currentBusinessId == null || currentStaffNumber == null) throw Exception("Session expired.");
+    
     final ticketData = {
-      'business_id': currentBusinessId, 'waiter_id': currentStaffNumber, 'transaction_ref': transactionId,
-      'bill_amount': double.tryParse(amount.replaceAll(',', '').replaceAll('ETB', '').trim()) ?? 0.0, 'bank': bankName, 'status': 'pending', 
+      'business_id': currentBusinessId, 
+      'waiter_id': currentStaffNumber, 
+      'transaction_ref': transactionId,
+      'bill_amount': double.tryParse(amount.replaceAll(',', '').replaceAll('ETB', '').trim()) ?? 0.0, 
+      'bank': bankName, 
+      'status': 'pending', 
     };
+    
     try {
       await _supabase.from('tickets').insert(ticketData).timeout(const Duration(seconds: 5));
     } catch (e) {
@@ -120,7 +106,7 @@ class ApiService {
     await _supabase.from('tickets').update({'status': status}).eq('ticket_id', ticketId);
   }
 
-  // --- 3. DATA STREAMS ---
+  // --- 3. BACKEND-FILTERED DATA STREAMS (FIXED & RUNTIME COMPLIANT) ---
   static Stream<Map<String, dynamic>> streamCurrentBusiness() {
     if (currentBusinessId == null) throw Exception("No session");
     return _supabase.from('businesses').stream(primaryKey: ['business_id']).eq('business_id', currentBusinessId!).map((list) => list.first);
@@ -142,7 +128,7 @@ class ApiService {
         .stream(primaryKey: ['ticket_id'])
         .eq('business_id', currentBusinessId!)
         .order('created_at', ascending: false)
-        .map((tickets) => tickets.where((t) => t['waiter_id'] == currentStaffNumber).toList());
+        .map((tickets) => tickets.where((t) => t['waiter_id'] == currentStaffNumber).toList()); // Filtered clean on-device via map
   }
 
   static Stream<List<Map<String, dynamic>>> streamPendingTickets() {
@@ -180,32 +166,43 @@ class ApiService {
     required String businessName, required String businessCode, required String packageTier, required int maxStaff, required bool hasCashier,
     required String adminName, required String adminPhone, required String adminPassword, required String adminPin,
   }) async {
-    // 1. Check if the Business Code is already taken
     final codeCheck = await _supabase.from('businesses').select('business_code').eq('business_code', businessCode).maybeSingle();
     if (codeCheck != null) throw Exception("This Tenant Code is already in use by another restaurant.");
 
-    // 2. Check if Admin Phone/PIN is taken
     final existingCheck = await _supabase.from('staff').select('staff_number').or('staff_number.eq.$adminPin,phone_number.eq.$adminPhone').limit(1).maybeSingle();
     if (existingCheck != null) throw Exception("PIN or Phone Number is already in use.");
 
-    // 3. Create Business WITH the Business Code
     final businessResponse = await _supabase.from('businesses').insert({
-      'name': businessName, 'business_code': businessCode, 'package_tier': packageTier, 'max_staff_limit': maxStaff, 'has_cashier_module': hasCashier, 'is_active': true,
+      'name': businessName, 
+      'business_code': businessCode, 
+      'subscription_tier': packageTier, 
+      'max_staff_limit': maxStaff, 
+      'has_cashier_module': hasCashier, 
+      'is_active': true,
     }).select().single();
 
-    // 4. Create Root Admin
     await _supabase.from('staff').insert({
-      'staff_number': adminPin, 'business_id': businessResponse['business_id'], 'name': adminName, 
-      'phone_number': adminPhone, 'password': adminPassword, 'role': 'admin', 'is_active': true,
+      'staff_number': adminPin, 
+      'business_id': businessResponse['business_id'], 
+      'name': adminName, 
+      'phone_number': adminPhone, 
+      'password': adminPassword, 
+      'role': 'admin', 
+      'is_active': true,
     });
   }
 
   static Future<void> updateBusinessDetails(String businessId, String newName, String newTier, int newLimit, bool hasCashier) async {
-    await _supabase.from('businesses').update({'name': newName, 'package_tier': newTier, 'max_staff_limit': newLimit, 'has_cashier_module': hasCashier}).eq('business_id', businessId);
+    await _supabase.from('businesses').update({
+      'name': newName, 
+      'subscription_tier': newTier, 
+      'max_staff_limit': newLimit, 
+      'has_cashier_module': hasCashier
+    }).eq('business_id', businessId);
   }
 
-  static Future<void> toggleBusinessStatus(String businessId, bool currentStatus) async {
-    await _supabase.from('businesses').update({'is_active': !currentStatus}).eq('business_id', businessId);
+  static Future<void> toggleBusinessStatus(String businessId, bool targetStatus) async {
+    await _supabase.from('businesses').update({'is_active': targetStatus}).eq('business_id', businessId);
   }
 
   static Future<void> createStaffMember({required String pin, required String name, required String phone, required String password, required String role}) async {
@@ -233,8 +230,8 @@ class ApiService {
     await _supabase.from('staff').update({'name': newName, 'phone_number': newPhone, 'password': newPassword, 'role': newRole}).eq('staff_number', pin).eq('business_id', currentBusinessId!);
   }
 
-  static Future<void> toggleStaffStatus(String pin, bool currentStatus) async {
+  static Future<void> toggleStaffStatus(String pin, bool targetStatus) async {
     if (currentBusinessId == null) throw Exception("No active session");
-    await _supabase.from('staff').update({'is_active': !currentStatus}).eq('staff_number', pin).eq('business_id', currentBusinessId!); 
+    await _supabase.from('staff').update({'is_active': targetStatus}).eq('staff_number', pin).eq('business_id', currentBusinessId!); 
   }
 }

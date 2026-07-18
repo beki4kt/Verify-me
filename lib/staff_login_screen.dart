@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart'; // REQUIRED FOR INPUT FORMATTERS
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'offline_storage.dart';
@@ -55,46 +55,63 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     try {
       final role = await ApiService.loginStaffUnderBusiness(
         _lockedBusiness['id']!,
-        formattedPhone, // USING FORMATTED PHONE
+        formattedPhone,
         password,
       );
 
-      if (!mounted) return;
+      // GUARD THE ASYNC GAP
+      if (!context.mounted) return;
 
       if (role != null) {
         Widget nextScreen;
-        if (role == 'super_admin') nextScreen = const SuperAdminDashboard();
-        else if (role == 'admin') nextScreen = const AdminDashboard();
-        else if (role == 'cashier') nextScreen = const CashierDashboard();
-        else nextScreen = const WaiterDashboard();
+        
+        // APPLY CURLY BRACES TO ALL FLOW CONTROL STRUCTURES
+        if (role == 'super_admin') {
+          nextScreen = const SuperAdminDashboard();
+        } else if (role == 'admin') {
+          nextScreen = const AdminDashboard();
+        } else if (role == 'cashier') {
+          nextScreen = const CashierDashboard();
+        } else {
+          nextScreen = const WaiterDashboard();
+        }
 
         Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => nextScreen));
       } else {
         setState(() => _errorMessage = "Invalid credentials or inactive account.");
       }
     } catch (e) {
-      setState(() => _errorMessage = "Login Error: Check connection.");
+      if (mounted) {
+        setState(() => _errorMessage = "Login Error: Check connection.");
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   void _confirmUnbindDevice() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF0F172A),
         title: const Text('Unbind Terminal?', style: TextStyle(color: Colors.white)),
         content: const Text('This will remove the current restaurant connection from this device.', style: TextStyle(color: Colors.white54)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL', style: TextStyle(color: Color(0xFF64748B)))),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext), 
+            child: const Text('CANCEL', style: TextStyle(color: Color(0xFF64748B)))
+          ),
           TextButton(
             onPressed: () async {
               await DeviceStorage.clearDeviceLock();
-              if (mounted) {
-                Navigator.pop(context);
-                Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => const BusinessGatewayScreen()));
-              }
+              
+              // GUARD THE ASYNC GAP
+              if (!context.mounted) return;
+              
+              Navigator.pop(context);
+              Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => const BusinessGatewayScreen()));
             },
             child: const Text('UNBIND', style: TextStyle(color: Colors.redAccent)),
           ),
@@ -140,7 +157,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    // FIXED: Persistent Visual Prefix Lock
                     TextField(
                       controller: _phoneController,
                       keyboardType: TextInputType.number, 
@@ -152,7 +168,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                       decoration: InputDecoration(
                         labelText: 'PHONE NUMBER',
                         labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-                        // THE UPGRADE: A permanent UI block instead of a disappearing hint
                         prefixIcon: Padding(
                           padding: const EdgeInsets.only(left: 16.0, right: 8.0),
                           child: Row(
@@ -162,7 +177,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                               const SizedBox(width: 12),
                               const Text('+2519', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
                               const SizedBox(width: 8),
-                              Container(width: 2, height: 24, color: Colors.white10), // A sleek divider line
+                              Container(width: 2, height: 24, color: Colors.white10), 
                               const SizedBox(width: 12),
                             ],
                           ),
