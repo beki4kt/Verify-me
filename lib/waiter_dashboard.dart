@@ -305,15 +305,73 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         setSheetState(() { isSubmitting = true; errorText = null; });
                         
                         try {
-                          await ApiService.submitVerifiedTicket(
-                            transactionId: refController.text.trim().toUpperCase(),
-                            bankName: selectedBank,
-                            amount: billController.text.trim(),
-                          );
-                          
-                          // FIXED: Async gap protection
-                          if (!context.mounted) return;
-                          Navigator.pop(context);
+                          final amountStr = billController.text.trim();
+                          final enteredAmount = double.tryParse(amountStr) ?? 0.0;
+                          final transactionId = refController.text.trim().toUpperCase();
+
+                          // 1. Determine the endpoint based on the dropdown selection
+                          // Note: Ensure these endpoint strings match what you actually use on the Leul API
+                          String endpoint = '';
+                          if (selectedBank == 'Telebirr') {
+                            endpoint = '/verify-telebirr'; // <-- Update to actual endpoint path
+                          } else if (selectedBank == 'CBE') {
+                            endpoint = '/verify-cbe';      // <-- Update to actual endpoint path
+                          } else {
+                            endpoint = '/verify-dashen';   // <-- Update to actual endpoint path
+                          }
+
+                          // 2. Fetch the Admin's Official Bank Config
+                          final bizData = await ApiService.streamCurrentBusiness().first;
+                          final accounts = bizData['bank_accounts'] ?? {};
+
+                          // 3. Verify with Leul's External API
+                          final result = await ApiService.verifyTransaction(transactionId, endpoint);
+
+                          if (result.isSuccess) {
+                            final apiData = result.data?['data'] ?? result.data ?? {};
+                            final apiAmount = double.tryParse(apiData['amount']?.toString() ?? '0') ?? 0.0;
+                            final apiReceiverAccount = (apiData['receiverAccount'] ?? apiData['receiver_account'] ?? '').toString();
+
+                            // --- SECURITY CHECK 1: Underpayment ---
+                            if (apiAmount < enteredAmount) {
+                              throw Exception("FRAUD ALERT: Underpaid! Transaction is for $apiAmount ETB, but bill is $enteredAmount ETB.");
+                            }
+
+                            // Calculate Tip
+                            double calculatedTip = apiAmount > enteredAmount ? apiAmount - enteredAmount : 0.0;
+
+                            // --- SECURITY CHECK 2: Destination Match ---
+                            String expectedAccount = '';
+                            if (selectedBank == 'Telebirr') {
+                              expectedAccount = (accounts['telebirr_number'] ?? '').toString();
+                            } else if (selectedBank == 'CBE') {
+                              expectedAccount = (accounts['cbe_number'] ?? '').toString();
+                            }
+
+                            if (expectedAccount.isNotEmpty && !apiReceiverAccount.contains(expectedAccount)) {
+                                throw Exception("FRAUD ALERT: Money went to $apiReceiverAccount, not the official restaurant account.");
+                            }
+
+                            // 4. Submit to Supabase with the calculated tip
+                            await ApiService.submitVerifiedTicket(
+                              transactionId: transactionId,
+                              bankName: selectedBank,
+                              amount: amountStr,
+                              tipAmount: calculatedTip // Pass the tip!
+                            );
+                            
+                            if (!context.mounted) return;
+                            Navigator.pop(context); // Close the sheet
+
+                            // Show visual feedback on the dashboard
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(calculatedTip > 0 ? 'Ticket Verified! Tip: $calculatedTip ETB 🎉' : 'Ticket Verified!'),
+                              backgroundColor: const Color(0xFF10B981),
+                            ));
+                            
+                          } else {
+                            throw Exception(result.errorMessage ?? "Invalid Transaction ID.");
+                          }
                           
                         } catch (e) {
                           setSheetState(() => errorText = e.toString().replaceAll('Exception: ', ''));

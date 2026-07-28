@@ -11,7 +11,13 @@ class VerificationResult {
 }
 
 class ApiService {
-  static const String baseUrl = "https://verifyapi.leulzenebe.pro";
+  // --- LOCAL MACHINE TESTING CONFIGURATION ---
+  // Replace "192.168.1.X" with your actual computer's local IP address so your physical phone can connect!
+  static const String baseUrl = "http://172.20.10.4:3000/api";
+  
+  // Keep your live domain here as a comment for when you switch to production:
+  // static const String baseUrl = "https://verifyapi.leulzenebe.pro/api";
+
   static const String apiKey = "sk_live_7ebe516799b67c8a30b6861a4131caca8d1ae6bce7f3a6b9";
   static final _supabase = Supabase.instance.client;
 
@@ -37,11 +43,9 @@ class ApiService {
   }
 
   static Future<String?> loginStaffUnderBusiness(String lockedBusinessId, String phone, String password) async {
-    // Super Admin bypass
     final superAdminCheck = await _supabase.from('super_admins').select().eq('phone_number', phone).eq('password', password).maybeSingle();
     if (superAdminCheck != null) { currentUserRole = 'super_admin'; return 'super_admin'; }
     
-    // Staff login scoped to the locked device's business ID
     final staffCheck = await _supabase
         .from('staff')
         .select('*, businesses!inner(max_staff_limit, is_active, has_cashier_module)')
@@ -64,25 +68,49 @@ class ApiService {
   // --- 2. API VERIFICATION & TICKETS ---
   static Future<VerificationResult> verifyTransaction(String transactionId, String endpoint) async {
     try {
+      // DEFENSIVE FIX: Automatically change hyphens (verify-telebirr) to slashes (verify/telebirr)
+      String sanitizedEndpoint = endpoint.replaceAll('-', '/');
+      if (!sanitizedEndpoint.startsWith('/')) {
+        sanitizedEndpoint = '/$sanitizedEndpoint';
+      }
+      
+      final String urlString = baseUrl + sanitizedEndpoint;
+      
       final response = await http.post(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: {"Content-Type": "application/json", "Accept": "application/json", "x-api-key": apiKey, "User-Agent": "Mozilla/5.0"},
+        Uri.parse(urlString),
+        headers: {
+          "Content-Type": "application/json", 
+          "Accept": "application/json", 
+          "x-api-key": apiKey, 
+          "User-Agent": "Mozilla/5.0"
+        },
         body: jsonEncode({"reference": transactionId}),
       ).timeout(const Duration(seconds: 15));
 
+      // Handle Success (200 or 201) from your Express routes
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true || data['status'] == 'success') return VerificationResult(isSuccess: true, data: data);
-        return VerificationResult(isSuccess: false, errorMessage: data['message'] ?? 'Verification failed');
+        
+        if (data['success'] == true || data['status'] == 'success') {
+          return VerificationResult(isSuccess: true, data: data);
+        }
+        return VerificationResult(isSuccess: false, errorMessage: data['message'] ?? 'API rejected the transaction.');
       }
-      final data = jsonDecode(response.body);
-      return VerificationResult(isSuccess: false, errorMessage: data['error'] ?? data['message'] ?? 'Server rejected');
+      
+      // Handle Route and Validation Errors (400, 404, 500)
+      try {
+        final data = jsonDecode(response.body);
+        return VerificationResult(isSuccess: false, errorMessage: data['error'] ?? data['message'] ?? 'Server error: ${response.statusCode}');
+      } catch (_) {
+        return VerificationResult(isSuccess: false, errorMessage: 'HTTP Error: ${response.statusCode}. Check route paths.');
+      }
+      
     } catch (e) {
-      return VerificationResult(isSuccess: false, errorMessage: 'Network Error.');
+      return VerificationResult(isSuccess: false, errorMessage: 'Connection Failed: $e');
     }
   }
 
-  static Future<void> submitVerifiedTicket({required String transactionId, required String amount, required String bankName}) async {
+  static Future<void> submitVerifiedTicket({required String transactionId, required String amount, required String bankName, double tipAmount = 0.0}) async {
     if (currentBusinessId == null || currentStaffNumber == null) throw Exception("Session expired.");
     
     final ticketData = {
@@ -90,6 +118,7 @@ class ApiService {
       'waiter_id': currentStaffNumber, 
       'transaction_ref': transactionId,
       'bill_amount': double.tryParse(amount.replaceAll(',', '').replaceAll('ETB', '').trim()) ?? 0.0, 
+      'tip_amount': tipAmount, 
       'bank': bankName, 
       'status': 'pending', 
     };
@@ -106,7 +135,7 @@ class ApiService {
     await _supabase.from('tickets').update({'status': status}).eq('ticket_id', ticketId);
   }
 
-  // --- 3. BACKEND-FILTERED DATA STREAMS (FIXED & RUNTIME COMPLIANT) ---
+  // --- 3. BACKEND-FILTERED DATA STREAMS ---
   static Stream<Map<String, dynamic>> streamCurrentBusiness() {
     if (currentBusinessId == null) throw Exception("No session");
     return _supabase.from('businesses').stream(primaryKey: ['business_id']).eq('business_id', currentBusinessId!).map((list) => list.first);
@@ -128,7 +157,7 @@ class ApiService {
         .stream(primaryKey: ['ticket_id'])
         .eq('business_id', currentBusinessId!)
         .order('created_at', ascending: false)
-        .map((tickets) => tickets.where((t) => t['waiter_id'] == currentStaffNumber).toList()); // Filtered clean on-device via map
+        .map((tickets) => tickets.where((t) => t['waiter_id'] == currentStaffNumber).toList());
   }
 
   static Stream<List<Map<String, dynamic>>> streamPendingTickets() {

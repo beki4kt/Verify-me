@@ -116,14 +116,12 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with WidgetsB
 
       final RecognizedText recognizedText = await _textRecognizer.processImage(inputImage);
       
-      // Pass the extracted raw text to your bulletproof parser
       final String? foundId = ReceiptParser.extractTransactionId(recognizedText.text, widget.targetBank);
 
       if (foundId != null && !_transactionFound) {
         _transactionFound = true;
         _extractedTransactionId = foundId;
         
-        // Stop streaming to save battery and freeze the frame
         await _cameraController?.stopImageStream();
         
         final hasVibe = await Vibration.hasVibrator();
@@ -243,80 +241,86 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with WidgetsB
                   const SizedBox(height: 32),
                   ElevatedButton(
                     onPressed: isSubmitting
-    ? null
-    : () async {
-        final amount = amountController.text.trim();
-        if (amount.isEmpty) return;
+                        ? null
+                        : () async {
+                            final amount = amountController.text.trim();
+                            if (amount.isEmpty) return;
 
-        setSheetState(() => isSubmitting = true);
-        
-        try {
-          // 1. Fetch the Admin's Official Bank Config from Supabase
-          final bizData = await ApiService.streamCurrentBusiness().first;
-          final accounts = bizData['bank_accounts'] ?? {};
-          
-          // 2. Verify with Leul's External API
-          final result = await ApiService.verifyTransaction(transactionId, widget.targetEndpoint);
-          
-          if (result.isSuccess) {
-            // Extract the normalized payload data
-            final apiData = result.data?['data'] ?? result.data ?? {};
-            
-            final apiAmount = double.tryParse(apiData['amount']?.toString() ?? '0') ?? 0.0;
-            final apiReceiverName = (apiData['receiverName'] ?? apiData['receiver_name'] ?? '').toString().toUpperCase();
-            final apiReceiverAccount = (apiData['receiverAccount'] ?? apiData['receiver_account'] ?? '').toString();
-            
-            final enteredAmount = double.tryParse(amount) ?? 0.0;
+                            setSheetState(() => isSubmitting = true);
+                            
+                            try {
+                              final bizData = await ApiService.streamCurrentBusiness().first;
+                              final accounts = bizData['bank_accounts'] ?? {};
+                              
+                              // Sanitized parameters route directly into safely optimized ApiService
+                              final result = await ApiService.verifyTransaction(transactionId, widget.targetEndpoint);
+                              
+                              if (result.isSuccess) {
+                                final apiData = result.data?['data'] ?? result.data ?? {};
+                                
+                                final apiAmount = double.tryParse(apiData['amount']?.toString() ?? '0') ?? 0.0;
+                                final apiReceiverAccount = (apiData['receiverAccount'] ?? apiData['receiver_account'] ?? '').toString();
+                                
+                                final enteredAmount = double.tryParse(amount) ?? 0.0;
 
-            // --- SECURITY CHECK 1: Amount Match ---
-            if (apiAmount != enteredAmount) {
-              throw Exception("FRAUD ALERT: Scanned receipt is for $apiAmount ETB, but you entered $enteredAmount ETB.");
-            }
+                                // --- TIP CALCULATION & SECURITY CHECK ---
+                                if (apiAmount < enteredAmount) {
+                                  throw Exception("FRAUD ALERT: Underpaid! Scanned receipt is for $apiAmount ETB, but bill is $enteredAmount ETB.");
+                                }
 
-            // --- SECURITY CHECK 2: Destination Match ---
-            String expectedAccount = '';
-            
-            if (widget.targetBank.toLowerCase().contains('telebirr')) {
-              expectedAccount = (accounts['telebirr_number'] ?? '').toString();
-            } else if (widget.targetBank.toLowerCase().contains('cbe')) {
-              expectedAccount = (accounts['cbe_number'] ?? '').toString();
-            }
+                                // Calculate Tip
+                                double calculatedTip = apiAmount > enteredAmount ? apiAmount - enteredAmount : 0.0;
 
-            // Only enforce if the Admin actually set up their bank config
-            if (expectedAccount.isNotEmpty && !apiReceiverAccount.contains(expectedAccount)) {
-                throw Exception("FRAUD ALERT: Money went to $apiReceiverAccount, not the official restaurant account ($expectedAccount).");
-            }
+                                // --- Destination Match ---
+                                String expectedAccount = '';
+                                
+                                if (widget.targetBank.toLowerCase().contains('telebirr')) {
+                                  expectedAccount = (accounts['telebirr_number'] ?? '').toString();
+                                } else if (widget.targetBank.toLowerCase().contains('cbe')) {
+                                  expectedAccount = (accounts['cbe_number'] ?? '').toString();
+                                }
 
-            // 3. Log to Database if all security checks pass
-            await ApiService.submitVerifiedTicket(
-              transactionId: transactionId,
-              amount: amount,
-              bankName: widget.targetBank,
-            );
-            
-            if (mounted) {
-              Navigator.pop(context); // Close sheet
-              Navigator.pop(context); // Go back to Waiter Dashboard
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text('Ticket Logged & Verified!'),
-                backgroundColor: Color(0xFF10B981),
-              ));
-            }
-          } else {
-            throw Exception(result.errorMessage ?? "Invalid Transaction ID.");
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: const Color(0xFFEF4444),
-              duration: const Duration(seconds: 4),
-            ));
-          }
-        } finally {
-          setSheetState(() => isSubmitting = false);
-        }
-      },
+                                if (expectedAccount.isNotEmpty && !apiReceiverAccount.contains(expectedAccount)) {
+                                    throw Exception("FRAUD ALERT: Money went to $apiReceiverAccount, not the official restaurant account ($expectedAccount).");
+                                }
+
+                                // Log to Database with Tip
+                                await ApiService.submitVerifiedTicket(
+                                  transactionId: transactionId,
+                                  amount: amount,
+                                  bankName: widget.targetBank,
+                                  tipAmount: calculatedTip
+                                );
+                                
+                                if (mounted) {
+                                  Navigator.pop(context); // Close sheet
+                                  Navigator.pop(context); // Go back to Dashboard
+                                  
+                                  String successMessage = calculatedTip > 0 
+                                      ? 'Ticket Verified! Tip Added: $calculatedTip ETB 🎉' 
+                                      : 'Ticket Verified & Logged!';
+                                      
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                    content: Text(successMessage, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    backgroundColor: const Color(0xFF10B981),
+                                    duration: const Duration(seconds: 4),
+                                  ));
+                                }
+                              } else {
+                                throw Exception(result.errorMessage ?? "Invalid Transaction ID.");
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text(e.toString().replaceAll('Exception: ', '')),
+                                  backgroundColor: const Color(0xFFEF4444),
+                                  duration: const Duration(seconds: 4),
+                                ));
+                              }
+                            } finally {
+                              if (mounted) setSheetState(() => isSubmitting = false);
+                            }
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF6366F1),
                       padding: const EdgeInsets.symmetric(vertical: 20),
@@ -341,7 +345,6 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with WidgetsB
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 1. The Live Camera Feed
           if (_isCameraInitialized && _cameraController != null)
             Positioned.fill(
               child: CameraPreview(_cameraController!),
@@ -349,7 +352,6 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with WidgetsB
           else
             const Center(child: CircularProgressIndicator(color: Color(0xFF6366F1))),
 
-          // 2. The Targeting Overlay
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -384,7 +386,6 @@ class _ModernScannerScreenState extends State<ModernScannerScreen> with WidgetsB
                     ),
                     const Spacer(),
                     
-                    // The Viewfinder Box
                     Container(
                       width: MediaQuery.of(context).size.width * 0.85,
                       height: 180,
