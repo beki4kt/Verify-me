@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'api_service.dart';
-import 'staff_login_screen.dart'; // FIXED: Pointing to the correct login screen
+import 'staff_login_screen.dart';
+
+import 'core/router/app_router.dart';
+import 'core/theme/app_colors.dart';
+import 'core/theme/app_motion.dart';
+import 'core/theme/app_shapes.dart';
+import 'core/theme/app_spacing.dart';
+import 'core/theme/app_typography.dart';
+import 'core/widgets/app_bottom_sheet.dart';
+import 'core/widgets/skeleton.dart';
+import 'core/widgets/status_dot.dart';
+import 'core/widgets/state_views.dart';
+import 'core/widgets/success_overlay.dart';
 
 class CashierDashboard extends StatefulWidget {
   const CashierDashboard({super.key});
@@ -14,6 +26,7 @@ class CashierDashboard extends StatefulWidget {
 
 class _CashierDashboardState extends State<CashierDashboard> {
   late Stream<List<Map<String, dynamic>>> _ticketsStream;
+  int _tabIndex = 0;
 
   @override
   void initState() {
@@ -27,181 +40,177 @@ class _CashierDashboardState extends State<CashierDashboard> {
     });
   }
 
-  Color _getBankColor(String bank) {
-    if (bank.toLowerCase().contains('telebirr')) return const Color(0xFF0EA5E9);
-    if (bank.toLowerCase().contains('cbe')) return const Color(0xFFA855F7);
-    if (bank.toLowerCase().contains('dashen')) return const Color(0xFFF59E0B);
-    return const Color(0xFF64748B);
+  void _handleLogout() {
+    ApiService.currentStaffNumber = null;
+    goReplace(context, const StaffLoginScreen());
   }
 
+  // ── Settlement sheet ─────────────────────────────────────────────────────
   void _showSettlementSheet(Map<String, dynamic> ticket) {
     final actualController = TextEditingController();
-    final expectedAmount = (ticket['bill_amount'] ?? 0).toDouble();
+    final ticketId = (ticket['ticket_id'] ?? '').toString();
+    final bank = (ticket['bank'] ?? 'Unknown').toString();
+    final ref = (ticket['transaction_ref'] ?? '—').toString();
+    final waiterId = (ticket['waiter_id'] ?? '—').toString();
+    final expectedAmount = (ticket['bill_amount'] as num?)?.toDouble() ?? 0.0;
     bool isSubmitting = false;
     String? errorText;
 
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF0F172A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+    showAppSheet(
+      context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            final inputText = actualController.text.trim();
-            final actualAmount = double.tryParse(inputText);
-            final hasInput = inputText.isNotEmpty && actualAmount != null;
-            
-            final isShortfall = hasInput && actualAmount < expectedAmount;
-            final tipAmount = (hasInput && actualAmount > expectedAmount) ? actualAmount - expectedAmount : 0.0;
+            final input = actualController.text.trim();
+            final actual = double.tryParse(input);
+            final hasInput = input.isNotEmpty && actual != null;
+            final isShortfall = hasInput && actual < expectedAmount;
+            final tip = (hasInput && actual > expectedAmount)
+                ? actual - expectedAmount
+                : 0.0;
 
-            return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 32),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
+            return AppSheetBody(
+              children: [
+                AppSheetHeader(
+                  title: 'VERIFY PAYMENT',
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 24),
+                // Ticket summary card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: ShapeDecoration(
+                    color: AppColors.surfaceLow,
+                    shape: AppShapes.cardSm,
+                  ),
+                  child: Column(
+                    children: [
+                      _summaryRow('REF', ref),
+                      const Divider(color: AppColors.hairline, height: 24),
+                      _summaryRow('WAITER', 'ID: $waiterId'),
+                      const Divider(color: AppColors.hairline, height: 24),
+                      _summaryRow('EXPECTED BILL', '${expectedAmount.toStringAsFixed(2)} ETB',
+                          valueColor: AppColors.success),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Actual amount entry
+                TextField(
+                  controller: actualController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                  textAlign: TextAlign.center,
+                  style: AppTypography.money(
+                    size: 28,
+                    color: isShortfall ? AppColors.danger : AppColors.textPrimary,
+                  ),
+                  onChanged: (_) => setSheetState(() {}),
+                  decoration: InputDecoration(
+                    labelText: 'ACTUAL AMOUNT IN BANK (ETB)',
+                    prefixIcon: Icon(
+                      Icons.account_balance_wallet,
+                      color: isShortfall ? AppColors.danger : AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (hasInput && !isShortfall)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: ShapeDecoration(
+                      color: AppColors.success.withValues(alpha: 0.1),
+                      shape: AppShapes.cardSm,
+                    ),
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('VERIFY PAYMENT', style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.w900, letterSpacing: 2, fontSize: 12)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(color: _getBankColor(ticket['bank']).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                          child: Text(ticket['bank'].toString().toUpperCase(), style: TextStyle(color: _getBankColor(ticket['bank']), fontSize: 10, fontWeight: FontWeight.w900)),
-                        )
+                        Text('CALCULATED TIP',
+                            style: AppTypography.microLabel(color: AppColors.success)),
+                        Text('${tip.toStringAsFixed(2)} ETB',
+                            style: AppTypography.money(size: 16, color: AppColors.success)),
                       ],
                     ),
-                    const SizedBox(height: 24),
-                    
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: const Color(0xFF020617), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('REF:', style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold)),
-                              Text(ticket['transaction_ref'] ?? 'UNKNOWN', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1)),
-                            ],
-                          ),
-                          const Divider(color: Colors.white10, height: 24),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('WAITER:', style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold)),
-                              Text('ID: ${ticket['waiter_id']}', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
-                            ],
-                          ),
-                          const Divider(color: Colors.white10, height: 24),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('EXPECTED BILL:', style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold)),
-                              Text('${expectedAmount.toStringAsFixed(2)} ETB', style: const TextStyle(color: Color(0xFF10B981), fontSize: 18, fontWeight: FontWeight.w900)),
-                            ],
-                          ),
-                        ],
-                      ),
+                  ).animate().fadeIn(),
+                if (isShortfall)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: ShapeDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.1),
+                      shape: AppShapes.cardSm,
                     ),
-                    const SizedBox(height: 24),
-
-                    TextField(
-                      controller: actualController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
-                      style: TextStyle(color: isShortfall ? Colors.redAccent : Colors.white, fontWeight: FontWeight.w900, fontSize: 24),
-                      textAlign: TextAlign.center,
-                      onChanged: (_) => setSheetState(() {}), 
-                      decoration: InputDecoration(
-                        labelText: 'ACTUAL AMOUNT IN BANK (ETB)', 
-                        labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-                        prefixIcon: Icon(Icons.account_balance_wallet, color: isShortfall ? Colors.redAccent : const Color(0xFF6366F1)), 
-                        filled: true, fillColor: isShortfall ? Colors.redAccent.withValues(alpha: 0.05) : const Color(0xFF020617),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                      ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'SHORTFALL. Amount is less than the bill. Settlement blocked.',
+                            style: AppTypography.microLabel(color: AppColors.danger)
+                                .copyWith(fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ),
-                    
-                    const SizedBox(height: 16),
-
-                    if (hasInput && !isShortfall)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: const Color(0xFF10B981).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('CALCULATED TIP:', style: TextStyle(color: Color(0xFF10B981), fontSize: 12, fontWeight: FontWeight.bold)),
-                            Text('${tipAmount.toStringAsFixed(2)} ETB', style: const TextStyle(color: Color(0xFF10B981), fontSize: 16, fontWeight: FontWeight.w900)),
-                          ],
-                        ),
-                      ).animate().fadeIn(),
-
-                    if (isShortfall)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 20),
-                            SizedBox(width: 8),
-                            Expanded(child: Text('SHORTFALL DETECTED. Amount is less than the expected bill. Settlement blocked.', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold))),
-                          ],
-                        ),
-                      ).animate().fadeIn(),
-
-                    const SizedBox(height: 24),
-
-                    if (errorText != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: Text(errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ),
-
-                    if (isShortfall)
-                      ElevatedButton(
-                        onPressed: isSubmitting ? null : () async {
-                          setSheetState(() { isSubmitting = true; errorText = null; });
-                          try {
-                            await Supabase.instance.client.from('tickets').update({
-                              'status': 'rejected',
-                              'updated_at': DateTime.now().toIso8601String(),
-                            }).eq('id', ticket['id']);
-                            
-                            if (context.mounted) Navigator.pop(context);
-                          } catch (e) {
-                            setSheetState(() => errorText = 'Network Error: $e');
-                          } finally {
-                            setSheetState(() => isSubmitting = false);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                        child: isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('REJECT TICKET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
-                      )
-                    else
-                      ElevatedButton(
-                        onPressed: (!hasInput || isSubmitting) ? null : () async {
-                          setSheetState(() { isSubmitting = true; errorText = null; });
-                          try {
-                            await Supabase.instance.client.from('tickets').update({
-                              'status': 'settled',
-                              'actual_amount': actualAmount,
-                              'tip_amount': tipAmount,
-                              'updated_at': DateTime.now().toIso8601String(),
-                            }).eq('id', ticket['id']);
-                            
-                            if (context.mounted) Navigator.pop(context);
-                          } catch (e) {
-                            setSheetState(() => errorText = 'Network Error: $e');
-                          } finally {
-                            setSheetState(() => isSubmitting = false);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), padding: const EdgeInsets.symmetric(vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                        child: isSubmitting ? const CircularProgressIndicator(color: Colors.white) : const Text('SETTLE TICKET', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
-                      )
-                  ],
-                ),
-              ),
+                  ).animate().fadeIn(),
+                const SizedBox(height: 24),
+                if (errorText != null) ...[
+                  ErrorBanner(message: errorText!),
+                ],
+                if (isShortfall)
+                  ElevatedButton(
+                    onPressed: isSubmitting
+                        ? null
+                        : () async {
+                            setSheetState(() { isSubmitting = true; errorText = null; });
+                            try {
+                              await ApiService.rejectTicket(ticketId);
+                              if (!mounted) return;
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Ticket rejected.'),
+                                  backgroundColor: AppColors.danger,
+                                ),
+                              );
+                            } catch (e) {
+                              setSheetState(() => errorText = 'Network Error: $e');
+                            } finally {
+                              if (mounted) setSheetState(() => isSubmitting = false);
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+                    child: isSubmitting
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('REJECT TICKET'),
+                  )
+                else
+                  ElevatedButton(
+                    onPressed: (!hasInput || isSubmitting)
+                        ? null
+                        : () async {
+                            setSheetState(() { isSubmitting = true; errorText = null; });
+                            try {
+                              await ApiService.settleTicket(
+                                ticketId: ticketId,
+                                actualAmount: actual!,
+                                tipAmount: tip,
+                              );
+                              if (!mounted) return;
+                              Navigator.pop(context);
+                              await SuccessOverlay.show(context,
+                                  message: tip > 0 ? 'SETTLED · +${tip.toStringAsFixed(2)} ETB TIP' : 'SETTLED');
+                            } catch (e) {
+                              setSheetState(() => errorText = 'Network Error: $e');
+                            } finally {
+                              if (mounted) setSheetState(() => isSubmitting = false);
+                            }
+                          },
+                    child: isSubmitting
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('SETTLE TICKET'),
+                  ),
+              ],
             );
           },
         );
@@ -209,62 +218,91 @@ class _CashierDashboardState extends State<CashierDashboard> {
     );
   }
 
+  Widget _summaryRow(String label, String value, {Color? valueColor}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: AppTypography.microLabel()),
+        Text(value,
+            style: AppTypography.money(
+              size: 14,
+              weight: FontWeight.w700,
+              color: valueColor ?? AppColors.textPrimary,
+            )),
+      ],
+    );
+  }
+
+  // ── Pending queue ────────────────────────────────────────────────────────
   Widget _buildPendingQueue() {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _ticketsStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF6366F1)));
-        if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('No active tickets.', style: TextStyle(color: Color(0xFF64748B))));
-
-        final pendingTickets = snapshot.data!.where((t) => t['status'] == 'pending').toList();
-
-        if (pendingTickets.isEmpty) return const Center(child: Text('Queue is clear.', style: TextStyle(color: Color(0xFF64748B))));
-
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _skeletonList();
+        }
+        if (snapshot.hasError) {
+          return ErrorBanner(message: 'Connection error.');
+        }
+        final pending =
+            (snapshot.data ?? []).where((t) => t['status'] == 'pending').toList();
+        if (pending.isEmpty) {
+          return const EmptyView(message: 'Queue is clear.', icon: Icons.check_circle_outline);
+        }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: pendingTickets.length,
+          padding: const EdgeInsets.all(AppSpacing.page),
+          itemCount: pending.length,
           itemBuilder: (context, index) {
-            final ticket = pendingTickets[index];
-            final bankColor = _getBankColor(ticket['bank'] ?? '');
-
+            final t = pending[index];
+            final bank = (t['bank'] ?? '').toString();
+            final amount = (t['bill_amount'] as num?)?.toDouble() ?? 0.0;
             return GestureDetector(
-              onTap: () => _showSettlementSheet(ticket),
+              onTap: () => _showSettlementSheet(t),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
+                decoration: const ShapeDecoration(
+                  color: AppColors.surfaceContainer,
+                  shape: AppShapes.cardSm,
                 ),
                 child: Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), shape: BoxShape.circle),
-                      child: const Icon(Icons.notifications_active, color: Color(0xFF6366F1), size: 20),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.notifications_active,
+                          color: AppColors.primary, size: 20),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${ticket['bill_amount']} ETB', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-                          const SizedBox(height: 4),
+                          Text('${amount.toStringAsFixed(2)} ETB',
+                              style: AppTypography.money(size: 18)),
+                          const SizedBox(height: 6),
                           Row(
                             children: [
-                              Text(ticket['bank'] ?? 'N/A', style: TextStyle(color: bankColor, fontSize: 10, fontWeight: FontWeight.w900)),
+                              BankChip(bank: bank, color: AppColors.bank(bank)),
                               const SizedBox(width: 8),
-                              Text('REF: ${ticket['transaction_ref']}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontWeight: FontWeight.bold)),
+                              Expanded(
+                                child: Text('REF: ${t['transaction_ref']}',
+                                    style: AppTypography.microLabel(),
+                                    overflow: TextOverflow.ellipsis),
+                              ),
                             ],
-                          )
+                          ),
                         ],
                       ),
                     ),
-                    const Icon(Icons.chevron_right, color: Color(0xFF64748B)),
+                    const Icon(Icons.chevron_right, color: AppColors.textFaint),
                   ],
                 ),
-              ).animate().fadeIn(delay: (20 * index).ms).slideX(begin: 0.1, end: 0),
+              ).animate().fadeIn(delay: AppMotion.stagger(index)).slideX(
+                  begin: 0.1, end: 0, delay: AppMotion.stagger(index)),
             );
           },
         );
@@ -272,107 +310,137 @@ class _CashierDashboardState extends State<CashierDashboard> {
     );
   }
 
+  // ── Settled ledger ────────────────────────────────────────────────────────
   Widget _buildSettledLedger() {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _ticketsStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF6366F1)));
-        if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('No settled tickets.', style: TextStyle(color: Color(0xFF64748B))));
-
-        final pastTickets = snapshot.data!.where((t) => t['status'] != 'pending').toList();
-
-        if (pastTickets.isEmpty) return const Center(child: Text('No settled tickets yet.', style: TextStyle(color: Color(0xFF64748B))));
-
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _skeletonList();
+        }
+        if (snapshot.hasError) {
+          return const ErrorBanner(message: 'Connection error.');
+        }
+        final past =
+            (snapshot.data ?? []).where((t) => t['status'] != 'pending').toList();
+        if (past.isEmpty) {
+          return const EmptyView(message: 'No settled tickets yet.', icon: Icons.receipt_long);
+        }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: pastTickets.length,
+          padding: const EdgeInsets.all(AppSpacing.page),
+          itemCount: past.length,
           itemBuilder: (context, index) {
-            final ticket = pastTickets[index];
-            final isSettled = ticket['status'] == 'settled';
-            final bankColor = _getBankColor(ticket['bank'] ?? '');
-            
-            final actualAmt = ticket['actual_amount'] ?? 0.0;
-            final tipAmt = ticket['tip_amount'] ?? 0.0;
-
+            final t = past[index];
+            final isSettled = t['status'] == 'settled';
+            final bank = (t['bank'] ?? '').toString();
+            final billAmount = (t['bill_amount'] as num?)?.toDouble() ?? 0.0;
+            final actual = (t['actual_amount'] as num?)?.toDouble() ?? 0.0;
+            final tip = (t['tip_amount'] as num?)?.toDouble() ?? 0.0;
+            final status = isSettled ? 'settled' : 'rejected';
+            final statusColor = isSettled ? AppColors.success : AppColors.danger;
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white10),
+              decoration: const ShapeDecoration(
+                color: AppColors.surfaceContainer,
+                shape: AppShapes.cardSm,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Icon(isSettled ? Icons.check_circle : Icons.cancel, color: isSettled ? const Color(0xFF10B981) : Colors.redAccent, size: 16),
-                          const SizedBox(width: 8),
-                          Text(isSettled ? '${ticket['bill_amount']} ETB' : 'REJECTED', style: TextStyle(color: isSettled ? Colors.white : Colors.redAccent, fontSize: 16, fontWeight: FontWeight.w900)),
-                        ],
+                      StatusDot(
+                        label: status,
+                        color: statusColor,
+                        icon: isSettled ? Icons.check_circle : Icons.cancel,
                       ),
-                      Text(ticket['bank'] ?? 'N/A', style: TextStyle(color: bankColor, fontSize: 10, fontWeight: FontWeight.w900)),
+                      const Spacer(),
+                      BankChip(bank: bank, color: AppColors.bank(bank)),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text('REF: ${ticket['transaction_ref']}  •  Waiter ID: ${ticket['waiter_id']}', style: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold)),
-                  if (isSettled && tipAmt > 0)
+                  const SizedBox(height: 12),
+                  Text(
+                    isSettled ? '${billAmount.toStringAsFixed(2)} ETB' : '—',
+                    style: AppTypography.money(size: 20),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('REF: ${t['transaction_ref']}  •  Waiter: ${t['waiter_id']}',
+                      style: AppTypography.microLabel()),
+                  if (isSettled && tip > 0)
                     Padding(
-                      padding: const EdgeInsets.only(top: 12.0),
+                      padding: const EdgeInsets.only(top: 10),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(color: const Color(0xFF10B981).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                        child: Text('Includes ${tipAmt.toStringAsFixed(2)} ETB Tip (Total: ${actualAmt.toStringAsFixed(2)})', style: const TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.w900)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: ShapeDecoration(
+                          color: AppColors.success.withValues(alpha: 0.1),
+                          shape: const ContinuousRectangleBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                          ),
+                        ),
+                        child: Text(
+                          'Includes ${tip.toStringAsFixed(2)} ETB tip (total ${actual.toStringAsFixed(2)})',
+                          style: AppTypography.microLabel(color: AppColors.success)
+                              .copyWith(fontSize: 10),
+                        ),
                       ),
-                    )
+                    ),
                 ],
               ),
-            ).animate().fadeIn(delay: (20 * index).ms).slideX(begin: 0.1, end: 0);
+            ).animate().fadeIn(delay: AppMotion.stagger(index)).slideX(
+                begin: 0.1, end: 0, delay: AppMotion.stagger(index));
           },
         );
       },
     );
   }
 
+  Widget _skeletonList() {
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.page),
+      children: List.generate(5, (_) => const TicketSkeletonRow()),
+    );
+  }
+
+  // ── Scaffold ──────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF020617),
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF020617), elevation: 0,
-          title: const Text('CASHIER DESK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2)).animate().fadeIn(),
-          leading: IconButton(
-            icon: const Icon(Icons.logout, color: Colors.redAccent),
-            onPressed: () {
-              ApiService.currentStaffNumber = null;
-              // FIXED: Routing to StaffLoginScreen
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const StaffLoginScreen()));
-            }
-          ),
-          bottom: const TabBar(
-            indicatorColor: Color(0xFF6366F1),
-            indicatorWeight: 3,
-            labelStyle: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 11),
-            unselectedLabelColor: Color(0xFF64748B),
-            labelColor: Colors.white,
-            tabs: [
-              Tab(text: 'PENDING QUEUE'),
-              Tab(text: 'SETTLED TICKETS'),
-            ],
-          ),
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        backgroundColor: AppColors.bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.logout, color: AppColors.danger),
+          onPressed: _handleLogout,
         ),
-        body: TabBarView(
-          children: [
-            _buildPendingQueue(),
-            _buildSettledLedger(),
-          ],
-        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _refreshData,
+          ),
+        ],
+        title: const Text('CASHIER DESK'),
+        titleTextStyle: AppTypography.appBarTitle(),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.md),
+            child: SegmentedTabs(
+              tabs: const ['PENDING', 'SETTLED'],
+              index: _tabIndex,
+              onChanged: (i) => setState(() => _tabIndex = i),
+            ),
+          ),
+          Expanded(
+            child: IndexedStack(
+              index: _tabIndex,
+              children: [_buildPendingQueue(), _buildSettledLedger()],
+            ),
+          ),
+        ],
       ),
     );
   }

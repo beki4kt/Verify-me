@@ -66,47 +66,75 @@ class ApiService {
   }
 
   // --- 2. API VERIFICATION & TICKETS ---
-  static Future<VerificationResult> verifyTransaction(String transactionId, String endpoint) async {
+  /// Verifies a transaction against the backend canonical `/verify` endpoint.
+  ///
+  /// [providerOrEndpoint] accepts either a raw provider name ("telebirr") or a
+  /// legacy endpoint path ("/verify-telebirr", "/verify/telebirr"); it is
+  /// normalized to a lowercase provider before the request is sent.
+  static Future<VerificationResult> verifyTransaction(String transactionId, String providerOrEndpoint) async {
     try {
-      // DEFENSIVE FIX: Automatically change hyphens (verify-telebirr) to slashes (verify/telebirr)
-      String sanitizedEndpoint = endpoint.replaceAll('-', '/');
-      if (!sanitizedEndpoint.startsWith('/')) {
-        sanitizedEndpoint = '/$sanitizedEndpoint';
+      final provider = _normalizeProvider(providerOrEndpoint);
+      if (provider == null) {
+        return VerificationResult(isSuccess: false, errorMessage: 'Unknown provider: $providerOrEndpoint');
       }
-      
-      final String urlString = baseUrl + sanitizedEndpoint;
-      
+
+      final String urlString = '$baseUrl/verify';
+
       final response = await http.post(
         Uri.parse(urlString),
         headers: {
-          "Content-Type": "application/json", 
-          "Accept": "application/json", 
-          "x-api-key": apiKey, 
-          "User-Agent": "Mozilla/5.0"
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "x-api-key": apiKey,
+          "User-Agent": "VerifyMe/1.0",
         },
-        body: jsonEncode({"reference": transactionId}),
-      ).timeout(const Duration(seconds: 15));
+        body: jsonEncode({"reference": transactionId, "provider": provider}),
+      ).timeout(const Duration(seconds: 20));
 
-      // Handle Success (200 or 201) from your Express routes
+      // Handle Success (200 or 201) from the Express routes
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        
+
         if (data['success'] == true || data['status'] == 'success') {
           return VerificationResult(isSuccess: true, data: data);
         }
-        return VerificationResult(isSuccess: false, errorMessage: data['message'] ?? 'API rejected the transaction.');
+        return VerificationResult(
+          isSuccess: false,
+          errorMessage: (data['error'] ?? data['message'] ?? 'API rejected the transaction.').toString(),
+        );
       }
-      
+
       // Handle Route and Validation Errors (400, 404, 500)
       try {
         final data = jsonDecode(response.body);
-        return VerificationResult(isSuccess: false, errorMessage: data['error'] ?? data['message'] ?? 'Server error: ${response.statusCode}');
+        return VerificationResult(
+          isSuccess: false,
+          errorMessage: (data['error'] ?? data['message'] ?? 'Server error: ${response.statusCode}').toString(),
+        );
       } catch (_) {
         return VerificationResult(isSuccess: false, errorMessage: 'HTTP Error: ${response.statusCode}. Check route paths.');
       }
-      
     } catch (e) {
       return VerificationResult(isSuccess: false, errorMessage: 'Connection Failed: $e');
+    }
+  }
+
+  /// Normalizes a provider name or legacy endpoint path to a known provider.
+  /// Accepts "telebirr", "Telebirr", "/verify-telebirr", "/verify/telebirr".
+  static String? _normalizeProvider(String input) {
+    final s = input.trim().toLowerCase().replaceAll('-', '/');
+    final segments = s.split('/').where((p) => p.isNotEmpty && p != 'verify').toList();
+    final candidate = segments.isNotEmpty ? segments.last : s;
+    switch (candidate) {
+      case 'telebirr':
+      case 'cbe':
+      case 'cbebirr':
+      case 'dashen':
+      case 'abyssinia':
+      case 'mpesa':
+        return candidate;
+      default:
+        return null;
     }
   }
 
@@ -133,6 +161,31 @@ class ApiService {
 
   static Future<void> updateTicketStatus(String ticketId, String status) async {
     await _supabase.from('tickets').update({'status': status}).eq('ticket_id', ticketId);
+  }
+
+  /// Settle a ticket: marks it `settled` with the actual paid amount + tip.
+  /// Fixes the prior bug where the cashier updated on `id` instead of `ticket_id`.
+  // TODO(schema): once the `settled_by`/`settled_at` migration is applied to
+  // the live Supabase project, add those fields here for an audit trail.
+  static Future<void> settleTicket({
+    required String ticketId,
+    required double actualAmount,
+    required double tipAmount,
+  }) async {
+    await _supabase.from('tickets').update({
+      'status': 'settled',
+      'actual_amount': actualAmount,
+      'tip_amount': tipAmount,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('ticket_id', ticketId);
+  }
+
+  /// Reject a ticket (shortfall / fraud).
+  static Future<void> rejectTicket(String ticketId) async {
+    await _supabase.from('tickets').update({
+      'status': 'rejected',
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('ticket_id', ticketId);
   }
 
   // --- 3. BACKEND-FILTERED DATA STREAMS ---
