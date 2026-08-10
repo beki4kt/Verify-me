@@ -29,7 +29,7 @@ app.use(((err, _req, res, _next) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   const gate = process.env.VERIFY_API_KEY ? "ON" : "OFF (dev)";
-  console.log(`Verify-me API running on http://0.0.0.0:${PORT}`);
+  console.log(`CHEKMI API running on http://0.0.0.0:${PORT}`);
   console.log(`  upstream: ${process.env.VERIFIER_BASE_URL || "https://verifyapi.leulzenebe.pro"}`);
   console.log(`  api-key gate: ${gate}`);
 });

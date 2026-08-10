@@ -1,64 +1,118 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import 'offline_storage.dart';
+
+/// English and Amharic product copy with a safe English fallback.
 class LocalizationService extends ChangeNotifier {
-  String _currentLanguage = 'en';
-  String get currentLanguage => _currentLanguage;
+  LocalizationService() : _languageCode = DeviceStorage.getLanguageCode();
 
-  final Map<String, Map<String, String>> _localizedValues = {
-    'en': {
-      // General
-      'secure_login': 'SECURE SYSTEM LOGIN',
-      'phone_hint': 'Phone Number',
-      'password_hint': 'Password',
-      'authenticate': 'AUTHENTICATE',
-      'switch_lang': 'አማርኛ',
-      // Admin Dashboard
-      'master_operations': 'MASTER OPERATIONS',
-      'real_time_metrics': 'REAL-TIME METRICS (TODAY)',
-      'revenue': 'REVENUE',
-      'tips_logged': 'TIPS LOGGED',
-      'open_tables': 'OPEN TABLES CURRENTLY IN SYSTEM',
-      'active_bills': 'ACTIVE BILLS',
-      'license_usage': 'LICENSE USAGE & UPGRADES',
-      'seats_provisioned': 'Staff Seats Provisioned',
-      'team_directory': 'TEAM DIRECTORY (TAP TO EDIT)',
-      'provision_staff': 'PROVISION NEW STAFF',
-      'full_name': 'FULL NAME',
-      'system_role': 'SYSTEM ROLE',
-      'save_user': 'SAVE USER',
-      'update_staff': 'UPDATE STAFF',
-    },
-    'am': {
-      // General
-      'secure_login': 'ወደ ሲስተም ይግቡ',
-      'phone_hint': 'ስልክ ቁጥር',
-      'password_hint': 'የይለፍ ቃል',
-      'authenticate': 'ግባ',
-      'switch_lang': 'English',
-      // Admin Dashboard
-      'master_operations': 'ዋና ስራዎች (Admin)',
-      'real_time_metrics': 'የእለቱ ገቢ ትንታኔ',
-      'revenue': 'አጠቃላይ ገቢ',
-      'tips_logged': 'ቲፕ (ጉርሻ)',
-      'open_tables': 'በስርዓቱ ውስጥ ያሉ ክፍት ሂሳቦች',
-      'active_bills': 'ያልተዘጉ ሂሳቦች',
-      'license_usage': 'የፍቃድ አጠቃቀም',
-      'seats_provisioned': 'የተመዘገቡ ሰራተኞች',
-      'team_directory': 'የሰራተኞች ማውጫ (ለማስተካከል ይጫኑ)',
-      'provision_staff': 'አዲስ ሰራተኛ መዝግብ',
-      'full_name': 'ሙሉ ስም',
-      'system_role': 'የስራ ድርሻ',
-      'save_user': 'አስቀምጥ',
-      'update_staff': 'አዘምን',
-    }
+  String _languageCode;
+  String get currentLanguage => _languageCode;
+  Locale get locale => Locale(_languageCode);
+  bool get isAmharic => _languageCode == 'am';
+
+  static const Map<String, String> _amharic = {
+    'Language': 'ቋንቋ',
+    'Amharic': 'አማርኛ',
+    'Light mode': 'ብሩህ ገጽታ',
+    'Dark mode': 'ጨለማ ገጽታ',
+    'Connect this terminal': 'ይህን ተርሚናል ያገናኙ',
+    'Enter your restaurant workspace code. You only need to do this once on this device.':
+        'የምግብ ቤትዎን የስራ ቦታ ኮድ ያስገቡ። በዚህ መሣሪያ ላይ አንድ ጊዜ ብቻ ያስፈልጋል።',
+    'WORKSPACE CODE': 'የስራ ቦታ ኮድ',
+    'CONNECT WORKSPACE': 'የስራ ቦታን አገናኝ',
+    'CONNECTING': 'በማገናኘት ላይ',
+    'Encrypted tenant connection': 'የተመሰጠረ የድርጅት ግንኙነት',
+    'Explore before you connect': 'ከማገናኘትዎ በፊት ይመልከቱ',
+    'TRY THE LIVE DEMO': 'የሙከራ ማሳያውን ይመልከቱ',
+    'No account, setup, or payment required': 'መለያ፣ ዝግጅት ወይም ክፍያ አያስፈልግም',
+    'Welcome back': 'እንኳን ደህና መጡ',
+    'Sign in to continue to your shift.': 'ወደ ፈረቃዎ ለመቀጠል ይግቡ።',
+    'Phone number': 'ስልክ ቁጥር',
+    'Password': 'የይለፍ ቃል',
+    'SIGN IN': 'ግባ',
+    'SIGNING IN': 'በመግባት ላይ',
+    'This is not your restaurant? Change workspace':
+        'ይህ የእርስዎ ምግብ ቤት አይደለም? የስራ ቦታ ይቀይሩ',
+    'Restaurant overview': 'የምግብ ቤት አጠቃላይ እይታ',
+    'Overview': 'አጠቃላይ እይታ',
+    'Team': 'ቡድን',
+    'TOTAL REVENUE': 'ጠቅላላ ገቢ',
+    'ACTIVE BILLS': 'ክፍት ሂሳቦች',
+    'BANK DEPOSIT BREAKDOWN': 'የባንክ ገቢ ዝርዝር',
+    'MASTER TRANSACTION LEDGER': 'ዋና የግብይት መዝገብ',
+    'No verified transactions yet.': 'እስካሁን የተረጋገጠ ግብይት የለም።',
+    'Ledger is clear.': 'መዝገቡ ባዶ ነው።',
+    'No staff members found.': 'ምንም ሰራተኛ አልተገኘም።',
+    'No active floor staff.': 'ንቁ የአዳራሽ ሰራተኛ የለም።',
+    'Cashier terminal': 'የገንዘብ ተቀባይ ተርሚናል',
+    'Waiter workspace': 'የአስተናጋጅ የስራ ቦታ',
+    'Wallet': 'የገንዘብ ቦርሳ',
+    'History': 'ታሪክ',
+    'Scan': 'ስካን',
+    'Tickets': 'ትኬቶች',
+    'Scan receipt': 'ደረሰኝ ስካን',
+    'Pending': 'በመጠባበቅ ላይ',
+    'Settled': 'ተጠናቋል',
+    'PENDING': 'በመጠባበቅ ላይ',
+    'SETTLED': 'ተጠናቋል',
+    'Queue is clear.': 'የሚጠብቅ ሂሳብ የለም።',
+    'No settled tickets yet.': 'እስካሁን የተጠናቀቀ ትኬት የለም።',
+    'Connection error.': 'የግንኙነት ስህተት።',
+    'AVAILABLE TIPS': 'ያሉ ጉርሻዎች',
+    'All recorded tips are settled': 'ሁሉም የተመዘገቡ ጉርሻዎች ተጠናቀዋል',
+    'Total checks': 'ጠቅላላ ደረሰኞች',
+    'View receipts': 'ደረሰኞችን ይመልከቱ',
+    'Verified volume': 'የተረጋገጠ መጠን',
+    'RECENT SCANS': 'የቅርብ ጊዜ ስካኖች',
+    'Verified and failed attempts': 'የተሳኩና ያልተሳኩ ሙከራዎች',
+    'No receipt scans recorded yet.': 'እስካሁን የተመዘገበ የደረሰኝ ስካን የለም።',
+    'Checked receipts': 'የተፈተሹ ደረሰኞች',
+    'No checked receipts yet.': 'እስካሁን የተፈተሸ ደረሰኝ የለም።',
+    'Choose a payment provider': 'የክፍያ አቅራቢ ይምረጡ',
+    'CAPTURE RECEIPT': 'ደረሰኝ ያንሱ',
+    'READING RECEIPT': 'ደረሰኙን በማንበብ ላይ',
+    'Trial mode': 'የሙከራ ሁኔታ',
+    'A guided, risk-free tour of CHEKMI': 'የCHEKMI ቀላልና ከአደጋ ነፃ ጉብኝት',
+    'Choose a role': 'ሚና ይምረጡ',
+    'Waiter': 'አስተናጋጅ',
+    'Cashier': 'ገንዘብ ተቀባይ',
+    'Admin': 'አስተዳዳሪ',
+    'Today': 'ዛሬ',
+    'Available tips': 'ያሉ ጉርሻዎች',
+    'Open tickets': 'ክፍት ትኬቶች',
+    'Staff online': 'በመስመር ላይ ያሉ ሰራተኞች',
+    'Verify a receipt': 'ደረሰኝ ያረጋግጡ',
+    'Preview verification': 'ማረጋገጫውን ይመልከቱ',
+    'A sample Telebirr payment was verified successfully.':
+        'የምሳሌ Telebirr ክፍያ በትክክል ተረጋግጧል።',
+    'Payment verified': 'ክፍያው ተረጋግጧል',
+    'Sample data only — no live transaction was created.':
+        'የምሳሌ መረጃ ብቻ ነው፤ እውነተኛ ግብይት አልተፈጠረም።',
+    'EXIT TRIAL': 'ሙከራውን ዝጋ',
+    'Ready to use CHEKMI?': 'CHEKMIን ለመጠቀም ዝግጁ ነዎት?',
+    'Connect your restaurant workspace when you are ready.':
+        'ዝግጁ ሲሆኑ የምግብ ቤትዎን የስራ ቦታ ያገናኙ።',
   };
 
-  void toggleLanguage() {
-    _currentLanguage = _currentLanguage == 'en' ? 'am' : 'en';
+  Future<void> toggleLanguage() => setLanguage(isAmharic ? 'en' : 'am');
+
+  Future<void> setLanguage(String languageCode) async {
+    if (languageCode != 'en' && languageCode != 'am') return;
+    if (_languageCode == languageCode) return;
+    _languageCode = languageCode;
     notifyListeners();
+    await DeviceStorage.saveLanguageCode(languageCode);
   }
 
-  String translate(String key) {
-    return _localizedValues[_currentLanguage]?[key] ?? key;
+  String translate(String english) {
+    if (!isAmharic) return english;
+    return _amharic[english] ?? english;
   }
+}
+
+extension LocalizationBuildContext on BuildContext {
+  LocalizationService get localization => watch<LocalizationService>();
+  String tr(String english) => localization.translate(english);
 }

@@ -1,5 +1,5 @@
 name: verify_me
-description: "A new Flutter project."
+description: "CHEKMI restaurant payment management and verification."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -21,6 +21,7 @@ dependencies:
   hive_flutter: ^1.1.0
   connectivity_plus: ^6.0.3
   flutter_animate: ^4.5.2
+  motor: ^1.1.0
   google_fonts: ^6.0.0
 
 dev_dependencies:
@@ -32,3 +33,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/chekmi_mark_256.png

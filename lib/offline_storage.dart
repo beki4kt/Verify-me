@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'api_service.dart';
@@ -20,7 +20,7 @@ class PendingTicket extends HiveObject {
 
   // NEW: Holds the full ticket data (Amount, Waiter ID, Bank) for the Cashier
   @HiveField(3)
-  final String? ticketDataJson; 
+  final String? ticketDataJson;
 
   PendingTicket({
     required this.transactionId,
@@ -50,7 +50,7 @@ class SyncManager {
   Future<void> enqueueTicket(PendingTicket ticket) async {
     final box = Hive.box<PendingTicket>(_boxName);
     await box.add(ticket);
-    debugPrint("Ticket queued offline: ${ticket.transactionId}");
+    debugPrint('Offline ticket queued.');
   }
 
   // --- NEW METHOD (For the Cashier Ledger fallback) ---
@@ -88,42 +88,47 @@ class SyncManager {
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
       for (var ticket in pendingTickets) {
-        
         // Scenario A: It's a full ticket submission for the Cashier
-        if (ticket.endpoint == 'CASHIER_SUBMISSION' && ticket.ticketDataJson != null) {
-           try {
-             final data = jsonDecode(ticket.ticketDataJson!);
-             await ApiService.submitVerifiedTicket(
-               transactionId: data['transaction_ref'],
-               amount: data['bill_amount'].toString(),
-               bankName: data['bank']
-             );
-             // If the above line succeeds, delete it from the offline queue
-             debugPrint("Offline Cashier Ticket synced successfully: ${ticket.transactionId}");
-             await ticket.delete();
-           } catch (e) {
-             // Network failed during sync, keep it in the queue for the next timer cycle
-             break; 
-           }
-        } 
-        
-        // Scenario B: It's a standard verification
-        else {
-          VerificationResult result = await ApiService.verifyTransaction(
-            ticket.transactionId,
-            ticket.endpoint,
-          );
-
-          if (result.isSuccess) {
-            debugPrint("Offline ticket synced successfully: ${ticket.transactionId}");
-            await ticket.delete(); 
-          } else if (result.errorMessage != null && !result.errorMessage!.contains('Network Error')) {
-            debugPrint("Offline ticket rejected by server: ${ticket.transactionId}. Removing from queue.");
+        if (ticket.endpoint == 'CASHIER_SUBMISSION' &&
+            ticket.ticketDataJson != null) {
+          try {
+            final data = jsonDecode(ticket.ticketDataJson!);
+            await ApiService.submitVerifiedTicket(
+              transactionId: data['transaction_ref'],
+              amount: data['bill_amount'].toString(),
+              bankName: data['bank'],
+              tableNumber: data['table_number']?.toString() ?? 'TAKEAWAY',
+              tipAmount: (data['tip_amount'] as num?)?.toDouble() ?? 0,
+            );
+            final billAmount = (data['bill_amount'] as num?)?.toDouble() ?? 0;
+            final tipAmount = (data['tip_amount'] as num?)?.toDouble() ?? 0;
+            try {
+              await ApiService.recordVerificationAttempt(
+                provider: data['bank']?.toString() ?? 'unknown',
+                transactionRef:
+                    data['transaction_ref']?.toString() ?? ticket.transactionId,
+                expectedAmount: billAmount,
+                verifiedAmount: billAmount + tipAmount,
+                tipAmount: tipAmount,
+                verified: true,
+              );
+            } catch (e) {
+              debugPrint('Offline receipt synced, but its audit entry failed.');
+            }
+            // If the above line succeeds, delete it from the offline queue
+            debugPrint('Offline ticket synced successfully.');
             await ticket.delete();
-          } else {
-            // Network error persists, break loop and try next cycle
+          } catch (e) {
+            // Network failed during sync, keep it in the queue for the next timer cycle
             break;
           }
+        }
+        // Legacy verification-only queue entries do not contain the bill
+        // amount/provider metadata required by the secure verifier contract.
+        // Never re-verify them with a guessed amount.
+        else {
+          debugPrint('Discarding an obsolete verification-only queue entry.');
+          await ticket.delete();
         }
       }
     } catch (e) {
@@ -146,7 +151,11 @@ class DeviceStorage {
     await Hive.openBox(_boxName);
   }
 
-  static Future<void> lockDeviceToBusiness(String businessId, String businessName, String businessCode) async {
+  static Future<void> lockDeviceToBusiness(
+    String businessId,
+    String businessName,
+    String businessCode,
+  ) async {
     final box = Hive.box(_boxName);
     await box.put('locked_business_id', businessId);
     await box.put('locked_business_name', businessName);
@@ -162,11 +171,33 @@ class DeviceStorage {
 
   static Map<String, String?> getLockedBusiness() {
     final box = Hive.box(_boxName);
-    if (!box.isOpen) return {'id': null, 'name': null, 'code': null}; 
+    if (!box.isOpen) return {'id': null, 'name': null, 'code': null};
     return {
       'id': box.get('locked_business_id'),
       'name': box.get('locked_business_name'),
       'code': box.get('locked_business_code'),
     };
+  }
+
+  static ThemeMode getThemeMode() {
+    if (!Hive.isBoxOpen(_boxName)) return ThemeMode.dark;
+    final box = Hive.box(_boxName);
+    return box.get('theme_mode') == 'light' ? ThemeMode.light : ThemeMode.dark;
+  }
+
+  static Future<void> saveThemeMode(ThemeMode mode) async {
+    final box = Hive.box(_boxName);
+    await box.put('theme_mode', mode == ThemeMode.light ? 'light' : 'dark');
+  }
+
+  static String getLanguageCode() {
+    if (!Hive.isBoxOpen(_boxName)) return 'en';
+    final box = Hive.box(_boxName);
+    return box.get('language_code') == 'am' ? 'am' : 'en';
+  }
+
+  static Future<void> saveLanguageCode(String languageCode) async {
+    final box = Hive.box(_boxName);
+    await box.put('language_code', languageCode == 'am' ? 'am' : 'en');
   }
 }

@@ -4,11 +4,7 @@ import '../theme/app_colors.dart';
 
 /// Small uppercase status pill (e.g. "PENDING", "SETTLED", "REJECTED").
 class StatusPill extends StatelessWidget {
-  const StatusPill({
-    super.key,
-    required this.label,
-    required this.color,
-  });
+  const StatusPill({super.key, required this.label, required this.color});
 
   final String label;
   final Color color;

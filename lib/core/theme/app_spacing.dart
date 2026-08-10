@@ -10,9 +10,9 @@ class AppSpacing {
   static const double xxl = 32;
   static const double xxxl = 48;
 
-  static const double radius    = 16;
-  static const double radiusLg  = 24;
-  static const double radiusXl  = 32;
+  static const double radius = 16;
+  static const double radiusLg = 24;
+  static const double radiusXl = 32;
 
   /// Standard page/content padding.
   static const double page = 16;

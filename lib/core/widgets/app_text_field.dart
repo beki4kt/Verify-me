@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 
 /// Standardized text field used across all forms (login, provisioning, sheets).
@@ -52,40 +51,44 @@ class AppTextField extends StatelessWidget {
       inputFormatters: inputFormatters,
       maxLength: maxLength,
       textCapitalization: textCapitalization,
-      style: style ?? const TextStyle(color: Colors.white),
+      style: style ?? Theme.of(context).textTheme.bodyLarge,
       textAlign: textAlign ?? TextAlign.start,
       onChanged: onChanged,
       enabled: enabled,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: _buildPrefix(),
+        prefixIcon: _buildPrefix(context),
       ),
     );
   }
 
-  Widget? _buildPrefix() {
+  Widget? _buildPrefix(BuildContext context) {
     if (icon == null && prefixText == null) return null;
+    final colors = Theme.of(context).colorScheme;
 
     if (prefixText != null && icon != null) {
       return Padding(
-        padding: const EdgeInsets.only(left: AppSpacing.lg, right: AppSpacing.sm),
+        padding: const EdgeInsets.only(
+          left: AppSpacing.lg,
+          right: AppSpacing.sm,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: AppColors.primary),
+            Icon(icon, color: colors.primary),
             const SizedBox(width: AppSpacing.md),
             Text(
               prefixText!,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: colors.onSurface,
                 fontWeight: FontWeight.w900,
                 fontSize: 16,
                 letterSpacing: 1,
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
-            Container(width: 2, height: 24, color: AppColors.hairline),
+            Container(width: 2, height: 24, color: colors.outlineVariant),
             const SizedBox(width: AppSpacing.md),
           ],
         ),
@@ -93,13 +96,20 @@ class AppTextField extends StatelessWidget {
     }
     if (prefixText != null) {
       return Padding(
-        padding: const EdgeInsets.only(left: AppSpacing.lg, right: AppSpacing.sm),
+        padding: const EdgeInsets.only(
+          left: AppSpacing.lg,
+          right: AppSpacing.sm,
+        ),
         child: Text(
           prefixText!,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+          style: TextStyle(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
         ),
       );
     }
-    return Icon(icon, color: AppColors.primary);
+    return Icon(icon, color: colors.primary);
   }
 }

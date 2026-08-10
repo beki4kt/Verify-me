@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'offline_storage.dart';
 import 'business_gateway_screen.dart';
@@ -9,6 +8,14 @@ import 'waiter_dashboard.dart';
 import 'cashier_dashboard.dart';
 import 'super_admin_dashboard.dart';
 import 'admin_dashboard.dart';
+import 'core/theme/app_colors.dart';
+import 'core/theme/app_motion.dart';
+import 'core/theme/app_spacing.dart';
+import 'core/theme/app_typography.dart';
+import 'core/widgets/app_shell.dart';
+import 'core/widgets/state_views.dart';
+import 'localization_service.dart';
+import 'trial_mode_screen.dart';
 
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
@@ -30,12 +37,19 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     _lockedBusiness = DeviceStorage.getLockedBusiness();
   }
 
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleLogin() async {
     final rawPhone = _phoneController.text.trim();
     final password = _passwordController.text.trim();
 
     if (rawPhone.isEmpty || password.isEmpty) return;
-    
+
     // STRICT VALIDATION
     if (rawPhone.length != 8) {
       setState(() => _errorMessage = "Please enter exactly 8 digits.");
@@ -60,11 +74,11 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       );
 
       // GUARD THE ASYNC GAP
-      if (!context.mounted) return;
+      if (!mounted) return;
 
       if (role != null) {
         Widget nextScreen;
-        
+
         // APPLY CURLY BRACES TO ALL FLOW CONTROL STRUCTURES
         if (role == 'super_admin') {
           nextScreen = const SuperAdminDashboard();
@@ -76,9 +90,18 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
           nextScreen = const WaiterDashboard();
         }
 
-        Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => nextScreen));
+        // Stop mutating the outgoing login route while its replacement
+        // transition is deactivating inherited dependencies on Flutter Web.
+        setState(() => _isLoading = false);
+        await Navigator.pushReplacement(
+          context,
+          CupertinoPageRoute(builder: (_) => nextScreen),
+        );
+        return;
       } else {
-        setState(() => _errorMessage = "Invalid credentials or inactive account.");
+        setState(
+          () => _errorMessage = "Invalid credentials or inactive account.",
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -95,25 +118,37 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF0F172A),
-        title: const Text('Unbind Terminal?', style: TextStyle(color: Colors.white)),
-        content: const Text('This will remove the current restaurant connection from this device.', style: TextStyle(color: Colors.white54)),
+        title: const Text('Unbind Terminal?'),
+        content: const Text(
+          'This will remove the current restaurant connection from this device.',
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext), 
-            child: const Text('CANCEL', style: TextStyle(color: Color(0xFF64748B)))
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text(
+              'CANCEL',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
           ),
           TextButton(
             onPressed: () async {
               await DeviceStorage.clearDeviceLock();
-              
+
               // GUARD THE ASYNC GAP
-              if (!context.mounted) return;
-              
-              Navigator.pop(context);
-              Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => const BusinessGatewayScreen()));
+              if (!mounted || !dialogContext.mounted) return;
+
+              Navigator.pop(dialogContext);
+              Navigator.pushReplacement(
+                context,
+                CupertinoPageRoute(
+                  builder: (_) => const BusinessGatewayScreen(),
+                ),
+              );
             },
-            child: const Text('UNBIND', style: TextStyle(color: Colors.redAccent)),
+            child: const Text(
+              'UNBIND',
+              style: TextStyle(color: Colors.redAccent),
+            ),
           ),
         ],
       ),
@@ -122,115 +157,184 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFF020617),
-      body: Center(
+      body: AppBackdrop(
+        maxWidth: 560,
+        entry: true,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(color: const Color(0xFF10B981).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: FadeSlideIn(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    const Icon(Icons.verified_user, color: Color(0xFF10B981), size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      _lockedBusiness['name']?.toUpperCase() ?? 'UNKNOWN TENANT',
-                      style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1),
-                    ),
+                    const LanguageToggleButton(),
+                    const ThemeToggleButton(),
                   ],
                 ),
-              ).animate().fadeIn(),
-              const SizedBox(height: 32),
-              
-              const Text('STAFF LOGIN', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 2)).animate().fadeIn(delay: 100.ms),
-              const SizedBox(height: 32),
-
-              Container(
-                decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white10)),
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _phoneController,
-                      keyboardType: TextInputType.number, 
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(8), 
-                      ],
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 2),
-                      decoration: InputDecoration(
-                        labelText: 'PHONE NUMBER',
-                        labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-                        prefixIcon: Padding(
-                          padding: const EdgeInsets.only(left: 16.0, right: 8.0),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.phone, color: Color(0xFF6366F1)),
-                              const SizedBox(width: 12),
-                              const Text('+2519', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
-                              const SizedBox(width: 8),
-                              Container(width: 2, height: 24, color: Colors.white10), 
-                              const SizedBox(width: 12),
-                            ],
+                const SizedBox(height: AppSpacing.sm),
+                const BrandHero(),
+                const SizedBox(height: AppSpacing.xl),
+                Text(
+                  context.tr('Welcome back'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.displayMedium,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  context.tr('Sign in to continue to your shift.'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                Align(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: .1),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(
+                        color: AppColors.success.withValues(alpha: .2),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.storefront_rounded,
+                          color: AppColors.success,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _lockedBusiness['name'] ?? 'Restaurant',
+                          style: AppTypography.microLabel(
+                            color: AppColors.success,
                           ),
                         ),
-                        filled: true, fillColor: const Color(0xFF020617),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        labelText: 'PASSWORD',
-                        labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-                        prefixIcon: const Icon(Icons.lock, color: Color(0xFF6366F1)),
-                        filled: true, fillColor: const Color(0xFF020617),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    if (_errorMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1),
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('AUTHORIZE', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ).animate().slideY(begin: 0.1, end: 0, delay: 200.ms).fadeIn(delay: 200.ms),
+                const SizedBox(height: AppSpacing.xl),
+                HoverSurface(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(8),
+                        ],
+                        style: TextStyle(
+                          color: colors.onSurface,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: context.tr('Phone number'),
+                          prefixIcon: Padding(
+                            padding: const EdgeInsets.only(
+                              left: 16.0,
+                              right: 8.0,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.phone_outlined,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  '+2519',
+                                  style: TextStyle(
+                                    color: colors.onSurface,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  width: 2,
+                                  height: 24,
+                                  color: colors.onSurface.withValues(alpha: .1),
+                                ),
+                                const SizedBox(width: 12),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        style: TextStyle(color: colors.onSurface),
+                        onSubmitted: (_) => _handleLogin(),
+                        decoration: InputDecoration(
+                          labelText: context.tr('Password'),
+                          prefixIcon: const Icon(Icons.lock_outline_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
 
-              const SizedBox(height: 32),
-              TextButton(
-                onPressed: _confirmUnbindDevice,
-                child: const Text('Terminal Mismatch? Unbind Device', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
-              ).animate().fadeIn(delay: 500.ms),
-            ],
+                      if (_errorMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: ErrorBanner(message: _errorMessage!),
+                        ),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _handleLogin,
+                          icon: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.login_rounded),
+                          label: Text(
+                            context.tr(_isLoading ? 'SIGNING IN' : 'SIGN IN'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                TextButton(
+                  onPressed: _confirmUnbindDevice,
+                  child: Text(
+                    context.tr('This is not your restaurant? Change workspace'),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const TrialModeScreen()),
+                  ),
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: Text(context.tr('TRY THE LIVE DEMO')),
+                ),
+              ],
+            ),
           ),
         ),
       ),

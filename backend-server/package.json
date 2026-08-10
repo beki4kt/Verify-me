@@ -1,7 +1,7 @@
 {
   "name": "backend-server",
   "version": "1.0.0",
-  "description": "Verify-me payment verification backend API",
+  "description": "CHEKMI payment verification backend API",
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon --exec tsx src/index.ts",

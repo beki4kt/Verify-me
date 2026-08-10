@@ -61,8 +61,5 @@ Map<String, WidgetBuilder> appRoutes() => {
 
 /// Pushes a screen replacing the current route (the app's standard transition).
 void goReplace(BuildContext context, Widget screen) {
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(builder: (_) => screen),
-  );
+  Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => screen));
 }

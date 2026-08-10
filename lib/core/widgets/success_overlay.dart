@@ -1,3 +1,5 @@
+import 'dart:math' show pi;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -13,7 +15,10 @@ import '../theme/app_typography.dart';
 class SuccessOverlay {
   SuccessOverlay._();
 
-  static Future<void> show(BuildContext context, {String message = 'Verified'}) {
+  static Future<void> show(
+    BuildContext context, {
+    String message = 'Verified',
+  }) {
     HapticFeedback.mediumImpact();
     return showDialog<void>(
       context: context,
@@ -40,10 +45,7 @@ class _SuccessOverlayState extends State<_SuccessOverlay>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: 750.ms,
-    )..forward();
+    _ctrl = AnimationController(vsync: this, duration: 750.ms)..forward();
     Future.delayed(1400.ms, () {
       if (mounted) Navigator.of(context).pop();
     });
@@ -60,40 +62,48 @@ class _SuccessOverlayState extends State<_SuccessOverlay>
     return Center(
       child: Material(
         color: Colors.transparent,
-        child: Container(
-          width: 200,
-          padding: const EdgeInsets.all(24),
-          decoration: const ShapeDecoration(
-            color: AppColors.surfaceContainerHigh,
-            shape: AppShapes.card,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedBuilder(
-                animation: _ctrl,
-                builder: (_, __) {
-                  return SizedBox(
-                    width: 88,
-                    height: 88,
-                    child: CustomPaint(painter: _CheckPainter(_ctrl.value)),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              Text(
-                widget.message,
-                style: AppTypography.microLabel(color: AppColors.success).copyWith(
-                  fontSize: 12,
-                  letterSpacing: 1.5,
+        child:
+            Container(
+                  width: 200,
+                  padding: const EdgeInsets.all(24),
+                  decoration: ShapeDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surface.withValues(alpha: .88),
+                    shape: AppShapes.card,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _ctrl,
+                        builder: (_, _) {
+                          return SizedBox(
+                            width: 88,
+                            height: 88,
+                            child: CustomPaint(
+                              painter: _CheckPainter(_ctrl.value),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.message,
+                        style: AppTypography.microLabel(
+                          color: AppColors.success,
+                        ).copyWith(fontSize: 12, letterSpacing: 1.5),
+                      ),
+                    ],
+                  ),
+                )
+                .animate()
+                .fadeIn(duration: AppMotion.fast)
+                .scale(
+                  begin: const Offset(0.85, 0.85),
+                  end: const Offset(1, 1),
+                  curve: AppMotion.easeOutBack,
                 ),
-              ),
-            ],
-          ),
-        )
-            .animate()
-            .fadeIn(duration: AppMotion.fast)
-            .scale(begin: const Offset(0.85, 0.85), end: const Offset(1, 1), curve: AppMotion.easeOutBack),
       ),
     );
   }

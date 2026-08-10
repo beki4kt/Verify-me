@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
+import 'app_shell.dart';
 
 /// A left-accented metric card (revenue, active bills, etc.).
 class MetricCard extends StatelessWidget {
@@ -18,34 +20,15 @@ class MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return HoverSurface(
+      accent: accent,
       padding: const EdgeInsets.all(AppSpacing.xl),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border(left: BorderSide(color: accent, width: 4)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-            ),
-          ),
+          Text(title, style: AppTypography.microLabel()),
           const SizedBox(height: AppSpacing.md),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
+          Text(value, style: AppTypography.money(size: 24)),
         ],
       ),
     );

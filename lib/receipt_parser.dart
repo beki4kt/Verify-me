@@ -1,67 +1,104 @@
 class ReceiptParser {
-  /// Extracts the transaction ID based on banking keywords and bank-specific Regex patterns.
+  static const _labels = <String>[
+    r'TRANSACTION\s*(?:ID|NO|NUMBER|REF(?:ERENCE)?)',
+    r'TRANS?\s*(?:ID|NO)',
+    r'TXN\s*(?:ID|NO|REF)',
+    r'TRX\s*(?:ID|NO|REF)',
+    r'RECEIPT\s*(?:ID|NO|NUMBER)',
+    r'REFERENCE\s*(?:ID|NO|NUMBER)?',
+    r'REF\s*(?:ID|NO|NUMBER)?',
+  ];
+
   static String? extractTransactionId(String rawText, String targetBank) {
-    if (rawText.isEmpty) return null;
+    if (rawText.trim().isEmpty) return null;
+    final text = rawText
+        .toUpperCase()
+        .replaceAll('\r', '\n')
+        .replaceAll(RegExp(r'[‐‑‒–—]'), '-')
+        .replaceAll('|', 'I');
+    final bank = targetBank.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
 
-    // 1. Normalize the text (Uppercase, remove all line breaks, collapse extra spaces)
-    final normalizedText = rawText.toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
-
-    // 2. Keyword-Based Anchors (Most reliable)
-    // Looks for "REF NO", "TRANS ID", etc., and captures the next alphanumeric string
-    final keywords = [
-      r'REF NO', r'REF', r'TRANSACTION ID', r'TRANS ID', r'TID', 
-      r'TXN ID', r'TRX ID', r'ID', r'TRANSACTION NO'
-    ];
-    
-    for (final keyword in keywords) {
-      // Matches the keyword, optional colons/dashes/spaces, then captures 6 to 15 alphanumeric chars
-      final regex = RegExp('$keyword\\s*[:#-]?\\s*([A-Z0-9]{6,15})');
-      final match = regex.firstMatch(normalizedText);
-      if (match != null && match.groupCount >= 1) {
-        return match.group(1);
-      }
-    }
-
-    // 3. Bank-Specific Regex Fallbacks (If keywords are unreadable due to bad lighting/crumples)
-    final bank = targetBank.toLowerCase();
-    
-    if (bank.contains('telebirr')) {
-      // Telebirr typically uses a 10-12 character alphanumeric string
-      final telebirrRegex = RegExp(r'\b[A-Z0-9]{10,12}\b');
-      final match = telebirrRegex.firstMatch(normalizedText);
-      if (match != null) return match.group(0);
-    } 
-    else if (bank.contains('cbe')) {
-      // CBE often starts with FT followed by numbers, or is a long string of 10-12 digits
-      final cbeRegex = RegExp(r'\bFT[0-9]{8,12}\b|\b[0-9]{10,12}\b');
-      final match = cbeRegex.firstMatch(normalizedText);
-      if (match != null) return match.group(0);
-    }
-    else if (bank.contains('dashen') || bank.contains('amole')) {
-      // Dashen/Amole transaction IDs are generally numeric or alphanumeric
-      final dashenRegex = RegExp(r'\b[A-Z0-9]{8,12}\b');
-      final match = dashenRegex.firstMatch(normalizedText);
-      if (match != null) return match.group(0);
-    }
-
-    // 4. The Last Resort / Hail Mary
-    // Find the longest alphanumeric string (8-15 characters) that contains BOTH letters and numbers
-    final fallbackRegex = RegExp(r'\b[A-Z0-9]{8,15}\b');
-    final matches = fallbackRegex.allMatches(normalizedText);
-    
-    if (matches.isNotEmpty) {
-      for (final m in matches) {
-        final str = m.group(0)!;
-        // Prioritize strings that have a mix of letters and numbers (highly likely to be an ID)
-        if (str.contains(RegExp(r'[A-Z]')) && str.contains(RegExp(r'[0-9]'))) {
-          return str;
+    for (final line in text.split('\n')) {
+      final normalizedLine = line.replaceAll(RegExp(r'\s+'), ' ').trim();
+      for (final label in _labels) {
+        final match = RegExp(
+          '$label\\s*[:#.=-]?\\s*([A-Z0-9][A-Z0-9 \\-]{5,31})',
+        ).firstMatch(normalizedLine);
+        if (match != null) {
+          final candidate = _clean(match.group(1)!);
+          if (_validForProvider(candidate, bank, anchored: true)) {
+            return candidate;
+          }
         }
       }
-      // If no mixed strings, just return the first long string we found
-      return matches.first.group(0);
     }
 
-    // If absolutely nothing matches, return null so the scanner keeps trying
+    final lines = text
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    for (var i = 0; i < lines.length - 1; i++) {
+      if (_labels.any(
+        (label) => RegExp('^$label\\s*[:#.=-]?\\s*\$').hasMatch(lines[i]),
+      )) {
+        final candidate = _clean(lines[i + 1]);
+        if (_validForProvider(candidate, bank, anchored: true)) {
+          return candidate;
+        }
+      }
+    }
+
+    final compact = text.replaceAll(RegExp(r'[^A-Z0-9]+'), ' ');
+    for (final pattern in _providerPatterns(bank)) {
+      for (final match in pattern.allMatches(compact)) {
+        final candidate = _clean(match.group(0)!);
+        if (_validForProvider(candidate, bank, anchored: false)) {
+          return candidate;
+        }
+      }
+    }
+    for (final match in RegExp(r'\b[A-Z0-9]{8,16}\b').allMatches(compact)) {
+      final candidate = match.group(0)!;
+      if (_validForProvider(candidate, bank, anchored: false)) return candidate;
+    }
     return null;
+  }
+
+  static String _clean(String value) => value
+      .replaceAll(RegExp(r'[^A-Z0-9]'), '')
+      .replaceAll(RegExp(r'^(?:NO|NUMBER)'), '');
+
+  static List<RegExp> _providerPatterns(String bank) {
+    if (bank.contains('cbe') || bank.contains('abyssinia')) {
+      return [RegExp(r'\bFT[A-Z0-9]{9,14}\b')];
+    }
+    if (bank.contains('telebirr')) {
+      return [RegExp(r'\b[A-Z]{2,4}[A-Z0-9]{6,10}\b')];
+    }
+    if (bank.contains('mpesa')) {
+      return [RegExp(r'\b[A-Z]{2,4}[A-Z0-9]{8,12}\b')];
+    }
+    return [
+      RegExp(r'\bFT[A-Z0-9]{9,14}\b'),
+      RegExp(r'\b[A-Z]{2,4}[A-Z0-9]{6,12}\b'),
+    ];
+  }
+
+  static bool _validForProvider(
+    String value,
+    String bank, {
+    required bool anchored,
+  }) {
+    if (value.length < 8 || value.length > 18) return false;
+    if (!value.contains(RegExp(r'[A-Z]')) || !value.contains(RegExp(r'\d'))) {
+      return false;
+    }
+    if (RegExp(r'^(?:251|09)\d+$').hasMatch(value)) return false;
+    if ((bank.contains('cbe') || bank.contains('abyssinia')) &&
+        !value.startsWith('FT')) {
+      return anchored && value.length >= 10;
+    }
+    return true;
   }
 }

@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:vibration/vibration.dart';
 import 'api_service.dart';
 import 'offline_storage.dart';
 import 'staff_login_screen.dart';
+import 'core/theme/app_colors.dart';
+import 'core/theme/app_motion.dart';
+import 'core/theme/app_spacing.dart';
+import 'core/theme/app_typography.dart';
+import 'core/widgets/app_shell.dart';
+import 'core/widgets/state_views.dart';
+import 'localization_service.dart';
+import 'trial_mode_screen.dart';
 
 class BusinessGatewayScreen extends StatefulWidget {
   const BusinessGatewayScreen({super.key});
@@ -17,6 +24,12 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
   final TextEditingController _codeController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    super.dispose();
+  }
 
   Future<void> _verifyAndLock() async {
     final code = _codeController.text.trim().toUpperCase();
@@ -32,18 +45,25 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
     try {
       // --- GOD MODE BYPASS FOR SUPER ADMIN ---
       if (code == 'MASTER99') {
-        await DeviceStorage.lockDeviceToBusiness('SYSTEM_MASTER', 'GOD MODE TERMINAL', 'MASTER99');
+        await DeviceStorage.lockDeviceToBusiness(
+          'SYSTEM_MASTER',
+          'GOD MODE TERMINAL',
+          'MASTER99',
+        );
         final hasVib = await Vibration.hasVibrator();
         if (hasVib == true) Vibration.vibrate(pattern: [0, 50, 100, 50]);
         if (mounted) {
-          Navigator.pushReplacement(context, CupertinoPageRoute(builder: (_) => const StaffLoginScreen()));
+          Navigator.pushReplacement(
+            context,
+            CupertinoPageRoute(builder: (_) => const StaffLoginScreen()),
+          );
         }
         return;
       }
       // ---------------------------------------
 
       final bizData = await ApiService.verifyBusinessCode(code);
-      
+
       if (bizData != null) {
         // Lock the device to the database response
         await DeviceStorage.lockDeviceToBusiness(
@@ -65,7 +85,9 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
     } catch (e) {
       final hasVib = await Vibration.hasVibrator();
       if (hasVib == true) Vibration.vibrate(duration: 200);
-      setState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
+      setState(
+        () => _errorMessage = e.toString().replaceAll('Exception: ', ''),
+      );
     } finally {
       setState(() => _isLoading = false);
     }
@@ -74,80 +96,134 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF020617),
-      body: Center(
+      body: AppBackdrop(
+        maxWidth: 560,
+        entry: true,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(Icons.storefront_outlined, size: 80, color: Color(0xFF6366F1))
-                  .animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
-              const SizedBox(height: 24),
-              const Text(
-                'DEVICE PROVISIONING',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 2),
-              ).animate().fadeIn(delay: 200.ms),
-              const SizedBox(height: 8),
-              const Text(
-                'Enter your unique tenant code to lock this terminal to your restaurant.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
-              ).animate().fadeIn(delay: 300.ms),
-              const SizedBox(height: 48),
-
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.white10),
-                ),
-                padding: const EdgeInsets.all(24),
-                child: Column(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: FadeSlideIn(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextField(
-                      controller: _codeController,
-                      textCapitalization: TextCapitalization.characters,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 4),
-                      decoration: InputDecoration(
-                        hintText: 'ENTER CODE',
-                        hintStyle: const TextStyle(color: Color(0xFF334155), fontSize: 16, letterSpacing: 2),
-                        filled: true,
-                        fillColor: const Color(0xFF020617),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                    const LanguageToggleButton(),
+                    const ThemeToggleButton(),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                const BrandHero(),
+                const SizedBox(height: AppSpacing.xl),
+                Text(
+                  context.tr('Connect this terminal'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.displayMedium,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  context.tr(
+                    'Enter your restaurant workspace code. You only need to do this once on this device.',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: AppSpacing.xxl),
+                HoverSurface(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        context.tr('WORKSPACE CODE'),
+                        style: AppTypography.microLabel(),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    if (_errorMessage != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 24),
-                        decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                        child: Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ).animate().fadeIn(),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _verifyAndLock,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1),
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      const SizedBox(height: AppSpacing.md),
+                      TextField(
+                        controller: _codeController,
+                        textCapitalization: TextCapitalization.characters,
+                        textAlign: TextAlign.center,
+                        onSubmitted: (_) => _verifyAndLock(),
+                        style: AppTypography.money(
+                          size: 22,
+                        ).copyWith(letterSpacing: 4),
+                        decoration: const InputDecoration(
+                          hintText: 'MESOB-DEMO',
+                          prefixIcon: Icon(Icons.key_rounded),
                         ),
-                        child: _isLoading
-                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('LOCK TERMINAL', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                       ),
+                      const SizedBox(height: AppSpacing.lg),
+                      if (_errorMessage != null) ...[
+                        ErrorBanner(message: _errorMessage!),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                      ElevatedButton.icon(
+                        onPressed: _isLoading ? null : _verifyAndLock,
+                        icon: _isLoading
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.arrow_forward_rounded),
+                        label: Text(
+                          context.tr(
+                            _isLoading ? 'CONNECTING' : 'CONNECT WORKSPACE',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                GlassPanel(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  accent: AppColors.success,
+                  child: Column(
+                    children: [
+                      Text(
+                        context.tr('Explore before you connect'),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        context.tr('No account, setup, or payment required'),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const TrialModeScreen(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.auto_awesome_rounded),
+                        label: Text(context.tr('TRY THE LIVE DEMO')),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 14,
+                      color: AppColors.textFaint,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      context.tr('Encrypted tenant connection'),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
-              ).animate().slideY(begin: 0.2, end: 0, delay: 400.ms).fadeIn(delay: 400.ms),
-            ],
+              ],
+            ),
           ),
         ),
       ),

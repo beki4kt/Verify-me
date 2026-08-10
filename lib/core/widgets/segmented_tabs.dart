@@ -31,8 +31,10 @@ class SegmentedTabs extends StatelessWidget {
         return Container(
           height: 44,
           padding: const EdgeInsets.all(4),
-          decoration: const ShapeDecoration(
-            color: AppColors.surfaceContainerLowest,
+          decoration: ShapeDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHigh.withValues(alpha: .72),
             shape: AppShapes.pill,
           ),
           child: Stack(
@@ -50,7 +52,11 @@ class SegmentedTabs extends StatelessWidget {
                     color: AppColors.primary,
                     shape: AppShapes.pill,
                     shadows: [
-                      BoxShadow(color: AppColors.primary, blurRadius: 12, spreadRadius: -4),
+                      BoxShadow(
+                        color: AppColors.primary,
+                        blurRadius: 12,
+                        spreadRadius: -4,
+                      ),
                     ],
                   ),
                 ),
@@ -68,11 +74,18 @@ class SegmentedTabs extends StatelessWidget {
                         onChanged(i);
                       },
                       child: Center(
-                        child: Text(
-                          tabs[i],
-                          style: AppTypography.microLabel(
-                            color: active ? Colors.white : AppColors.textMuted,
-                          ).copyWith(fontSize: 11),
+                        child: MotorScale(
+                          scale: active ? 1 : .96,
+                          child: Text(
+                            tabs[i],
+                            style: AppTypography.microLabel(
+                              color: active
+                                  ? Colors.white
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                            ).copyWith(fontSize: 11),
+                          ),
                         ),
                       ),
                     ),

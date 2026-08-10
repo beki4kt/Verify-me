@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
@@ -51,7 +50,10 @@ class SessionController extends ChangeNotifier {
   }
 
   /// Bind the locked business (after device provisioning, before staff login).
-  void bindBusiness({required String businessId, required String businessName}) {
+  void bindBusiness({
+    required String businessId,
+    required String businessName,
+  }) {
     _businessId = businessId;
     _businessName = businessName;
     notifyListeners();

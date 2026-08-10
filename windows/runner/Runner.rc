@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.leulverify" "\0"
-            VALUE "FileDescription", "verify_me" "\0"
+            VALUE "FileDescription", "CHEKMI" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "verify_me" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.leulverify. All rights reserved." "\0"
             VALUE "OriginalFilename", "verify_me.exe" "\0"
-            VALUE "ProductName", "verify_me" "\0"
+            VALUE "ProductName", "CHEKMI" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

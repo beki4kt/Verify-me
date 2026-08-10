@@ -3,6 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyRouter = void 0;
 const express_1 = require("express");
 const verifier_1 = require("@creofam/verifier");
+// Node 20.12+ can load local environment files without an extra dependency.
+// The development server previously ignored `.env`, leaving the upstream key
+// unset even though it was configured on disk.
+process.loadEnvFile?.();
 exports.verifyRouter = (0, express_1.Router)();
 // ---------------------------------------------------------------------------
 // Configuration (read from env, with sensible defaults for local dev).
@@ -66,18 +70,22 @@ async function dispatch(provider, body) {
             return (await verifier.verifyTelebirr({ reference }));
         case "cbe": {
             const suffix = (body.suffix ?? "").trim();
-            if (!suffix)
-                throw new ClientError("CBE verification requires an account 'suffix'.", 400, "MISSING_SUFFIX");
+            if (!/^\d{8}$/.test(suffix))
+                throw new ClientError("CBE verification requires the last 8 account digits.", 400, "INVALID_SUFFIX");
             return (await verifier.verifyCBE({ reference, accountSuffix: suffix }));
         }
-        case "cbebirr":
-            return (await verifier.verifyCBEBirr({ reference }));
+        case "cbebirr": {
+            const phoneNumber = (body.phoneNumber ?? "").replace(/[\s()+-]/g, "").replace(/^0/, "251");
+            if (!/^2519\d{8}$/.test(phoneNumber))
+                throw new ClientError("CBE Birr requires a valid Ethiopian phone number.", 400, "INVALID_PHONE");
+            return (await verifier.verifyUniversal({ reference, phoneNumber }));
+        }
         case "dashen":
             return (await verifier.verifyDashen({ reference }));
         case "abyssinia": {
             const suffix = (body.suffix ?? "").trim();
-            if (!suffix)
-                throw new ClientError("Abyssinia verification requires a 'suffix'.", 400, "MISSING_SUFFIX");
+            if (!/^\d{5}$/.test(suffix))
+                throw new ClientError("Abyssinia verification requires a 5-digit suffix.", 400, "INVALID_SUFFIX");
             return (await verifier.verifyAbyssinia({ reference, suffix }));
         }
         case "mpesa": {
@@ -132,7 +140,24 @@ async function handleVerify(req, res) {
         const amount = typeof d.amount === "number" ? d.amount : Number(d.amount ?? 0);
         const expectedRaw = body.expectedAmount;
         const expected = typeof expectedRaw === "number" ? expectedRaw : Number(expectedRaw ?? NaN);
-        const underpayment = !Number.isNaN(expected) && amount < expected;
+        if (!Number.isFinite(expected) || expected <= 0) {
+            res.status(400).json({ success: false, error: "A positive expectedAmount is required.", code: "INVALID_AMOUNT" });
+            return;
+        }
+        if (!Number.isFinite(amount) || amount < 0) {
+            res.status(502).json({ success: false, error: "Provider returned an invalid amount.", code: "INVALID_UPSTREAM_AMOUNT" });
+            return;
+        }
+        const underpayment = amount + 0.001 < expected;
+        if (underpayment) {
+            res.status(422).json({
+                success: false,
+                error: `Transfer is ${amount} ETB; expected at least ${expected} ETB.`,
+                code: "UNDERPAID",
+                data: { verified: true, provider, reference: d.reference ?? reference, amount, expectedAmount: expected },
+            });
+            return;
+        }
         res.status(200).json({
             success: true,
             data: {
@@ -149,8 +174,10 @@ async function handleVerify(req, res) {
                 txnDate: d.txnDate ?? null,
                 status: d.status ?? d.statusText ?? null,
                 serviceFee: typeof d.serviceFee === "number" ? d.serviceFee : null,
-                underpaymentDetected: underpayment,
-                fraudDetected: underpayment,
+                expectedAmount: expected,
+                tipAmount: Math.max(0, amount - expected),
+                underpaymentDetected: false,
+                fraudDetected: false,
             },
         });
     }
@@ -164,7 +191,20 @@ async function handleVerify(req, res) {
             return;
         }
         if (err instanceof verifier_1.VerifierError) {
-            res.status(502).json({ success: false, error: "Verification failed: " + err.message, code: "VERIFIER_ERROR" });
+            const raw = err.message || "";
+            const upstreamUnavailable = raw.includes('cloudflare_error') || raw.includes('502') || raw.includes('Bad Gateway');
+            if (upstreamUnavailable) {
+                res.setHeader('Retry-After', '60');
+                res.status(503).json({
+                    success: false,
+                    error: 'The bank verification service is temporarily unavailable. Please retry in about 60 seconds.',
+                    code: 'VERIFIER_TEMPORARILY_UNAVAILABLE',
+                    retryable: true,
+                    retryAfterSeconds: 60,
+                });
+                return;
+            }
+            res.status(502).json({ success: false, error: "Verification failed: " + raw, code: "VERIFIER_ERROR" });
             return;
         }
         console.error("[verify] unexpected error:", err);

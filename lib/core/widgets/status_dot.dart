@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 
 /// Lightweight status indicator: a colored dot + uppercase label.

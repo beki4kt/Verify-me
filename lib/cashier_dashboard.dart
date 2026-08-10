@@ -7,7 +7,6 @@ import 'staff_login_screen.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_colors.dart';
-import 'core/theme/app_motion.dart';
 import 'core/theme/app_shapes.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_typography.dart';
@@ -16,6 +15,9 @@ import 'core/widgets/skeleton.dart';
 import 'core/widgets/status_dot.dart';
 import 'core/widgets/state_views.dart';
 import 'core/widgets/success_overlay.dart';
+import 'core/widgets/segmented_tabs.dart';
+import 'core/widgets/app_shell.dart';
+import 'localization_service.dart';
 
 class CashierDashboard extends StatefulWidget {
   const CashierDashboard({super.key});
@@ -41,7 +43,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
   }
 
   void _handleLogout() {
-    ApiService.currentStaffNumber = null;
+    ApiService.logoutStaff();
     goReplace(context, const StaffLoginScreen());
   }
 
@@ -49,7 +51,6 @@ class _CashierDashboardState extends State<CashierDashboard> {
   void _showSettlementSheet(Map<String, dynamic> ticket) {
     final actualController = TextEditingController();
     final ticketId = (ticket['ticket_id'] ?? '').toString();
-    final bank = (ticket['bank'] ?? 'Unknown').toString();
     final ref = (ticket['transaction_ref'] ?? '—').toString();
     final waiterId = (ticket['waiter_id'] ?? '—').toString();
     final expectedAmount = (ticket['bill_amount'] as num?)?.toDouble() ?? 0.0;
@@ -80,7 +81,9 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: ShapeDecoration(
-                    color: AppColors.surfaceLow,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surface.withValues(alpha: .62),
                     shape: AppShapes.cardSm,
                   ),
                   child: Column(
@@ -89,8 +92,11 @@ class _CashierDashboardState extends State<CashierDashboard> {
                       const Divider(color: AppColors.hairline, height: 24),
                       _summaryRow('WAITER', 'ID: $waiterId'),
                       const Divider(color: AppColors.hairline, height: 24),
-                      _summaryRow('EXPECTED BILL', '${expectedAmount.toStringAsFixed(2)} ETB',
-                          valueColor: AppColors.success),
+                      _summaryRow(
+                        'EXPECTED BILL',
+                        '${expectedAmount.toStringAsFixed(2)} ETB',
+                        valueColor: AppColors.success,
+                      ),
                     ],
                   ),
                 ),
@@ -98,12 +104,20 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 // Actual amount entry
                 TextField(
                   controller: actualController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(r'^\d+\.?\d{0,2}'),
+                    ),
+                  ],
                   textAlign: TextAlign.center,
                   style: AppTypography.money(
                     size: 28,
-                    color: isShortfall ? AppColors.danger : AppColors.textPrimary,
+                    color: isShortfall
+                        ? AppColors.danger
+                        : Theme.of(context).colorScheme.onSurface,
                   ),
                   onChanged: (_) => setSheetState(() {}),
                   decoration: InputDecoration(
@@ -125,10 +139,19 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('CALCULATED TIP',
-                            style: AppTypography.microLabel(color: AppColors.success)),
-                        Text('${tip.toStringAsFixed(2)} ETB',
-                            style: AppTypography.money(size: 16, color: AppColors.success)),
+                        Text(
+                          'CALCULATED TIP',
+                          style: AppTypography.microLabel(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        Text(
+                          '${tip.toStringAsFixed(2)} ETB',
+                          style: AppTypography.money(
+                            size: 16,
+                            color: AppColors.success,
+                          ),
+                        ),
                       ],
                     ),
                   ).animate().fadeIn(),
@@ -141,45 +164,62 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 20),
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: AppColors.danger,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'SHORTFALL. Amount is less than the bill. Settlement blocked.',
-                            style: AppTypography.microLabel(color: AppColors.danger)
-                                .copyWith(fontSize: 12),
+                            style: AppTypography.microLabel(
+                              color: AppColors.danger,
+                            ).copyWith(fontSize: 12),
                           ),
                         ),
                       ],
                     ),
                   ).animate().fadeIn(),
                 const SizedBox(height: 24),
-                if (errorText != null) ...[
-                  ErrorBanner(message: errorText!),
-                ],
+                if (errorText != null) ...[ErrorBanner(message: errorText!)],
                 if (isShortfall)
                   ElevatedButton(
                     onPressed: isSubmitting
                         ? null
                         : () async {
-                            setSheetState(() { isSubmitting = true; errorText = null; });
+                            setSheetState(() {
+                              isSubmitting = true;
+                              errorText = null;
+                            });
                             try {
                               await ApiService.rejectTicket(ticketId);
-                              if (!mounted) return;
+                              if (!context.mounted || !mounted) return;
+                              final messenger = ScaffoldMessenger.of(
+                                this.context,
+                              );
                               Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 const SnackBar(
                                   content: Text('Ticket rejected.'),
                                   backgroundColor: AppColors.danger,
                                 ),
                               );
                             } catch (e) {
-                              setSheetState(() => errorText = 'Network Error: $e');
+                              if (context.mounted) {
+                                setSheetState(
+                                  () => errorText = 'Network Error: $e',
+                                );
+                              }
                             } finally {
-                              if (mounted) setSheetState(() => isSubmitting = false);
+                              if (context.mounted) {
+                                setSheetState(() => isSubmitting = false);
+                              }
                             }
                           },
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.danger,
+                    ),
                     child: isSubmitting
                         ? const CircularProgressIndicator(color: Colors.white)
                         : const Text('REJECT TICKET'),
@@ -189,21 +229,35 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     onPressed: (!hasInput || isSubmitting)
                         ? null
                         : () async {
-                            setSheetState(() { isSubmitting = true; errorText = null; });
+                            setSheetState(() {
+                              isSubmitting = true;
+                              errorText = null;
+                            });
                             try {
                               await ApiService.settleTicket(
                                 ticketId: ticketId,
-                                actualAmount: actual!,
+                                actualAmount: actual,
                                 tipAmount: tip,
                               );
-                              if (!mounted) return;
+                              if (!context.mounted || !mounted) return;
+                              final dashboardContext = this.context;
                               Navigator.pop(context);
-                              await SuccessOverlay.show(context,
-                                  message: tip > 0 ? 'SETTLED · +${tip.toStringAsFixed(2)} ETB TIP' : 'SETTLED');
+                              await SuccessOverlay.show(
+                                dashboardContext,
+                                message: tip > 0
+                                    ? 'SETTLED · +${tip.toStringAsFixed(2)} ETB TIP'
+                                    : 'SETTLED',
+                              );
                             } catch (e) {
-                              setSheetState(() => errorText = 'Network Error: $e');
+                              if (context.mounted) {
+                                setSheetState(
+                                  () => errorText = 'Network Error: $e',
+                                );
+                              }
                             } finally {
-                              if (mounted) setSheetState(() => isSubmitting = false);
+                              if (context.mounted) {
+                                setSheetState(() => isSubmitting = false);
+                              }
                             }
                           },
                     child: isSubmitting
@@ -223,12 +277,14 @@ class _CashierDashboardState extends State<CashierDashboard> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: AppTypography.microLabel()),
-        Text(value,
-            style: AppTypography.money(
-              size: 14,
-              weight: FontWeight.w700,
-              color: valueColor ?? AppColors.textPrimary,
-            )),
+        Text(
+          value,
+          style: AppTypography.money(
+            size: 14,
+            weight: FontWeight.w700,
+            color: valueColor ?? Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
       ],
     );
   }
@@ -242,12 +298,16 @@ class _CashierDashboardState extends State<CashierDashboard> {
           return _skeletonList();
         }
         if (snapshot.hasError) {
-          return ErrorBanner(message: 'Connection error.');
+          return ErrorBanner(message: context.tr('Connection error.'));
         }
-        final pending =
-            (snapshot.data ?? []).where((t) => t['status'] == 'pending').toList();
+        final pending = (snapshot.data ?? [])
+            .where((t) => t['status'] == 'pending')
+            .toList();
         if (pending.isEmpty) {
-          return const EmptyView(message: 'Queue is clear.', icon: Icons.check_circle_outline);
+          return EmptyView(
+            message: context.tr('Queue is clear.'),
+            icon: Icons.check_circle_outline,
+          );
         }
         return ListView.builder(
           padding: const EdgeInsets.all(AppSpacing.page),
@@ -261,8 +321,10 @@ class _CashierDashboardState extends State<CashierDashboard> {
               child: Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
-                decoration: const ShapeDecoration(
-                  color: AppColors.surfaceContainer,
+                decoration: ShapeDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surface.withValues(alpha: .64),
                   shape: AppShapes.cardSm,
                 ),
                 child: Row(
@@ -273,25 +335,32 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         color: AppColors.primary.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.notifications_active,
-                          color: AppColors.primary, size: 20),
+                      child: const Icon(
+                        Icons.notifications_active,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${amount.toStringAsFixed(2)} ETB',
-                              style: AppTypography.money(size: 18)),
+                          Text(
+                            '${amount.toStringAsFixed(2)} ETB',
+                            style: AppTypography.money(size: 18),
+                          ),
                           const SizedBox(height: 6),
                           Row(
                             children: [
                               BankChip(bank: bank, color: AppColors.bank(bank)),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text('REF: ${t['transaction_ref']}',
-                                    style: AppTypography.microLabel(),
-                                    overflow: TextOverflow.ellipsis),
+                                child: Text(
+                                  'REF: ${t['transaction_ref']}',
+                                  style: AppTypography.microLabel(),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                           ),
@@ -301,8 +370,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     const Icon(Icons.chevron_right, color: AppColors.textFaint),
                   ],
                 ),
-              ).animate().fadeIn(delay: AppMotion.stagger(index)).slideX(
-                  begin: 0.1, end: 0, delay: AppMotion.stagger(index)),
+              ),
             );
           },
         );
@@ -319,12 +387,16 @@ class _CashierDashboardState extends State<CashierDashboard> {
           return _skeletonList();
         }
         if (snapshot.hasError) {
-          return const ErrorBanner(message: 'Connection error.');
+          return ErrorBanner(message: context.tr('Connection error.'));
         }
-        final past =
-            (snapshot.data ?? []).where((t) => t['status'] != 'pending').toList();
+        final past = (snapshot.data ?? [])
+            .where((t) => t['status'] != 'pending')
+            .toList();
         if (past.isEmpty) {
-          return const EmptyView(message: 'No settled tickets yet.', icon: Icons.receipt_long);
+          return EmptyView(
+            message: context.tr('No settled tickets yet.'),
+            icon: Icons.receipt_long,
+          );
         }
         return ListView.builder(
           padding: const EdgeInsets.all(AppSpacing.page),
@@ -337,12 +409,16 @@ class _CashierDashboardState extends State<CashierDashboard> {
             final actual = (t['actual_amount'] as num?)?.toDouble() ?? 0.0;
             final tip = (t['tip_amount'] as num?)?.toDouble() ?? 0.0;
             final status = isSettled ? 'settled' : 'rejected';
-            final statusColor = isSettled ? AppColors.success : AppColors.danger;
+            final statusColor = isSettled
+                ? AppColors.success
+                : AppColors.danger;
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
-              decoration: const ShapeDecoration(
-                color: AppColors.surfaceContainer,
+              decoration: ShapeDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surface.withValues(alpha: .64),
                 shape: AppShapes.cardSm,
               ),
               child: Column(
@@ -365,13 +441,18 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     style: AppTypography.money(size: 20),
                   ),
                   const SizedBox(height: 4),
-                  Text('REF: ${t['transaction_ref']}  •  Waiter: ${t['waiter_id']}',
-                      style: AppTypography.microLabel()),
+                  Text(
+                    'REF: ${t['transaction_ref']}  •  Waiter: ${t['waiter_id']}',
+                    style: AppTypography.microLabel(),
+                  ),
                   if (isSettled && tip > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: ShapeDecoration(
                           color: AppColors.success.withValues(alpha: 0.1),
                           shape: const ContinuousRectangleBorder(
@@ -380,15 +461,15 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         ),
                         child: Text(
                           'Includes ${tip.toStringAsFixed(2)} ETB tip (total ${actual.toStringAsFixed(2)})',
-                          style: AppTypography.microLabel(color: AppColors.success)
-                              .copyWith(fontSize: 10),
+                          style: AppTypography.microLabel(
+                            color: AppColors.success,
+                          ).copyWith(fontSize: 10),
                         ),
                       ),
                     ),
                 ],
               ),
-            ).animate().fadeIn(delay: AppMotion.stagger(index)).slideX(
-                begin: 0.1, end: 0, delay: AppMotion.stagger(index));
+            );
           },
         );
       },
@@ -406,41 +487,50 @@ class _CashierDashboardState extends State<CashierDashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: AppColors.bg,
         elevation: 0,
         leading: IconButton(
+          tooltip: 'Sign out',
           icon: const Icon(Icons.logout, color: AppColors.danger),
           onPressed: _handleLogout,
         ),
         actions: [
+          const LanguageToggleButton(),
+          const ThemeToggleButton(),
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
+            tooltip: 'Refresh tickets',
+            icon: const Icon(Icons.refresh),
             onPressed: _refreshData,
           ),
         ],
-        title: const Text('CASHIER DESK'),
+        title: Text(context.tr('Cashier terminal')),
         titleTextStyle: AppTypography.appBarTitle(),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.md),
-            child: SegmentedTabs(
-              tabs: const ['PENDING', 'SETTLED'],
-              index: _tabIndex,
-              onChanged: (i) => setState(() => _tabIndex = i),
+      body: AppBackdrop(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.sm,
+                AppSpacing.xl,
+                AppSpacing.md,
+              ),
+              child: SegmentedTabs(
+                tabs: [context.tr('PENDING'), context.tr('SETTLED')],
+                index: _tabIndex,
+                onChanged: (i) => setState(() => _tabIndex = i),
+              ),
             ),
-          ),
-          Expanded(
-            child: IndexedStack(
-              index: _tabIndex,
-              children: [_buildPendingQueue(), _buildSettledLedger()],
+            Expanded(
+              child: IndexedStack(
+                index: _tabIndex,
+                children: [_buildPendingQueue(), _buildSettledLedger()],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
