@@ -127,7 +127,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text(
               'CANCEL',
-              style: TextStyle(color: Color(0xFF64748B)),
+              style: TextStyle(color: AppColors.textFaint),
             ),
           ),
           TextButton(
@@ -171,8 +171,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    const LanguageToggleButton(),
-                    const ThemeToggleButton(),
+                    const GlassLanguageToggleButton(),
+                    const GlassThemeToggleButton(),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),

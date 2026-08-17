@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'offline_storage.dart';
 import 'core/session/session_controller.dart';
 
 class VerificationResult {
@@ -44,15 +43,19 @@ class ApiService {
   static String? _staffSessionToken;
   static int? currentBusinessMaxStaff;
   static bool? currentBusinessHasCashier;
+  static final Map<String, Stream<List<Map<String, dynamic>>>>
+  _ticketStreamCache = {};
+  static Stream<List<Map<String, dynamic>>>? _withdrawalRequestsStream;
+  static Stream<List<Map<String, dynamic>>>? _staffRosterStream;
+  static Stream<Map<String, dynamic>>? _businessStream;
 
   // --- 1. AUTHENTICATION & BUSINESS LAYER ---
 
   static Future<Map<String, dynamic>?> verifyBusinessCode(String code) async {
-    final response = await _supabase
-        .from('businesses')
-        .select('business_id, name, business_code, is_active')
-        .eq('business_code', code.toUpperCase())
-        .maybeSingle();
+    final response = await _supabase.rpc(
+      'lookup_business',
+      params: {'p_code': code.toUpperCase()},
+    );
 
     if (response == null) throw Exception("Invalid Business Code.");
     if (response['is_active'] != true) {
@@ -67,17 +70,6 @@ class ApiService {
     String phone,
     String password,
   ) async {
-    final superAdminCheck = await _supabase
-        .from('super_admins')
-        .select()
-        .eq('phone_number', phone)
-        .eq('password', password)
-        .maybeSingle();
-    if (superAdminCheck != null) {
-      currentUserRole = 'super_admin';
-      return 'super_admin';
-    }
-
     final response = await _supabase.rpc(
       'login_staff',
       params: {
@@ -93,6 +85,7 @@ class ApiService {
     currentStaffNumber = staff['staff_number']?.toString();
     currentUserRole = staff['role']?.toString();
     _staffSessionToken = staff['token']?.toString();
+    _resetStreamCaches();
     currentBusinessMaxStaff = (staff['max_staff_limit'] as num?)?.toInt() ?? 0;
     currentBusinessHasCashier = staff['has_cashier_module'] == true;
     if (currentBusinessId == null ||
@@ -121,6 +114,7 @@ class ApiService {
       }
     }
     _staffSessionToken = null;
+    _resetStreamCaches();
     currentStaffNumber = null;
     currentUserRole = null;
     currentBusinessMaxStaff = null;
@@ -131,6 +125,7 @@ class ApiService {
   static void unbindSession() {
     currentBusinessId = null;
     _staffSessionToken = null;
+    _resetStreamCaches();
     currentStaffNumber = null;
     currentUserRole = null;
     currentBusinessMaxStaff = null;
@@ -227,6 +222,75 @@ class ApiService {
     }
   }
 
+  /// Server-authoritative production workflow. The backend validates this
+  /// staff session, calls the provider, checks the tenant's receiving account,
+  /// and atomically commits immutable evidence plus the pending ticket.
+  static Future<VerificationResult> verifyAndCreateTicket({
+    required String transactionId,
+    required String provider,
+    required double expectedAmount,
+    required String tableNumber,
+    Uint8List? receiptImageBytes,
+    String? suffix,
+    String? phoneNumber,
+  }) async {
+    final normalizedProvider = _normalizeProvider(provider);
+    if (normalizedProvider == null) {
+      return VerificationResult(
+        isSuccess: false,
+        errorMessage: 'Unknown provider: $provider',
+      );
+    }
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/verify-and-create'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer ${_requireSessionToken()}',
+              'User-Agent': 'CHEKMI/1.0',
+            },
+            body: jsonEncode({
+              'reference': transactionId.trim().toUpperCase(),
+              'provider': normalizedProvider,
+              'expectedAmount': expectedAmount,
+              'tableNumber': tableNumber.trim(),
+              if (receiptImageBytes != null)
+                'receiptImageBase64': base64Encode(receiptImageBytes),
+              if (suffix != null && suffix.trim().isNotEmpty)
+                'suffix': suffix.trim(),
+              if (phoneNumber != null && phoneNumber.trim().isNotEmpty)
+                'phoneNumber': phoneNumber.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 35));
+      final decoded = response.body.isEmpty
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return VerificationResult(isSuccess: true, data: decoded);
+      }
+      return VerificationResult(
+        isSuccess: false,
+        errorMessage:
+            decoded['error']?.toString() ??
+            'Verification failed (${response.statusCode}).',
+        data: decoded,
+      );
+    } on TimeoutException {
+      return VerificationResult(
+        isSuccess: false,
+        errorMessage: 'Verification timed out. Check before retrying.',
+      );
+    } catch (error) {
+      return VerificationResult(
+        isSuccess: false,
+        errorMessage: 'Connection failed: $error',
+      );
+    }
+  }
+
   /// Normalizes a provider name or legacy endpoint path to a known provider.
   /// Accepts "telebirr", "Telebirr", "/verify-telebirr", "/verify/telebirr".
   static String? _normalizeProvider(String input) {
@@ -249,118 +313,72 @@ class ApiService {
     }
   }
 
-  static Future<void> submitVerifiedTicket({
-    required String transactionId,
-    required String amount,
-    required String bankName,
-    required String tableNumber,
-    double tipAmount = 0.0,
-  }) async {
-    if (currentBusinessId == null || currentStaffNumber == null) {
-      throw Exception("Session expired.");
-    }
-
-    final ticketData = {
-      'business_id': currentBusinessId,
-      'waiter_id': currentStaffNumber,
-      'table_number': tableNumber.trim(),
-      'transaction_ref': transactionId,
-      'bill_amount':
-          double.tryParse(
-            amount.replaceAll(',', '').replaceAll('ETB', '').trim(),
-          ) ??
-          0.0,
-      'tip_amount': tipAmount,
-      'bank': bankName,
-      'status': 'pending',
-    };
-
-    try {
-      await _supabase
-          .rpc(
-            'create_ticket',
-            params: {
-              'p_token': _requireSessionToken(),
-              'p_transaction_ref': ticketData['transaction_ref'],
-              'p_bill_amount': ticketData['bill_amount'],
-              'p_bank': ticketData['bank'],
-              'p_table_number': ticketData['table_number'],
-              'p_tip_amount': ticketData['tip_amount'],
-            },
-          )
-          .timeout(const Duration(seconds: 5));
-    } catch (e) {
-      final text = e.toString();
-      final networkFailure =
-          e is TimeoutException ||
-          e is SocketException ||
-          text.contains('SocketException') ||
-          text.contains('timed out') ||
-          text.contains('Failed host lookup');
-      if (!networkFailure) {
-        throw Exception('Ticket database error: $text');
-      }
-      await SyncManager.instance.saveOfflineTicket(ticketData);
-      throw Exception(
-        "Network unavailable. Ticket saved locally and will sync automatically.",
-      );
-    }
+  static Future<Map<String, dynamic>?> fetchReceiptImage(
+    String ticketId,
+  ) async {
+    final response = await _supabase.rpc(
+      'get_receipt_image',
+      params: {'p_token': _requireSessionToken(), 'p_ticket_id': ticketId},
+    );
+    return response is Map ? Map<String, dynamic>.from(response) : null;
   }
 
-  static Future<void> updateTicketStatus(String ticketId, String status) async {
-    await _transitionTicket(ticketId: ticketId, status: status);
-  }
-
-  /// Settle a ticket: marks it `settled` with the actual paid amount + tip.
-  /// Fixes the prior bug where the cashier updated on `id` instead of `ticket_id`.
-  // TODO(schema): once the `settled_by`/`settled_at` migration is applied to
-  // the live Supabase project, add those fields here for an audit trail.
+  /// Settlement uses the provider-confirmed amount already stored with the
+  /// immutable evidence. The cashier supplies only an auditable reason.
   static Future<void> settleTicket({
     required String ticketId,
-    required double actualAmount,
-    required double tipAmount,
+    required String reason,
   }) async {
     await _transitionTicket(
       ticketId: ticketId,
       status: 'settled',
-      actualAmount: actualAmount,
-      tipAmount: tipAmount,
+      reason: reason,
     );
   }
 
-  /// Reject a ticket (shortfall / fraud).
-  static Future<void> rejectTicket(String ticketId) async {
-    await _transitionTicket(ticketId: ticketId, status: 'rejected');
+  static Future<void> rejectTicket({
+    required String ticketId,
+    required String reason,
+  }) async {
+    await _transitionTicket(
+      ticketId: ticketId,
+      status: 'rejected',
+      reason: reason,
+    );
   }
 
   // --- 3. BACKEND-FILTERED DATA STREAMS ---
   static Stream<Map<String, dynamic>> streamCurrentBusiness() {
-    if (currentBusinessId == null) throw Exception("No session");
-    return _supabase
-        .from('businesses')
-        .stream(primaryKey: ['business_id'])
-        .eq('business_id', currentBusinessId!)
-        .map((list) => list.first);
+    return _businessStream ??= _replayLatest(_pollCurrentBusiness());
   }
 
   /// One-shot business lookup for critical workflows. Verification must not
   /// depend on Supabase Realtime being enabled for the businesses table.
   static Future<Map<String, dynamic>> fetchCurrentBusiness() async {
-    if (currentBusinessId == null) {
-      throw Exception('No active business session');
-    }
-    return await _supabase
-        .from('businesses')
-        .select()
-        .eq('business_id', currentBusinessId!)
-        .single();
+    final response = await _supabase.rpc(
+      'get_current_business',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return Map<String, dynamic>.from(response as Map);
   }
 
   static Stream<List<Map<String, dynamic>>> streamAllBusinesses() {
-    return _supabase
-        .from('businesses')
-        .stream(primaryKey: ['business_id'])
-        .order('created_at', ascending: false);
+    throw UnsupportedError(
+      'Platform administration requires the protected operator console.',
+    );
+  }
+
+  static Stream<Map<String, dynamic>> _pollCurrentBusiness() async* {
+    String? previousPayload;
+    while (_staffSessionToken != null) {
+      final business = await fetchCurrentBusiness();
+      final payload = jsonEncode(business);
+      if (payload != previousPayload) {
+        previousPayload = payload;
+        yield business;
+      }
+      await Future<void>.delayed(const Duration(seconds: 5));
+    }
   }
 
   static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
@@ -386,6 +404,52 @@ class ApiService {
     return _ticketPollingStream(
       'business',
     ).map((tickets) => tickets.where((t) => t['status'] == 'settled').toList());
+  }
+
+  static Stream<List<Map<String, dynamic>>> streamTicketReport({
+    DateTime? from,
+    DateTime? to,
+    String? staffNumber,
+    String? provider,
+  }) {
+    return _replayLatest(
+      _pollTicketReport(
+        from: from,
+        to: to,
+        staffNumber: staffNumber,
+        provider: provider,
+      ),
+    );
+  }
+
+  static Stream<List<Map<String, dynamic>>> _pollTicketReport({
+    DateTime? from,
+    DateTime? to,
+    String? staffNumber,
+    String? provider,
+  }) async* {
+    String? previousPayload;
+    while (_staffSessionToken != null) {
+      final response = await _supabase.rpc(
+        'list_ticket_report',
+        params: {
+          'p_token': _requireSessionToken(),
+          'p_from': from?.toUtc().toIso8601String(),
+          'p_to': to?.toUtc().toIso8601String(),
+          'p_staff_number': staffNumber,
+          'p_provider': provider,
+        },
+      );
+      final rows = (response as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
+      final payload = jsonEncode(rows);
+      if (payload != previousPayload) {
+        previousPayload = payload;
+        yield rows;
+      }
+      await Future<void>.delayed(const Duration(seconds: 5));
+    }
   }
 
   static Future<void> recordVerificationAttempt({
@@ -446,17 +510,15 @@ class ApiService {
   static Future<void> _transitionTicket({
     required String ticketId,
     required String status,
-    double? actualAmount,
-    double? tipAmount,
+    required String reason,
   }) async {
     await _supabase.rpc(
-      'transition_ticket',
+      'transition_verified_ticket',
       params: {
         'p_token': _requireSessionToken(),
         'p_ticket_id': ticketId,
         'p_status': status,
-        'p_actual_amount': actualAmount,
-        'p_tip_amount': tipAmount,
+        'p_reason': reason.trim(),
       },
     );
   }
@@ -467,7 +529,10 @@ class ApiService {
   // broadcast stream to prevent "Stream has already been listened to" from
   // cascading into Flutter framework lifecycle assertions.
   static Stream<List<Map<String, dynamic>>> _ticketPollingStream(String scope) {
-    return _shareWhileListening(_pollTickets(scope));
+    return _ticketStreamCache.putIfAbsent(
+      scope,
+      () => _replayLatest(_pollTickets(scope)),
+    );
   }
 
   static Stream<List<Map<String, dynamic>>> _pollTickets(String scope) async* {
@@ -498,13 +563,109 @@ class ApiService {
     );
   }
 
+  /// Keeps a polling stream alive for the dashboard route and immediately
+  /// replays its latest value when a tab is rebuilt.
+  static Stream<T> _replayLatest<T>(Stream<T> source) {
+    late StreamController<T> controller;
+    StreamSubscription<T>? subscription;
+    T? latest;
+    var hasLatest = false;
+    controller = StreamController<T>.broadcast(
+      onListen: () {
+        if (hasLatest) {
+          scheduleMicrotask(() {
+            if (!controller.isClosed) controller.add(latest as T);
+          });
+        }
+        subscription ??= source.listen(
+          (value) {
+            latest = value;
+            hasLatest = true;
+            controller.add(value);
+          },
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+      },
+    );
+    return controller.stream;
+  }
+
+  static void _resetStreamCaches() {
+    _ticketStreamCache.clear();
+    _withdrawalRequestsStream = null;
+    _staffRosterStream = null;
+    _businessStream = null;
+  }
+
+  static Future<void> requestTipWithdrawal(double amount) async {
+    await _supabase.rpc(
+      'request_tip_withdrawal',
+      params: {'p_token': _requireSessionToken(), 'p_amount': amount},
+    );
+  }
+
+  static Future<void> resolveTipWithdrawal(
+    String requestId,
+    String status,
+  ) async {
+    await _supabase.rpc(
+      'resolve_tip_withdrawal_request',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_request_id': requestId,
+        'p_status': status,
+      },
+    );
+  }
+
+  static Stream<List<Map<String, dynamic>>> streamTipWithdrawalRequests() {
+    return _withdrawalRequestsStream ??= _replayLatest(
+      _pollTipWithdrawalRequests(),
+    );
+  }
+
+  static Stream<List<Map<String, dynamic>>>
+  _pollTipWithdrawalRequests() async* {
+    String? previousPayload;
+    while (_staffSessionToken != null) {
+      final response = await _supabase.rpc(
+        'list_tip_withdrawal_requests',
+        params: {'p_token': _requireSessionToken()},
+      );
+      final rows = (response as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
+      final payload = jsonEncode(rows);
+      if (payload != previousPayload) {
+        previousPayload = payload;
+        yield rows;
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+  }
+
   static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
-    if (currentBusinessId == null) throw Exception("No active session");
-    return _supabase
-        .from('staff')
-        .stream(primaryKey: ['staff_number'])
-        .eq('business_id', currentBusinessId!)
-        .order('created_at', ascending: false);
+    return _staffRosterStream ??= _replayLatest(_pollStaffRoster());
+  }
+
+  static Stream<List<Map<String, dynamic>>> _pollStaffRoster() async* {
+    String? previousPayload;
+    while (_staffSessionToken != null) {
+      final response = await _supabase.rpc(
+        'list_staff_roster',
+        params: {'p_token': _requireSessionToken()},
+      );
+      final rows = (response as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
+      final payload = jsonEncode(rows);
+      if (payload != previousPayload) {
+        previousPayload = payload;
+        yield rows;
+      }
+      await Future<void>.delayed(const Duration(seconds: 5));
+    }
   }
 
   // --- 4. TENANT & STAFF MANAGEMENT ---
@@ -526,12 +687,50 @@ class ApiService {
     );
   }
 
+  static Future<void> openSupportCase({
+    required String category,
+    required String subject,
+    required String description,
+    String priority = 'normal',
+  }) async {
+    await _supabase.rpc(
+      'open_support_case',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_category': category,
+        'p_subject': subject.trim(),
+        'p_description': description.trim(),
+        'p_priority': priority,
+      },
+    );
+  }
+
+  static Future<void> requestBusinessDeletion(String reason) async {
+    await _supabase.rpc(
+      'request_business_deletion',
+      params: {'p_token': _requireSessionToken(), 'p_reason': reason.trim()},
+    );
+  }
+
+  static Future<void> acceptLegalDocument({
+    required String type,
+    required String version,
+  }) async {
+    await _supabase.rpc(
+      'accept_legal_document',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_document_type': type,
+        'p_version': version,
+      },
+    );
+  }
+
   static Future<void> updateBankAccounts(Map<String, dynamic> accounts) async {
-    if (currentBusinessId == null) throw Exception("No session");
-    await _supabase
-        .from('businesses')
-        .update({'bank_accounts': accounts})
-        .eq('business_id', currentBusinessId!);
+    await _supabase.rpc(
+      'update_bank_accounts',
+      params: {'p_token': _requireSessionToken(), 'p_accounts': accounts},
+    );
   }
 
   static Future<void> provisionNewBusiness({
@@ -545,49 +744,9 @@ class ApiService {
     required String adminPassword,
     required String adminPin,
   }) async {
-    final codeCheck = await _supabase
-        .from('businesses')
-        .select('business_code')
-        .eq('business_code', businessCode)
-        .maybeSingle();
-    if (codeCheck != null) {
-      throw Exception(
-        "This Tenant Code is already in use by another restaurant.",
-      );
-    }
-
-    final existingCheck = await _supabase
-        .from('staff')
-        .select('staff_number')
-        .or('staff_number.eq.$adminPin,phone_number.eq.$adminPhone')
-        .limit(1)
-        .maybeSingle();
-    if (existingCheck != null) {
-      throw Exception("PIN or Phone Number is already in use.");
-    }
-
-    final businessResponse = await _supabase
-        .from('businesses')
-        .insert({
-          'name': businessName,
-          'business_code': businessCode,
-          'subscription_tier': packageTier,
-          'max_staff_limit': maxStaff,
-          'has_cashier_module': hasCashier,
-          'is_active': true,
-        })
-        .select()
-        .single();
-
-    await _supabase.from('staff').insert({
-      'staff_number': adminPin,
-      'business_id': businessResponse['business_id'],
-      'name': adminName,
-      'phone_number': adminPhone,
-      'password': adminPassword,
-      'role': 'admin',
-      'is_active': true,
-    });
+    throw UnsupportedError(
+      'Tenant provisioning is available only in the protected operator console.',
+    );
   }
 
   static Future<void> updateBusinessDetails(
@@ -597,25 +756,18 @@ class ApiService {
     int newLimit,
     bool hasCashier,
   ) async {
-    await _supabase
-        .from('businesses')
-        .update({
-          'name': newName,
-          'subscription_tier': newTier,
-          'max_staff_limit': newLimit,
-          'has_cashier_module': hasCashier,
-        })
-        .eq('business_id', businessId);
+    throw UnsupportedError(
+      'Tenant changes require the protected operator console.',
+    );
   }
 
   static Future<void> toggleBusinessStatus(
     String businessId,
     bool targetStatus,
   ) async {
-    await _supabase
-        .from('businesses')
-        .update({'is_active': targetStatus})
-        .eq('business_id', businessId);
+    throw UnsupportedError(
+      'Tenant status changes require the protected operator console.',
+    );
   }
 
   static Future<void> createStaffMember({
@@ -625,41 +777,17 @@ class ApiService {
     required String password,
     required String role,
   }) async {
-    if (currentBusinessId == null) {
-      throw Exception("Fatal: Session disconnected.");
-    }
-
-    if (role == 'cashier' && currentBusinessHasCashier != true) {
-      throw Exception("Starter Plan Restriction: Cashier module is disabled.");
-    }
-
-    final staffCount = await _supabase
-        .from('staff')
-        .count(CountOption.exact)
-        .eq('business_id', currentBusinessId!);
-    if (staffCount >= (currentBusinessMaxStaff ?? 0)) {
-      throw Exception("SaaS Limit Reached: Seat Upgrade Required.");
-    }
-
-    final duplicateCheck = await _supabase
-        .from('staff')
-        .select('staff_number')
-        .or('staff_number.eq.$pin,phone_number.eq.$phone')
-        .limit(1)
-        .maybeSingle();
-    if (duplicateCheck != null) {
-      throw Exception("Floor ID or Phone Number is already in use.");
-    }
-
-    await _supabase.from('staff').insert({
-      'staff_number': pin,
-      'business_id': currentBusinessId,
-      'name': name,
-      'phone_number': phone,
-      'password': password,
-      'role': role,
-      'is_active': true,
-    });
+    await _supabase.rpc(
+      'create_staff_member',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_staff_number': pin,
+        'p_name': name,
+        'p_phone': phone,
+        'p_password': password,
+        'p_role': role,
+      },
+    );
   }
 
   static Future<void> updateStaffProfile(
@@ -669,25 +797,27 @@ class ApiService {
     String newPassword,
     String newRole,
   ) async {
-    if (currentBusinessId == null) throw Exception("Session disconnected.");
-    await _supabase
-        .from('staff')
-        .update({
-          'name': newName,
-          'phone_number': newPhone,
-          'password': newPassword,
-          'role': newRole,
-        })
-        .eq('staff_number', pin)
-        .eq('business_id', currentBusinessId!);
+    await _supabase.rpc(
+      'update_staff_member',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_staff_number': pin,
+        'p_name': newName,
+        'p_phone': newPhone,
+        'p_new_password': newPassword,
+        'p_role': newRole,
+      },
+    );
   }
 
   static Future<void> toggleStaffStatus(String pin, bool targetStatus) async {
-    if (currentBusinessId == null) throw Exception("No active session");
-    await _supabase
-        .from('staff')
-        .update({'is_active': targetStatus})
-        .eq('staff_number', pin)
-        .eq('business_id', currentBusinessId!);
+    await _supabase.rpc(
+      'set_staff_active',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_staff_number': pin,
+        'p_active': targetStatus,
+      },
+    );
   }
 }

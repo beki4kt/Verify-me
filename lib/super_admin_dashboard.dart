@@ -1,541 +1,58 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart'; // REQUIRED FOR INPUT FORMATTERS
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'api_service.dart';
+
 import 'business_gateway_screen.dart';
-import 'offline_storage.dart';
-import 'core/theme/app_colors.dart';
-import 'core/theme/app_typography.dart';
+import 'core/theme/app_spacing.dart';
 import 'core/widgets/app_shell.dart';
 
-class SuperAdminDashboard extends StatefulWidget {
+/// The former in-app platform console relied on a public tenant table and a
+/// plaintext super-admin password. It stays closed until a separately hosted,
+/// MFA-protected operator console is deployed.
+class SuperAdminDashboard extends StatelessWidget {
   const SuperAdminDashboard({super.key});
-
-  @override
-  State<SuperAdminDashboard> createState() => _SuperAdminDashboardState();
-}
-
-class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
-  late Stream<List<Map<String, dynamic>>> _businessStream;
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshData();
-  }
-
-  // REFRESH ENGINE FOR TENANT LIST
-  void _refreshData() {
-    setState(() {
-      _businessStream = Supabase.instance.client
-          .from('businesses')
-          .stream(primaryKey: ['business_id'])
-          .order('created_at', ascending: false);
-    });
-  }
-
-  void _showCreateTenantSheet() {
-    final nameController = TextEditingController();
-    final codeController = TextEditingController();
-    final addressController = TextEditingController();
-    final adminPinController = TextEditingController();
-    final adminNameController = TextEditingController();
-    final adminPhoneController = TextEditingController();
-    final adminPasswordController = TextEditingController();
-
-    String selectedTier = 'starter';
-    int staffLimit = 5;
-    bool hasCashier = false;
-    bool isSubmitting = false;
-    String? errorMessage;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface.withValues(alpha: .94),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-                left: 24,
-                right: 24,
-                top: 32,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'PROVISION NEW TENANT',
-                      style: TextStyle(
-                        color: Color(0xFF6366F1),
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    TextField(
-                      controller: nameController,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      decoration: _buildInputDecoration(
-                        'RESTAURANT NAME',
-                        Icons.business,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: codeController,
-                      textCapitalization: TextCapitalization.characters,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
-                      decoration: _buildInputDecoration(
-                        'UNIQUE TENANT CODE (e.g. FIESTA)',
-                        Icons.vpn_key,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: addressController,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      decoration: _buildInputDecoration(
-                        'LOCATION',
-                        Icons.location_on,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    const Text(
-                      'SAAS TIER',
-                      style: TextStyle(
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                        fontSize: 10,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedTier,
-                      dropdownColor: Theme.of(context).colorScheme.surface,
-                      decoration: _buildInputDecoration('', Icons.layers),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'starter',
-                          child: Text('Starter (1,500 ETB) - No Cashier'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'pro',
-                          child: Text('Pro (4,000 ETB) - Unlimited'),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        setSheetState(() {
-                          selectedTier = val!;
-                          if (selectedTier == 'starter') {
-                            staffLimit = 5;
-                            hasCashier = false;
-                          } else {
-                            staffLimit = 50;
-                            hasCashier = true;
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    const Text(
-                      'ROOT ADMIN ACCOUNT',
-                      style: TextStyle(
-                        color: Color(0xFF10B981),
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
-                        fontSize: 10,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: adminNameController,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      decoration: _buildInputDecoration(
-                        'ADMIN NAME',
-                        Icons.person,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // NEW: PHONE NUMBER FORMATTING AND VALIDATION
-                    TextField(
-                      controller: adminPhoneController,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(8),
-                      ],
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
-                      decoration: _buildInputDecoration(
-                        'ADMIN PHONE',
-                        Icons.phone,
-                        prefixText: '+2519 ',
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: adminPasswordController,
-                            style: Theme.of(context).textTheme.bodyLarge,
-                            decoration: _buildInputDecoration(
-                              'PASSWORD',
-                              Icons.lock,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 1,
-                          child: TextField(
-                            controller: adminPinController,
-                            keyboardType: TextInputType.number,
-                            maxLength: 4,
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
-                                ),
-                            decoration: _buildInputDecoration(
-                              'ID',
-                              Icons.badge,
-                            ).copyWith(counterText: ""),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    if (errorMessage != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.redAccent),
-                        ),
-                        child: Text(
-                          errorMessage!,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-
-                    ElevatedButton(
-                      onPressed: isSubmitting
-                          ? null
-                          : () async {
-                              if (nameController.text.isEmpty ||
-                                  codeController.text.isEmpty ||
-                                  adminPinController.text.length < 4 ||
-                                  adminPasswordController.text.isEmpty ||
-                                  adminPhoneController.text.length != 8) {
-                                setSheetState(
-                                  () => errorMessage =
-                                      'Please fill all fields, add a code, use 8 digits for phone, and a 4-digit ID.',
-                                );
-                                return;
-                              }
-
-                              setSheetState(() {
-                                isSubmitting = true;
-                                errorMessage = null;
-                              });
-                              try {
-                                // Clean architecture: Delegating to the Service Layer with Concatenated Phone
-                                await ApiService.provisionNewBusiness(
-                                  businessName: nameController.text.trim(),
-                                  businessCode: codeController.text
-                                      .trim()
-                                      .toUpperCase(),
-                                  packageTier: selectedTier,
-                                  maxStaff: staffLimit,
-                                  hasCashier: hasCashier,
-                                  adminName: adminNameController.text.trim(),
-                                  adminPhone:
-                                      '+2519${adminPhoneController.text.trim()}', // CONCATENATED
-                                  adminPassword: adminPasswordController.text
-                                      .trim(),
-                                  adminPin: adminPinController.text.trim(),
-                                );
-
-                                if (context.mounted) Navigator.pop(context);
-                              } catch (e) {
-                                setSheetState(
-                                  () => errorMessage = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
-                                  ),
-                                );
-                              } finally {
-                                setSheetState(() => isSubmitting = false);
-                              }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
-                        padding: const EdgeInsets.symmetric(vertical: 20),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: isSubmitting
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text(
-                              'DEPLOY TENANT',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.5,
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // NEW: UPDATED INPUT DECORATION ACCEPTS PREFIX
-  InputDecoration _buildInputDecoration(
-    String label,
-    IconData icon, {
-    String? prefixText,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon),
-      prefixText: prefixText,
-      prefixStyle: TextStyle(
-        color: Theme.of(context).colorScheme.onSurface,
-        fontWeight: FontWeight.bold,
-        fontSize: 16,
-        letterSpacing: 1,
-      ),
-    );
-  }
-
-  Future<void> _handleLogout() async {
-    ApiService.unbindSession();
-    ApiService.currentUserRole = null;
-    await DeviceStorage.clearDeviceLock();
-
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        CupertinoPageRoute(builder: (_) => const BusinessGatewayScreen()),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Platform control'),
-        titleTextStyle: AppTypography.appBarTitle(),
-        leading: IconButton(
-          tooltip: 'Sign out',
-          icon: const Icon(Icons.logout_rounded, color: AppColors.danger),
-          onPressed: _handleLogout,
-        ),
-        actions: [
-          const LanguageToggleButton(),
-          const ThemeToggleButton(),
-          IconButton(
-            tooltip: 'Refresh tenants',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _refreshData,
-          ),
-          IconButton(
-            tooltip: 'Add tenant',
-            icon: const Icon(Icons.add_business_rounded),
-            onPressed: _showCreateTenantSheet,
-          ),
-        ],
-      ),
       body: AppBackdrop(
-        child: StreamBuilder<List<Map<String, dynamic>>>(
-          stream: _businessStream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: Color(0xFF6366F1)),
-              );
-            }
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return Center(
-                child: Text(
-                  'No tenants deployed.',
+        maxWidth: 620,
+        child: Center(
+          child: GlassPanel(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.admin_panel_settings_outlined,
+                  size: 52,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  'Operator console unavailable',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Platform administration has been removed from the public app. Use the protected operator console with MFA.',
+                  textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
-              );
-            }
-
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: snapshot.data!.length,
-              itemBuilder: (context, index) {
-                final biz = snapshot.data![index];
-                final isActive = biz['is_active'] as bool? ?? true;
-                final isPro = biz['subscription_tier'] == 'pro';
-                final bizCode = biz['business_code'] ?? 'PENDING';
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: HoverSurface(
-                    accent: isPro ? AppColors.warning : AppColors.primary,
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                biz['name'].toString().toUpperCase(),
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1,
-                                    ),
-                              ),
-                            ),
-                            Switch.adaptive(
-                              value: isActive,
-                              activeTrackColor: const Color(0xFF10B981),
-                              onChanged: (val) async {
-                                await Supabase.instance.client
-                                    .from('businesses')
-                                    .update({'is_active': val})
-                                    .eq('business_id', biz['business_id']);
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF020617),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF334155)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.key,
-                                color: Color(0xFF6366F1),
-                                size: 14,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'CODE: $bizCode',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-                        Text(
-                          'Location: ${biz['address']}',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(fontSize: 12),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isPro
-                                    ? const Color(
-                                        0xFFF59E0B,
-                                      ).withValues(alpha: 0.1)
-                                    : const Color(
-                                        0xFF6366F1,
-                                      ).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                isPro ? 'PRO TIER' : 'STARTER',
-                                style: TextStyle(
-                                  color: isPro
-                                      ? const Color(0xFFF59E0B)
-                                      : const Color(0xFF6366F1),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Max Seats: ${biz['max_staff_limit']}',
-                              style: const TextStyle(
-                                color: Color(0xFF64748B),
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                const SizedBox(height: AppSpacing.xl),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const BusinessGatewayScreen(),
                     ),
+                    (_) => false,
                   ),
-                );
-              },
-            );
-          },
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Return to workspace login'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

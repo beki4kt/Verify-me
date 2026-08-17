@@ -17,34 +17,34 @@ class AppTheme {
     final scheme = dark
         ? const ColorScheme.dark(
             primary: AppColors.primarySoft,
-            onPrimary: Color(0xFF10163B),
-            primaryContainer: Color(0xFF303A8F),
-            onPrimaryContainer: Color(0xFFE8EAFF),
-            secondary: Color(0xFF53D9AD),
-            onSecondary: Color(0xFF06271D),
+            onPrimary: Color(0xFF32103E),
+            primaryContainer: Color(0xFF6E2A86),
+            onPrimaryContainer: Color(0xFFFFE8FF),
+            secondary: Color(0xFF4CE7D5),
+            onSecondary: Color(0xFF082B27),
             tertiary: AppColors.brandOrange,
-            onTertiary: Color(0xFF35160A),
+            onTertiary: Color(0xFF3B120D),
             surface: AppColors.surface,
-            onSurface: Color(0xFFF4F7FC),
-            onSurfaceVariant: Color(0xFFB3BED0),
+            onSurface: Color(0xFFFFF7FC),
+            onSurfaceVariant: Color(0xFFD2BCD0),
             surfaceContainerLowest: AppColors.surfaceContainerLowest,
             surfaceContainerLow: AppColors.surfaceLow,
             surfaceContainer: AppColors.surfaceContainer,
             surfaceContainerHigh: AppColors.surfaceContainerHigh,
             surfaceContainerHighest: AppColors.surfaceHighest,
-            outline: Color(0xFF5B6B83),
-            outlineVariant: Color(0xFF2C3B52),
+            outline: Color(0xFF92768F),
+            outlineVariant: Color(0xFF543F55),
             error: AppColors.danger,
             onError: Colors.white,
           )
         : const ColorScheme.light(
             primary: AppColors.primaryDeep,
             onPrimary: Colors.white,
-            primaryContainer: Color(0xFFE3E6FF),
-            onPrimaryContainer: Color(0xFF252D79),
-            secondary: Color(0xFF087B59),
+            primaryContainer: Color(0xFFF4D7FF),
+            onPrimaryContainer: Color(0xFF5E1B72),
+            secondary: Color(0xFF008D7B),
             onSecondary: Colors.white,
-            tertiary: Color(0xFFB85D25),
+            tertiary: Color(0xFFC6533F),
             onTertiary: Colors.white,
             surface: AppColors.lightSurface,
             onSurface: AppColors.lightInk,
@@ -54,8 +54,8 @@ class AppTheme {
             surfaceContainer: AppColors.lightSurfaceContainer,
             surfaceContainerHigh: AppColors.lightSurfaceHigh,
             surfaceContainerHighest: AppColors.lightSurfaceHighest,
-            outline: Color(0xFF7A8497),
-            outlineVariant: Color(0xFFD5D9E3),
+            outline: Color(0xFF8C7488),
+            outlineVariant: Color(0xFFE2CEDF),
             error: Color(0xFFBA3346),
             onError: Colors.white,
           );
@@ -182,7 +182,7 @@ class AppTheme {
               return AppColors.primaryDeep;
             }
             if (states.contains(WidgetState.hovered)) {
-              return const Color(0xFF6C78F6);
+              return const Color(0xFFD96CFF);
             }
             return AppColors.primary;
           }),

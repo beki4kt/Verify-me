@@ -18,13 +18,20 @@ verifies transfers through the TypeScript API, and records waiter/cashier ticket
 1. Run `flutter pub get` in the repository root.
 2. Run `npm install` inside `backend-server`.
 3. Copy `backend-server/.env.example` to `backend-server/.env` when present and
-   configure the verifier service values.
+   configure the verifier service values plus `SUPABASE_URL` and the backend-only
+   `SUPABASE_SERVICE_ROLE_KEY`. Never put the service-role key in Flutter.
 4. Apply the Supabase migrations in filename order before testing staff login:
    `202608040001_restore_verifier.sql`, then
    `202608040002_secure_ticket_tenants.sql`, then
    `202608050001_waiter_wallet_history.sql`, then
    `202608050002_verification_attempts.sql`, then
-   `202608090001_admin_password_change.sql`.
+   `202608090001_admin_password_change.sql`, then
+   `202608110001_admin_filters_receipts_withdrawals.sql`, then
+   `202608120001_atomic_server_verification.sql`, then
+   `202608120002_auth_and_tenant_hardening.sql`, then
+   `202608120003_immutable_financial_ledger.sql`, then
+   `202608120004_subscription_lifecycle.sql`, then
+   `202608120005_privacy_support_compliance.sql`.
 5. Start the API with `npm run dev` in `backend-server`.
 6. Start Flutter with the API address reachable by the device:
    `flutter run --dart-define=VERIFY_ME_API_URL=http://YOUR_PC_IP:3000/api`.
@@ -60,9 +67,7 @@ production deployment.
 ## Validation
 
 - Flutter: `flutter analyze --no-pub` and `flutter test --no-pub`
-- Backend: `npx tsc --noEmit`
-
-The backend currently has no automated test script; `npm test` is a placeholder.
+- Backend: `npx tsc --noEmit` and `npm test`
 
 ## Production builds
 

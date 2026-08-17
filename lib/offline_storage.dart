@@ -1,9 +1,5 @@
-import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'api_service.dart';
 
 part 'offline_storage.g.dart';
 
@@ -32,8 +28,7 @@ class PendingTicket extends HiveObject {
 
 class SyncManager {
   static const String _boxName = 'pending_tickets_queue';
-  Timer? _syncTimer;
-  bool _isSyncing = false;
+  final ValueNotifier<int> quarantinedLegacyCount = ValueNotifier<int>(0);
 
   // Singleton pattern for easy access across the app
   static final SyncManager instance = SyncManager._internal();
@@ -43,104 +38,53 @@ class SyncManager {
     await Hive.initFlutter();
     Hive.registerAdapter(PendingTicketAdapter());
     await Hive.openBox<PendingTicket>(_boxName);
+    instance.quarantinedLegacyCount.value = Hive.box<PendingTicket>(
+      _boxName,
+    ).length;
     await DeviceStorage.init(); // Initialize the Business Lock Storage
   }
 
-  // --- ORIGINAL METHOD (For standard verifications) ---
-  Future<void> enqueueTicket(PendingTicket ticket) async {
-    final box = Hive.box<PendingTicket>(_boxName);
-    await box.add(ticket);
-    debugPrint('Offline ticket queued.');
-  }
-
-  // --- NEW METHOD (For the Cashier Ledger fallback) ---
-  Future<void> saveOfflineTicket(Map<String, dynamic> ticketData) async {
-    final ticket = PendingTicket(
-      transactionId: ticketData['transaction_ref'],
-      endpoint: 'CASHIER_SUBMISSION', // Identifier flag
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-      ticketDataJson: jsonEncode(ticketData),
-    );
-    await enqueueTicket(ticket);
-  }
-
+  /// Financial writes cannot be verified safely without a provider connection.
+  /// Legacy records are retained only for support-assisted inspection and are
+  /// never replayed, reassigned, or silently deleted.
   void startBackgroundSync() {
-    _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      _attemptSync();
-    });
-  }
-
-  Future<void> _attemptSync() async {
-    if (_isSyncing) return;
-
     final box = Hive.box<PendingTicket>(_boxName);
-    if (box.isEmpty) return;
-
-    // Check actual hardware connectivity
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) return;
-
-    _isSyncing = true;
-
-    try {
-      final pendingTickets = box.values.toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-      for (var ticket in pendingTickets) {
-        // Scenario A: It's a full ticket submission for the Cashier
-        if (ticket.endpoint == 'CASHIER_SUBMISSION' &&
-            ticket.ticketDataJson != null) {
-          try {
-            final data = jsonDecode(ticket.ticketDataJson!);
-            await ApiService.submitVerifiedTicket(
-              transactionId: data['transaction_ref'],
-              amount: data['bill_amount'].toString(),
-              bankName: data['bank'],
-              tableNumber: data['table_number']?.toString() ?? 'TAKEAWAY',
-              tipAmount: (data['tip_amount'] as num?)?.toDouble() ?? 0,
-            );
-            final billAmount = (data['bill_amount'] as num?)?.toDouble() ?? 0;
-            final tipAmount = (data['tip_amount'] as num?)?.toDouble() ?? 0;
-            try {
-              await ApiService.recordVerificationAttempt(
-                provider: data['bank']?.toString() ?? 'unknown',
-                transactionRef:
-                    data['transaction_ref']?.toString() ?? ticket.transactionId,
-                expectedAmount: billAmount,
-                verifiedAmount: billAmount + tipAmount,
-                tipAmount: tipAmount,
-                verified: true,
-              );
-            } catch (e) {
-              debugPrint('Offline receipt synced, but its audit entry failed.');
-            }
-            // If the above line succeeds, delete it from the offline queue
-            debugPrint('Offline ticket synced successfully.');
-            await ticket.delete();
-          } catch (e) {
-            // Network failed during sync, keep it in the queue for the next timer cycle
-            break;
-          }
-        }
-        // Legacy verification-only queue entries do not contain the bill
-        // amount/provider metadata required by the secure verifier contract.
-        // Never re-verify them with a guessed amount.
-        else {
-          debugPrint('Discarding an obsolete verification-only queue entry.');
-          await ticket.delete();
-        }
-      }
-    } catch (e) {
-      debugPrint("Background sync exception: $e");
-    } finally {
-      _isSyncing = false;
+    quarantinedLegacyCount.value = box.length;
+    if (box.isNotEmpty) {
+      debugPrint(
+        '${box.length} legacy offline payment record(s) quarantined; rescan online.',
+      );
     }
   }
 
-  void stopBackgroundSync() {
-    _syncTimer?.cancel();
+  List<Map<String, dynamic>> quarantinedLegacyRecords() {
+    final records = Hive.box<PendingTicket>(_boxName).values.toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return records
+        .map(
+          (ticket) => {
+            'reference': ticket.transactionId,
+            'created_at': DateTime.fromMillisecondsSinceEpoch(
+              ticket.timestamp,
+            ).toIso8601String(),
+            'status': 'quarantined',
+            'action': 'Rescan while online',
+          },
+        )
+        .toList(growable: false);
   }
+
+  Future<void> acknowledgeAndRemoveLegacyRecord(String reference) async {
+    final box = Hive.box<PendingTicket>(_boxName);
+    for (final ticket in box.values.toList()) {
+      if (ticket.transactionId == reference) {
+        await ticket.delete();
+      }
+    }
+    quarantinedLegacyCount.value = box.length;
+  }
+
+  void stopBackgroundSync() {}
 }
 
 // --- PHASE 1: BUSINESS LAYER DEVICE LOCKING ---
@@ -199,5 +143,15 @@ class DeviceStorage {
   static Future<void> saveLanguageCode(String languageCode) async {
     final box = Hive.box(_boxName);
     await box.put('language_code', languageCode == 'am' ? 'am' : 'en');
+  }
+
+  static bool getHideTipBalance() {
+    if (!Hive.isBoxOpen(_boxName)) return false;
+    return Hive.box(_boxName).get('hide_tip_balance', defaultValue: false)
+        as bool;
+  }
+
+  static Future<void> saveHideTipBalance(bool hidden) async {
+    await Hive.box(_boxName).put('hide_tip_balance', hidden);
   }
 }

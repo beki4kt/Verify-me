@@ -49,11 +49,19 @@ class _CashierDashboardState extends State<CashierDashboard> {
 
   // ── Settlement sheet ─────────────────────────────────────────────────────
   void _showSettlementSheet(Map<String, dynamic> ticket) {
-    final actualController = TextEditingController();
+    late final TextEditingController actualController;
     final ticketId = (ticket['ticket_id'] ?? '').toString();
     final ref = (ticket['transaction_ref'] ?? '—').toString();
     final waiterId = (ticket['waiter_id'] ?? '—').toString();
-    final expectedAmount = (ticket['bill_amount'] as num?)?.toDouble() ?? 0.0;
+    final expectedAmount =
+        (ticket['expected_amount'] as num?)?.toDouble() ??
+        (ticket['bill_amount'] as num?)?.toDouble() ??
+        0.0;
+    final verifiedAmount =
+        (ticket['verified_amount'] as num?)?.toDouble() ?? expectedAmount;
+    actualController = TextEditingController(
+      text: verifiedAmount.toStringAsFixed(2),
+    );
     bool isSubmitting = false;
     String? errorText;
 
@@ -104,6 +112,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 // Actual amount entry
                 TextField(
                   controller: actualController,
+                  readOnly: true,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -121,7 +130,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   ),
                   onChanged: (_) => setSheetState(() {}),
                   decoration: InputDecoration(
-                    labelText: 'ACTUAL AMOUNT IN BANK (ETB)',
+                    labelText: 'PROVIDER VERIFIED AMOUNT (ETB)',
                     prefixIcon: Icon(
                       Icons.account_balance_wallet,
                       color: isShortfall ? AppColors.danger : AppColors.primary,
@@ -193,7 +202,10 @@ class _CashierDashboardState extends State<CashierDashboard> {
                               errorText = null;
                             });
                             try {
-                              await ApiService.rejectTicket(ticketId);
+                              await ApiService.rejectTicket(
+                                ticketId: ticketId,
+                                reason: 'Cashier rejected after bank review',
+                              );
                               if (!context.mounted || !mounted) return;
                               final messenger = ScaffoldMessenger.of(
                                 this.context,
@@ -236,8 +248,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                             try {
                               await ApiService.settleTicket(
                                 ticketId: ticketId,
-                                actualAmount: actual,
-                                tipAmount: tip,
+                                reason: 'Payment confirmed at cashier',
                               );
                               if (!context.mounted || !mounted) return;
                               final dashboardContext = this.context;
@@ -496,8 +507,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
           onPressed: _handleLogout,
         ),
         actions: [
-          const LanguageToggleButton(),
-          const ThemeToggleButton(),
+          const GlassLanguageToggleButton(),
+          const GlassThemeToggleButton(),
           IconButton(
             tooltip: 'Refresh tickets',
             icon: const Icon(Icons.refresh),

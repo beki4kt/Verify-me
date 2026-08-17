@@ -5,7 +5,9 @@ import 'business_gateway_screen.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/widgets/app_shell.dart';
+import 'core/widgets/payment_brand.dart';
 import 'localization_service.dart';
+import 'pricing_screen.dart';
 
 enum TrialRole { waiter, cashier, admin }
 
@@ -17,7 +19,17 @@ class TrialModeScreen extends StatefulWidget {
 }
 
 class _TrialModeScreenState extends State<TrialModeScreen> {
+  static const _providers = [
+    'Telebirr',
+    'CBE',
+    'CBE Birr',
+    'Dashen',
+    'Abyssinia',
+    'M-Pesa',
+  ];
+
   TrialRole _role = TrialRole.waiter;
+  String _selectedProvider = 'Telebirr';
   bool _verified = false;
 
   @override
@@ -84,8 +96,8 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
     children: [
       const BrandLockup(compact: true),
       const Spacer(),
-      const LanguageToggleButton(),
-      const ThemeToggleButton(),
+      const GlassLanguageToggleButton(),
+      const GlassThemeToggleButton(),
       IconButton(
         tooltip: context.tr('EXIT TRIAL'),
         onPressed: _exit,
@@ -285,38 +297,38 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
     );
   }
 
-  Widget _sampleTicket(Color color) => GlassPanel(
-    padding: const EdgeInsets.all(16),
-    borderRadius: 18,
-    child: Row(
-      children: [
-        CircleAvatar(
-          backgroundColor: color.withValues(alpha: .14),
-          child: Icon(Icons.receipt_long_rounded, color: color),
-        ),
-        const SizedBox(width: 14),
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Telebirr • TXN8K2M4',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              SizedBox(height: 4),
-              Text('Table 08 • 2 minutes ago'),
-            ],
+  Widget _sampleTicket(Color color) {
+    final brand = PaymentBrandData.resolve(_selectedProvider);
+    return GlassPanel(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 18,
+      child: Row(
+        children: [
+          PaymentLogo(provider: _selectedProvider, size: 42),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  brand.name,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                const Text('TXN8K2M4  •  Table 08'),
+              ],
+            ),
           ),
-        ),
-        Text(
-          '1,250 ETB',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(color: color),
-        ),
-      ],
-    ),
-  );
+          Text(
+            '1,250 ETB',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: color),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _guidedAction() => GlassPanel(
     padding: const EdgeInsets.all(AppSpacing.xl),
@@ -330,7 +342,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
         ),
         const SizedBox(height: AppSpacing.lg),
         Text(
-          context.tr(_verified ? 'Payment verified' : 'Verify a receipt'),
+          context.tr(_verified ? 'Receipt verified' : 'Verify receipt'),
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleLarge,
         ),
@@ -338,25 +350,88 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
         Text(
           context.tr(
             _verified
-                ? 'A sample Telebirr payment was verified successfully.'
-                : 'Sample data only — no live transaction was created.',
+                ? 'Verified with ${PaymentBrandData.resolve(_selectedProvider).name}.'
+                : 'Select a provider, then verify the sample receipt.',
           ),
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: _providers.map(_providerChoice).toList(),
         ),
         const SizedBox(height: AppSpacing.xl),
         ElevatedButton.icon(
           onPressed: () => setState(() => _verified = true),
           icon: Icon(
-            _verified ? Icons.check_rounded : Icons.play_arrow_rounded,
+            _verified ? Icons.check_rounded : Icons.document_scanner_rounded,
           ),
-          label: Text(
-            context.tr(_verified ? 'Payment verified' : 'Preview verification'),
-          ),
+          label: Text(context.tr(_verified ? 'VERIFIED' : 'VERIFY RECEIPT')),
         ),
       ],
     ),
   );
+
+  Widget _providerChoice(String provider) {
+    final selected = provider == _selectedProvider;
+    final brand = PaymentBrandData.resolve(provider);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: brand.name,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => setState(() {
+          _selectedProvider = provider;
+          _verified = false;
+        }),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          width: 88,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: brand.color.withValues(alpha: selected ? .16 : .045),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: brand.color.withValues(alpha: selected ? .72 : .18),
+              width: selected ? 1.5 : 1,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: brand.color.withValues(alpha: .18),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PaymentLogo(provider: provider, size: 36),
+              const SizedBox(height: 7),
+              Text(
+                brand.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: selected
+                      ? brand.color
+                      : Theme.of(context).colorScheme.onSurface,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _conversionCard() => GlassPanel(
     accent: AppColors.success,
@@ -379,7 +454,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
               const SizedBox(height: 6),
               Text(
                 context.tr(
-                  'Connect your restaurant workspace when you are ready.',
+                  'Compare Basic and Pro, then choose the right next step for your restaurant.',
                 ),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -387,9 +462,9 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
           ),
         ),
         ElevatedButton.icon(
-          onPressed: _exit,
-          icon: const Icon(Icons.arrow_forward_rounded),
-          label: Text(context.tr('CONNECT WORKSPACE')),
+          onPressed: _showPricing,
+          icon: const Icon(Icons.sell_outlined),
+          label: const Text('SEE PRICING'),
         ),
       ],
     ),
@@ -399,6 +474,14 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const BusinessGatewayScreen()),
       (_) => false,
+    );
+  }
+
+  void _showPricing() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => const PricingScreen(openedFromTrial: true),
+      ),
     );
   }
 }

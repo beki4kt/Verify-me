@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_typography.dart';
+import 'payment_brand.dart';
 
 /// Lightweight status indicator: a colored dot + uppercase label.
 /// Replaces the bordered `StatusPill` for in-list status (lighter, scannable).
@@ -55,9 +56,13 @@ class BankChip extends StatelessWidget {
           borderRadius: BorderRadius.all(Radius.circular(8)),
         ),
       ),
-      child: Text(
-        bank.toUpperCase(),
-        style: AppTypography.bankTag(color: color),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PaymentLogo(provider: bank, size: 21, padding: 2),
+          const SizedBox(width: 6),
+          Text(bank.toUpperCase(), style: AppTypography.bankTag(color: color)),
+        ],
       ),
     );
   }

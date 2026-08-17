@@ -6,15 +6,35 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const verifyRoute_1 = require("./routes/verifyRoute");
+const productionMiddleware_1 = require("./productionMiddleware");
 const app = (0, express_1.default)();
 const PORT = Number(process.env.PORT) || 3000;
-app.use((0, cors_1.default)());
-app.use(express_1.default.json({ limit: "1mb" }));
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",").map((origin) => origin.trim()).filter(Boolean);
+app.set("trust proxy", 1);
+app.use(productionMiddleware_1.requestLogger);
+app.use(productionMiddleware_1.requireProductionHttps);
+app.use((0, cors_1.default)({
+    origin(origin, callback) {
+        if (!origin || process.env.NODE_ENV !== "production")
+            return callback(null, true);
+        return callback(null, allowedOrigins.includes(origin));
+    },
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "x-request-id"],
+}));
+// Base64 expands a compressed receipt by roughly 33%. The application and
+// database still enforce a strict 1.5 MB decoded-image ceiling.
+app.use(express_1.default.json({ limit: "3mb" }));
 // Verification routes (mounted at /api → /api/verify, /api/verify/:provider)
-app.use("/api", verifyRoute_1.verifyRouter);
+app.use("/api", productionMiddleware_1.verificationRateLimit, verifyRoute_1.verifyRouter);
 // Liveness probe.
 app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+app.get("/ready", (_req, res) => {
+    const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.VERIFIER_UPSTREAM_KEY);
+    res.status(configured ? 200 : 503).json({ status: configured ? "ready" : "not_ready", timestamp: new Date().toISOString() });
 });
 // 404 → JSON (no HTML fallbacks).
 app.use((req, res) => {

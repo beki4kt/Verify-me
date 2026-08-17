@@ -70,6 +70,8 @@ class VerifyMeApp extends StatelessWidget {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: theme.mode,
+      themeAnimationDuration: const Duration(milliseconds: 650),
+      themeAnimationCurve: Curves.easeInOutCubicEmphasized,
       home: initial,
     );
   }

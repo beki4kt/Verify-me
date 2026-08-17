@@ -84,6 +84,12 @@ class LocalizationService extends ChangeNotifier {
     'Open tickets': 'ክፍት ትኬቶች',
     'Staff online': 'በመስመር ላይ ያሉ ሰራተኞች',
     'Verify a receipt': 'ደረሰኝ ያረጋግጡ',
+    'Verify receipt': 'ደረሰኝ ያረጋግጡ',
+    'Receipt verified': 'ደረሰኙ ተረጋግጧል',
+    'Select a provider, then verify the sample receipt.':
+        'አቅራቢ ይምረጡ፣ ከዚያ የምሳሌውን ደረሰኝ ያረጋግጡ።',
+    'VERIFY RECEIPT': 'ደረሰኝ አረጋግጥ',
+    'VERIFIED': 'ተረጋግጧል',
     'Preview verification': 'ማረጋገጫውን ይመልከቱ',
     'A sample Telebirr payment was verified successfully.':
         'የምሳሌ Telebirr ክፍያ በትክክል ተረጋግጧል።',

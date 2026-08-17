@@ -1,14 +1,22 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_spacing.dart';
 import 'core/theme/app_typography.dart';
 import 'core/widgets/app_shell.dart';
 import 'core/widgets/metric_card.dart';
+import 'core/widgets/payment_brand.dart';
 import 'core/widgets/state_views.dart';
+import 'core/widgets/transaction_filter_bar.dart';
 import 'localization_service.dart';
+import 'plan_catalog.dart';
+import 'pricing_screen.dart';
 
 class _PaymentAccountProvider {
   const _PaymentAccountProvider({
@@ -98,21 +106,249 @@ class _AdminDashboardState extends State<AdminDashboard> {
   late Stream<List<Map<String, dynamic>>> _ticketsStream;
   late Stream<List<Map<String, dynamic>>> _staffStream;
   late Stream<Map<String, dynamic>> _businessStream;
+  late Stream<List<Map<String, dynamic>>> _withdrawalRequestsStream;
+  StreamSubscription<List<Map<String, dynamic>>>? _staffCacheSubscription;
+  StreamSubscription<Map<String, dynamic>>? _businessPlanSubscription;
+  final Map<String, String> _staffLabels = {};
+  PlanDefinition _activePlan = PlanCatalog.basic;
+  TransactionPeriod _ledgerPeriod = TransactionPeriod.daily;
+  DateTimeRange? _ledgerCustomRange;
+  String? _ledgerStaff;
+  String? _ledgerPaymentMethod;
 
   @override
   void initState() {
     super.initState();
     _setDataStreams();
+    _staffCacheSubscription = _staffStream.listen((staff) {
+      if (!mounted) return;
+      setState(() {
+        _staffLabels
+          ..clear()
+          ..addEntries(
+            staff.map(
+              (member) => MapEntry(
+                member['staff_number'].toString(),
+                member['name']?.toString() ?? 'Staff ${member['staff_number']}',
+              ),
+            ),
+          );
+      });
+    });
+    _businessPlanSubscription = _businessStream.listen((business) {
+      if (!mounted) return;
+      final plan = PlanCatalog.fromTier(
+        business['subscription_tier']?.toString(),
+      );
+      if (plan.id == _activePlan.id) return;
+      setState(() => _activePlan = plan);
+    });
+  }
+
+  @override
+  void dispose() {
+    _staffCacheSubscription?.cancel();
+    _businessPlanSubscription?.cancel();
+    super.dispose();
+  }
+
+  Widget _buildProInsightsLock() {
+    return GlassPanel(
+      accent: AppColors.primary,
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final copy = Column(
+            crossAxisAlignment: compact
+                ? CrossAxisAlignment.center
+                : CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.workspace_premium_rounded,
+                    color: AppColors.primarySoft,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'PRO INSIGHTS',
+                    style: AppTypography.microLabel(
+                      color: AppColors.primarySoft,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Turn every verification into a clearer business decision.',
+                textAlign: compact ? TextAlign.center : TextAlign.start,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Upgrade to Pro for daily revenue reports, bank deposit analytics, and staff, date, and provider filters.',
+                textAlign: compact ? TextAlign.center : TextAlign.start,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          );
+          final action = FilledButton.icon(
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const PricingScreen())),
+            icon: const Icon(Icons.auto_awesome_rounded),
+            label: const Text('EXPLORE PRO'),
+          );
+          if (compact) {
+            return Column(
+              children: [
+                copy,
+                const SizedBox(height: AppSpacing.lg),
+                action,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, AppColors.violet],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(Icons.insights_rounded, color: Colors.white),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(child: copy),
+              const SizedBox(width: AppSpacing.lg),
+              action,
+            ],
+          );
+        },
+      ),
+    );
   }
 
   void _setDataStreams() {
-    _ticketsStream = ApiService.streamTodayTickets();
-    _staffStream = ApiService.streamStaffRoster();
-    _businessStream = ApiService.streamCurrentBusiness();
+    _ticketsStream = _serverTicketReport();
+    _staffStream = ApiService.streamStaffRoster().asBroadcastStream();
+    _businessStream = ApiService.streamCurrentBusiness().asBroadcastStream();
+    _withdrawalRequestsStream = ApiService.streamTipWithdrawalRequests();
   }
 
   void _refreshData() {
-    setState(_setDataStreams);
+    setState(() => _ticketsStream = _serverTicketReport());
+  }
+
+  Stream<List<Map<String, dynamic>>> _serverTicketReport() {
+    final now = DateTime.now();
+    DateTime? from;
+    DateTime? to;
+    switch (_ledgerPeriod) {
+      case TransactionPeriod.daily:
+        from = DateTime(now.year, now.month, now.day);
+      case TransactionPeriod.weekly:
+        final today = DateTime(now.year, now.month, now.day);
+        from = today.subtract(const Duration(days: 6));
+      case TransactionPeriod.custom:
+        final range = _ledgerCustomRange;
+        if (range != null) {
+          from = DateTime(range.start.year, range.start.month, range.start.day);
+          to = DateTime(range.end.year, range.end.month, range.end.day + 1);
+        }
+      case TransactionPeriod.all:
+        break;
+    }
+    return ApiService.streamTicketReport(
+      from: from,
+      to: to,
+      staffNumber: _ledgerStaff,
+      provider: _ledgerPaymentMethod,
+    );
+  }
+
+  List<Map<String, dynamic>> _filteredTickets(
+    List<Map<String, dynamic>> tickets,
+  ) => filterTransactions(
+    tickets,
+    period: _ledgerPeriod,
+    customRange: _ledgerCustomRange,
+    staffNumber: _ledgerStaff,
+    paymentMethod: _ledgerPaymentMethod,
+  );
+
+  Future<void> _changeLedgerPeriod(TransactionPeriod period) async {
+    if (period == TransactionPeriod.custom) {
+      final now = DateTime.now();
+      final picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(now.year - 2),
+        lastDate: now,
+        initialDateRange: _ledgerCustomRange,
+      );
+      if (picked == null || !mounted) return;
+      setState(() {
+        _ledgerPeriod = period;
+        _ledgerCustomRange = picked;
+        _ticketsStream = _serverTicketReport();
+      });
+      return;
+    }
+    setState(() {
+      _ledgerPeriod = period;
+      _ticketsStream = _serverTicketReport();
+    });
+  }
+
+  Widget _buildLedgerFilters(List<Map<String, dynamic>> tickets) {
+    final staff = <String, String>{};
+    final methods = <String>{};
+    for (final ticket in tickets) {
+      final staffNumber = ticket['waiter_id']?.toString();
+      final method = ticket['bank']?.toString();
+      if (staffNumber != null && staffNumber.isNotEmpty) {
+        staff[staffNumber] = _staffLabels[staffNumber] ?? 'Staff $staffNumber';
+      }
+      if (method != null && method.isNotEmpty) methods.add(method);
+    }
+    return TransactionFilterBar(
+      period: _ledgerPeriod,
+      customRange: _ledgerCustomRange,
+      onPeriodChanged: _changeLedgerPeriod,
+      staffMembers: staff,
+      staffNumber: _ledgerStaff,
+      onStaffChanged: (value) => setState(() {
+        _ledgerStaff = value;
+        _ticketsStream = _serverTicketReport();
+      }),
+      paymentMethods: {
+        ...methods,
+        'telebirr',
+        'cbe',
+        'cbebirr',
+        'dashen',
+        'abyssinia',
+        'mpesa',
+      }.toList()..sort(),
+      paymentMethod: _ledgerPaymentMethod,
+      onPaymentMethodChanged: (value) => setState(() {
+        _ledgerPaymentMethod = value;
+        _ticketsStream = _serverTicketReport();
+      }),
+    );
+  }
+
+  String _formatLedgerDate(dynamic raw) {
+    final date = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (date == null) return 'Unknown time';
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} ${two(date.hour)}:${two(date.minute)}';
   }
 
   List<DropdownMenuItem<String>> _getAvailableRoles() {
@@ -132,7 +368,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     if (bank.toLowerCase().contains('telebirr')) return const Color(0xFF0EA5E9);
     if (bank.toLowerCase().contains('cbe')) return const Color(0xFFA855F7);
     if (bank.toLowerCase().contains('dashen')) return const Color(0xFFF59E0B);
-    return const Color(0xFF64748B);
+    return AppColors.textFaint;
   }
 
   Future<void> _showBankConfigSheet(
@@ -150,6 +386,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           text: currentAccounts[provider.nameKey]?.toString() ?? '',
         ),
     };
+    var selectedProvider = _paymentAccountProviders.first;
     bool isSubmitting = false;
     String? errorText;
 
@@ -298,138 +535,177 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 ),
                               ),
                               const SizedBox(height: 18),
-                              ..._paymentAccountProviders.map((provider) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 14),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: provider.color.withValues(
-                                        alpha: .045,
-                                      ),
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: provider.color.withValues(
-                                          alpha: .2,
+                              DropdownButtonFormField<String>(
+                                initialValue: selectedProvider.numberKey,
+                                decoration: const InputDecoration(
+                                  labelText: 'Payment method',
+                                  prefixIcon: Icon(Icons.payments_outlined),
+                                ),
+                                items: _paymentAccountProviders
+                                    .map(
+                                      (provider) => DropdownMenuItem(
+                                        value: provider.numberKey,
+                                        child: PaymentBrand(
+                                          provider: provider.name,
+                                          logoSize: 26,
                                         ),
                                       ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Container(
-                                              width: 38,
-                                              height: 38,
-                                              decoration: BoxDecoration(
-                                                color: provider.color
-                                                    .withValues(alpha: .12),
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              child: Icon(
-                                                provider.icon,
-                                                color: provider.color,
-                                                size: 20,
-                                              ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setSheetState(() {
+                                    selectedProvider = _paymentAccountProviders
+                                        .firstWhere(
+                                          (provider) =>
+                                              provider.numberKey == value,
+                                        );
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 14),
+                              ..._paymentAccountProviders
+                                  .where(
+                                    (provider) =>
+                                        provider.numberKey ==
+                                        selectedProvider.numberKey,
+                                  )
+                                  .map((provider) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 14,
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: provider.color.withValues(
+                                            alpha: .045,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                          border: Border.all(
+                                            color: provider.color.withValues(
+                                              alpha: .2,
                                             ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    provider.name,
-                                                    style: theme
-                                                        .textTheme
-                                                        .titleSmall
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w900,
-                                                        ),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                PaymentLogo(
+                                                  provider: provider.name,
+                                                  size: 40,
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        provider.name,
+                                                        style: theme
+                                                            .textTheme
+                                                            .titleSmall
+                                                            ?.copyWith(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w900,
+                                                            ),
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        provider.description,
+                                                        style: theme
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.copyWith(
+                                                              color: theme
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
+                                                            ),
+                                                      ),
+                                                    ],
                                                   ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    provider.description,
-                                                    style: theme
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          color: theme
-                                                              .colorScheme
-                                                              .onSurfaceVariant,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 14),
+                                            LayoutBuilder(
+                                              builder: (context, constraints) {
+                                                final numberField = TextField(
+                                                  controller:
+                                                      numberControllers[provider
+                                                          .numberKey],
+                                                  keyboardType:
+                                                      TextInputType.text,
+                                                  textInputAction:
+                                                      TextInputAction.next,
+                                                  inputFormatters: [
+                                                    FilteringTextInputFormatter.allow(
+                                                      RegExp(
+                                                        r'[0-9A-Za-z+\- ]',
+                                                      ),
+                                                    ),
+                                                    LengthLimitingTextInputFormatter(
+                                                      32,
+                                                    ),
+                                                  ],
+                                                  onChanged: (_) =>
+                                                      setSheetState(() {}),
+                                                  decoration:
+                                                      _buildInputDecoration(
+                                                        provider.numberLabel,
+                                                        Icons.numbers_rounded,
+                                                      ),
+                                                );
+                                                final nameField = TextField(
+                                                  controller:
+                                                      nameControllers[provider
+                                                          .nameKey],
+                                                  textCapitalization:
+                                                      TextCapitalization.words,
+                                                  textInputAction:
+                                                      TextInputAction.next,
+                                                  maxLength: 80,
+                                                  decoration: _buildInputDecoration(
+                                                    'Account holder / merchant name',
+                                                    Icons.storefront_outlined,
+                                                  ).copyWith(counterText: ''),
+                                                );
+                                                if (constraints.maxWidth <
+                                                    560) {
+                                                  return Column(
+                                                    children: [
+                                                      numberField,
+                                                      const SizedBox(
+                                                        height: 12,
+                                                      ),
+                                                      nameField,
+                                                    ],
+                                                  );
+                                                }
+                                                return Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: numberField,
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(child: nameField),
+                                                  ],
+                                                );
+                                              },
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 14),
-                                        LayoutBuilder(
-                                          builder: (context, constraints) {
-                                            final numberField = TextField(
-                                              controller:
-                                                  numberControllers[provider
-                                                      .numberKey],
-                                              keyboardType: TextInputType.text,
-                                              textInputAction:
-                                                  TextInputAction.next,
-                                              inputFormatters: [
-                                                FilteringTextInputFormatter.allow(
-                                                  RegExp(r'[0-9A-Za-z+\- ]'),
-                                                ),
-                                                LengthLimitingTextInputFormatter(
-                                                  32,
-                                                ),
-                                              ],
-                                              onChanged: (_) =>
-                                                  setSheetState(() {}),
-                                              decoration: _buildInputDecoration(
-                                                provider.numberLabel,
-                                                Icons.numbers_rounded,
-                                              ),
-                                            );
-                                            final nameField = TextField(
-                                              controller:
-                                                  nameControllers[provider
-                                                      .nameKey],
-                                              textCapitalization:
-                                                  TextCapitalization.words,
-                                              textInputAction:
-                                                  TextInputAction.next,
-                                              maxLength: 80,
-                                              decoration: _buildInputDecoration(
-                                                'Account holder / merchant name',
-                                                Icons.storefront_outlined,
-                                              ).copyWith(counterText: ''),
-                                            );
-                                            if (constraints.maxWidth < 560) {
-                                              return Column(
-                                                children: [
-                                                  numberField,
-                                                  const SizedBox(height: 12),
-                                                  nameField,
-                                                ],
-                                              );
-                                            }
-                                            return Row(
-                                              children: [
-                                                Expanded(child: numberField),
-                                                const SizedBox(width: 12),
-                                                Expanded(child: nameField),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
+                                      ),
+                                    );
+                                  }),
                               if (errorText != null) ...[
                                 Container(
                                   padding: const EdgeInsets.all(12),
@@ -548,7 +824,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                             ).showSnackBar(
                                               const SnackBar(
                                                 content: Text(
-                                                  'Payment accounts updated successfully.',
+                                                  'Accounts updated.',
                                                 ),
                                               ),
                                             );
@@ -848,9 +1124,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   if (mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text(
-                                          'Admin password changed successfully.',
-                                        ),
+                                        content: Text('Password updated.'),
                                       ),
                                     );
                                   }
@@ -941,7 +1215,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     const Text(
                       'PROVISION NEW STAFF',
                       style: TextStyle(
-                        color: Color(0xFF6366F1),
+                        color: AppColors.primary,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 2,
                         fontSize: 12,
@@ -1092,7 +1366,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               }
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
+                        backgroundColor: AppColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 20),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
@@ -1129,9 +1403,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       text: staffMember['name']?.toString() ?? '',
     );
     final phoneController = TextEditingController(text: displayPhone);
-    final passwordController = TextEditingController(
-      text: staffMember['password']?.toString() ?? '',
-    );
+    final passwordController = TextEditingController();
 
     String selectedRole = staffMember['role'];
     if (selectedRole == 'cashier' &&
@@ -1207,7 +1479,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     TextField(
                       controller: passwordController,
                       style: Theme.of(context).textTheme.bodyLarge,
-                      decoration: _buildInputDecoration('PASSWORD', Icons.lock),
+                      obscureText: true,
+                      decoration: _buildInputDecoration(
+                        'NEW PASSWORD (OPTIONAL)',
+                        Icons.lock,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
@@ -1250,11 +1526,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ? null
                           : () async {
                               if (nameController.text.isEmpty ||
-                                  phoneController.text.length != 8 ||
-                                  passwordController.text.isEmpty) {
+                                  phoneController.text.length != 8) {
                                 setSheetState(
                                   () => errorText =
-                                      'All fields are required and phone must be 8 digits.',
+                                      'Name is required and phone must be 8 digits.',
+                                );
+                                return;
+                              }
+                              if (passwordController.text.isNotEmpty &&
+                                  passwordController.text.length < 8) {
+                                setSheetState(
+                                  () => errorText =
+                                      'A new password must be at least 8 characters.',
                                 );
                                 return;
                               }
@@ -1358,7 +1641,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
-            child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+            child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
@@ -1437,7 +1720,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         Text(
                           'ID: ${staff['staff_number']}  •  $roleName',
                           style: const TextStyle(
-                            color: Color(0xFF64748B),
+                            color: AppColors.textFaint,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1,
@@ -1449,7 +1732,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   IconButton(
                     icon: const Icon(
                       Icons.edit,
-                      color: Color(0xFF64748B),
+                      color: AppColors.textFaint,
                       size: 20,
                     ),
                     onPressed: () => _showEditStaffSheet(staff),
@@ -1473,13 +1756,201 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Future<void> _showReceiptEvidence(String ticketId) async {
+    try {
+      final data = await ApiService.fetchReceiptImage(ticketId);
+      if (!mounted) return;
+      final encoded = data?['image_base64']?.toString();
+      if (encoded == null || encoded.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No receipt image is attached.')),
+        );
+        return;
+      }
+      final bytes = base64Decode(encoded);
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 820),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.verified_user_rounded),
+                  title: const Text('Receipt evidence'),
+                  subtitle: Text(
+                    '${data?['byte_size'] ?? bytes.length} bytes • SHA-256 protected',
+                  ),
+                  trailing: IconButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+                Flexible(
+                  child: InteractiveViewer(
+                    minScale: .7,
+                    maxScale: 4,
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not load receipt: $error')));
+    }
+  }
+
+  void _showWithdrawalRequests() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: .86,
+        child: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _withdrawalRequestsStream,
+          builder: (context, snapshot) {
+            final requests = snapshot.data ?? const <Map<String, dynamic>>[];
+            return Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.payments_rounded),
+                  title: const Text('Tip withdrawal requests'),
+                  subtitle: Text('${requests.length} recent requests'),
+                  trailing: IconButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: requests.isEmpty
+                      ? const EmptyView(
+                          message: 'No withdrawal requests.',
+                          icon: Icons.inbox_outlined,
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: requests.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final request = requests[index];
+                            final pending = request['status'] == 'pending';
+                            final approved = request['status'] == 'approved';
+                            final amount =
+                                (request['amount'] as num?)?.toDouble() ?? 0;
+                            return GlassPanel(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  const CircleAvatar(
+                                    child: Icon(Icons.person_rounded),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Staff ${request['staff_number']}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleSmall,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${amount.toStringAsFixed(2)} ETB • ${request['status'].toString().toUpperCase()}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (pending) ...[
+                                    IconButton.filledTonal(
+                                      tooltip: 'Reject',
+                                      onPressed: () =>
+                                          ApiService.resolveTipWithdrawal(
+                                            request['request_id'].toString(),
+                                            'rejected',
+                                          ),
+                                      icon: const Icon(Icons.close_rounded),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    IconButton.filled(
+                                      tooltip: 'Approve',
+                                      onPressed: () =>
+                                          ApiService.resolveTipWithdrawal(
+                                            request['request_id'].toString(),
+                                            'approved',
+                                          ),
+                                      icon: const Icon(Icons.check_rounded),
+                                    ),
+                                  ] else if (approved) ...[
+                                    FilledButton.icon(
+                                      onPressed: () =>
+                                          ApiService.resolveTipWithdrawal(
+                                            request['request_id'].toString(),
+                                            'paid',
+                                          ),
+                                      icon: const Icon(Icons.payments_rounded),
+                                      label: const Text('Mark paid'),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(context.tr('Restaurant overview')),
+          title: StreamBuilder<Map<String, dynamic>>(
+            stream: _businessStream,
+            builder: (context, snapshot) {
+              final business = snapshot.data;
+              final name = business?['name']?.toString() ?? 'Business';
+              final type =
+                  business?['business_type']?.toString() ??
+                  business?['subscription_tier']?.toString() ??
+                  'Restaurant';
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    type,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
           titleTextStyle: AppTypography.appBarTitle(),
           leading: IconButton(
             tooltip: 'Sign out',
@@ -1493,8 +1964,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             },
           ),
           actions: [
-            const LanguageToggleButton(),
-            const ThemeToggleButton(),
+            const GlassLanguageToggleButton(),
+            const GlassThemeToggleButton(),
             IconButton(
               tooltip: 'Change admin password',
               icon: const Icon(Icons.password_rounded),
@@ -1504,6 +1975,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
               tooltip: 'Refresh data',
               icon: const Icon(Icons.refresh_rounded),
               onPressed: _refreshData,
+            ),
+            StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _withdrawalRequestsStream,
+              builder: (context, snapshot) {
+                final pending = (snapshot.data ?? const [])
+                    .where((request) => request['status'] == 'pending')
+                    .length;
+                return IconButton(
+                  tooltip: 'Tip withdrawal requests',
+                  onPressed: _showWithdrawalRequests,
+                  icon: Badge(
+                    isLabelVisible: pending > 0,
+                    label: Text('$pending'),
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                );
+              },
             ),
             StreamBuilder<Map<String, dynamic>>(
               stream: _businessStream,
@@ -1574,12 +2062,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             ),
                           );
                         }
+                        if (!_activePlan.includes(
+                          PlanFeature.dailyRevenueReport,
+                        )) {
+                          return Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: _buildProInsightsLock(),
+                          );
+                        }
+                        final allTickets =
+                            snapshot.data ?? const <Map<String, dynamic>>[];
+                        final visibleTickets = _filteredTickets(allTickets);
                         double totalRevenue = 0;
                         int pendingCount = 0;
                         Map<String, double> bankTotals = {};
+                        Map<String, int> bankCounts = {};
 
                         if (snapshot.hasData) {
-                          for (var ticket in snapshot.data!) {
+                          for (var ticket in visibleTickets) {
                             if (ticket['status'] == 'settled') {
                               double amount = (ticket['bill_amount'] ?? 0)
                                   .toDouble();
@@ -1587,6 +2087,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               String bankName = ticket['bank'] ?? 'Unknown';
                               bankTotals[bankName] =
                                   (bankTotals[bankName] ?? 0) + amount;
+                              bankCounts[bankName] =
+                                  (bankCounts[bankName] ?? 0) + 1;
                             } else if (ticket['status'] == 'pending') {
                               pendingCount++;
                             }
@@ -1598,6 +2100,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              _buildLedgerFilters(allTickets),
+                              const SizedBox(height: 18),
                               Row(
                                 children: [
                                   Expanded(
@@ -1621,7 +2125,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               Text(
                                 context.tr('BANK DEPOSIT BREAKDOWN'),
                                 style: const TextStyle(
-                                  color: Color(0xFF64748B),
+                                  color: AppColors.textFaint,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 11,
                                   letterSpacing: 1.5,
@@ -1637,7 +2141,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                         'No verified transactions yet.',
                                       ),
                                       style: const TextStyle(
-                                        color: Color(0xFF64748B),
+                                        color: AppColors.textFaint,
                                       ),
                                     ),
                                   ),
@@ -1658,36 +2162,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                             ),
                                             child: Row(
                                               children: [
-                                                Container(
-                                                  width: 12,
-                                                  height: 12,
-                                                  decoration: BoxDecoration(
-                                                    color: bColor,
-                                                    shape: BoxShape.circle,
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: bColor
-                                                            .withValues(
-                                                              alpha: 0.5,
+                                                PaymentLogo(
+                                                  provider: entry.key,
+                                                  size: 34,
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        entry.key,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodyMedium
+                                                            ?.copyWith(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              fontSize: 14,
                                                             ),
-                                                        blurRadius: 6,
+                                                      ),
+                                                      Text(
+                                                        '${bankCounts[entry.key] ?? 0} payments • ${totalRevenue == 0 ? '0' : (entry.value / totalRevenue * 100).toStringAsFixed(1)}%',
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.bodySmall,
                                                       ),
                                                     ],
                                                   ),
                                                 ),
-                                                const SizedBox(width: 16),
-                                                Text(
-                                                  entry.key,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 14,
-                                                      ),
-                                                ),
-                                                const Spacer(),
                                                 Text(
                                                   '${entry.value.toStringAsFixed(0)} ETB',
                                                   style: TextStyle(
@@ -1721,7 +2227,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       child: Text(
                         context.tr('MASTER TRANSACTION LEDGER'),
                         style: const TextStyle(
-                          color: Color(0xFF64748B),
+                          color: AppColors.textFaint,
                           fontWeight: FontWeight.w800,
                           fontSize: 11,
                           letterSpacing: 1.5,
@@ -1743,19 +2249,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ),
                         );
                       }
+                      final visibleTickets = _filteredTickets(
+                        snapshot.data ?? const <Map<String, dynamic>>[],
+                      );
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const SliverToBoxAdapter(
                           child: Center(
                             child: Padding(
                               padding: EdgeInsets.all(32.0),
                               child: CircularProgressIndicator(
-                                color: Color(0xFF6366F1),
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
                         );
                       }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      if (visibleTickets.isEmpty) {
                         return SliverToBoxAdapter(
                           child: Center(
                             child: Padding(
@@ -1771,7 +2280,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                       return SliverList(
                         delegate: SliverChildBuilderDelegate((context, index) {
-                          final ticket = snapshot.data![index];
+                          final ticket = visibleTickets[index];
                           final isSettled = ticket['status'] == 'settled';
                           final isRejected = ticket['status'] == 'rejected';
                           final bankColor = _getBankColor(ticket['bank'] ?? '');
@@ -1791,65 +2300,82 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.receipt_long,
-                                          color: statusColor,
-                                          size: 16,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '${ticket['bill_amount']} ETB',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyLarge
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          ticket['bank'] ?? 'N/A',
-                                          style: TextStyle(
-                                            color: bankColor,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w900,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.receipt_long,
+                                            color: statusColor,
+                                            size: 16,
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0, 8)}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF64748B),
-                                            fontSize: 10,
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '${ticket['bill_amount']} ETB',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 16,
+                                                ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Waiter ID: ${ticket['waiter_id']} | Status: ${ticket['status'].toString().toUpperCase()}',
-                                      style: const TextStyle(
-                                        color: Color(0xFF475569),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
+                                        ],
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          PaymentBrand(
+                                            provider:
+                                                ticket['bank']?.toString() ??
+                                                'N/A',
+                                            logoSize: 22,
+                                            style: TextStyle(
+                                              color: bankColor,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0, 8)}',
+                                            style: const TextStyle(
+                                              color: AppColors.textFaint,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Staff ${ticket['waiter_id']} • Table ${ticket['table_number'] ?? '—'} • ${_formatLedgerDate(ticket['created_at'])}',
+                                        style: const TextStyle(
+                                          color: AppColors.textDisabled,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                if (ticket['receipt_image_saved'] == true)
+                                  IconButton(
+                                    tooltip: 'View receipt evidence',
+                                    onPressed: () => _showReceiptEvidence(
+                                      ticket['ticket_id'].toString(),
+                                    ),
+                                    icon: const Icon(
+                                      Icons.image_search_rounded,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
                               ],
                             ),
                           );
-                        }, childCount: snapshot.data!.length),
+                        }, childCount: visibleTickets.length),
                       );
                     },
                   ),

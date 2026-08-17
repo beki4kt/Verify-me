@@ -35,6 +35,9 @@ migrate_working_dir/
 
 # Local backend secrets
 /backend-server/.env
+/android/key.properties
+*.jks
+*.keystore
 
 # Symbolication related
 app.*.symbols

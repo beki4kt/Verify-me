@@ -41,14 +41,14 @@ class AppBackdrop extends StatelessWidget {
                   end: Alignment.bottomRight,
                   colors: dark
                       ? const [
-                          Color(0xFF07101D),
-                          Color(0xFF0B1830),
-                          Color(0xFF07111F),
+                          Color(0xFF160F18),
+                          Color(0xFF2A1428),
+                          Color(0xFF1A1119),
                         ]
                       : const [
-                          Color(0xFFF7F5F2),
-                          Color(0xFFEEF1FA),
-                          Color(0xFFF4F2F7),
+                          Color(0xFFFFF4F7),
+                          Color(0xFFF7E9FF),
+                          Color(0xFFE9FBF8),
                         ],
                   stops: const [0, .52, 1],
                 ),
@@ -57,14 +57,14 @@ class AppBackdrop extends StatelessWidget {
             const Positioned(
               top: -170,
               left: -120,
-              child: _AmbientOrb(size: 430, color: AppColors.primary),
+              child: _AmbientOrb(size: 470, color: AppColors.pink),
             ),
             Positioned(
               top: entry ? 120 : 40,
               right: -170,
               child: _AmbientOrb(
                 size: entry ? 500 : 420,
-                color: dark ? AppColors.brandOrange : const Color(0xFFFFB982),
+                color: dark ? AppColors.aqua : const Color(0xFF61E7DC),
               ),
             ),
             Positioned(
@@ -72,9 +72,37 @@ class AppBackdrop extends StatelessWidget {
               left: constraints.maxWidth * .18,
               child: _AmbientOrb(
                 size: 520,
-                color: dark ? AppColors.success : const Color(0xFF8AE5C7),
+                color: dark ? AppColors.violet : const Color(0xFFC69BFF),
               ),
             ),
+            Positioned(
+              bottom: constraints.maxHeight * .12,
+              right: constraints.maxWidth * .08,
+              child: const _AmbientOrb(size: 280, color: AppColors.brandOrange),
+            ),
+            Positioned(
+              top: constraints.maxHeight * .38,
+              left: constraints.maxWidth * .06,
+              child: const _AmbientOrb(size: 220, color: AppColors.citrus),
+            ),
+            if (entry) ...[
+              Positioned(
+                left: constraints.maxWidth * .18,
+                bottom: 110,
+                child: const _ColorBubble(
+                  size: 74,
+                  colors: [AppColors.aqua, AppColors.violet],
+                ),
+              ),
+              Positioned(
+                right: constraints.maxWidth * .18,
+                top: 120,
+                child: const _ColorBubble(
+                  size: 94,
+                  colors: [AppColors.pink, AppColors.brandOrange],
+                ),
+              ),
+            ],
             Positioned.fill(
               child: IgnorePointer(
                 child: RepaintBoundary(
@@ -93,7 +121,7 @@ class AppBackdrop extends StatelessWidget {
                   radius: entry ? .78 : 1.15,
                   colors: [
                     Colors.transparent,
-                    background.withValues(alpha: dark ? .34 : .18),
+                    background.withValues(alpha: dark ? .14 : .08),
                   ],
                 ),
               ),
@@ -133,8 +161,6 @@ class _EntryBackdropDecor extends StatelessWidget {
           child: _FloatingGlassTile(
             dark: dark,
             icon: Icons.receipt_long_rounded,
-            label: 'PAYMENT VERIFIED',
-            value: '1,280.00 ETB',
             accent: AppColors.success,
           ),
         ),
@@ -147,8 +173,6 @@ class _EntryBackdropDecor extends StatelessWidget {
           child: _FloatingGlassTile(
             dark: dark,
             icon: Icons.table_restaurant_rounded,
-            label: 'TABLE 12',
-            value: 'Ready to settle',
             accent: AppColors.brandOrange,
             compact: true,
           ),
@@ -162,43 +186,39 @@ class _FloatingGlassTile extends StatelessWidget {
   const _FloatingGlassTile({
     required this.dark,
     required this.icon,
-    required this.label,
-    required this.value,
     required this.accent,
     this.compact = false,
   });
 
   final bool dark;
   final IconData icon;
-  final String label;
-  final String value;
   final Color accent;
   final bool compact;
 
   @override
   Widget build(BuildContext context) => Opacity(
-    opacity: dark ? .70 : .80,
+    opacity: dark ? .82 : .88,
     child: Container(
-      width: compact ? 210 : 248,
+      width: compact ? 116 : 148,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(26),
         color: (dark ? AppColors.surfaceContainer : Colors.white).withValues(
-          alpha: dark ? .72 : .64,
+          alpha: dark ? .34 : .40,
         ),
         border: Border.all(
           color: (dark ? Colors.white : AppColors.lightInk).withValues(
-            alpha: .12,
+            alpha: dark ? .25 : .58,
           ),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? .28 : .09),
+            color: Colors.black.withValues(alpha: dark ? .24 : .09),
             blurRadius: 30,
             offset: const Offset(0, 18),
           ),
           BoxShadow(
-            color: Colors.white.withValues(alpha: dark ? .04 : .78),
+            color: Colors.white.withValues(alpha: dark ? .08 : .72),
             blurRadius: 10,
             offset: const Offset(-5, -6),
           ),
@@ -215,23 +235,38 @@ class _FloatingGlassTile extends StatelessWidget {
             ),
             child: Icon(icon, color: accent),
           ),
-          const SizedBox(width: 13),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppTypography.microLabel(color: accent)),
-                const SizedBox(height: 5),
-                Text(
-                  value,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
+                _DecorativeBar(color: accent, widthFactor: .88),
+                const SizedBox(height: 7),
+                _DecorativeBar(color: accent, widthFactor: .58),
               ],
             ),
           ),
         ],
+      ),
+    ),
+  );
+}
+
+class _DecorativeBar extends StatelessWidget {
+  const _DecorativeBar({required this.color, required this.widthFactor});
+
+  final Color color;
+  final double widthFactor;
+
+  @override
+  Widget build(BuildContext context) => FractionallySizedBox(
+    widthFactor: widthFactor,
+    child: Container(
+      height: 7,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .34),
+        borderRadius: BorderRadius.circular(99),
       ),
     ),
   );
@@ -247,8 +282,8 @@ class _ChekmiPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final dotPaint = Paint()
-      ..color = (dark ? Colors.white : AppColors.brandBlue).withValues(
-        alpha: dark ? .035 : .045,
+      ..color = (dark ? Colors.white : AppColors.primaryDeep).withValues(
+        alpha: dark ? .045 : .055,
       )
       ..style = PaintingStyle.fill;
 
@@ -259,35 +294,18 @@ class _ChekmiPatternPainter extends CustomPainter {
       }
     }
 
-    final bandPaint = Paint()
+    final ringPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.15;
-    final bandY = size.height * .78;
-    const diamondSize = 18.0;
-    for (double x = -diamondSize; x < size.width + diamondSize; x += 38) {
-      final index = ((x + diamondSize) / 38).round();
-      bandPaint.color =
-          (index.isEven ? AppColors.brandBlue : AppColors.brandOrange)
-              .withValues(alpha: dark ? .10 : .11);
-      final diamond = Path()
-        ..moveTo(x, bandY - diamondSize)
-        ..lineTo(x + diamondSize, bandY)
-        ..lineTo(x, bandY + diamondSize)
-        ..lineTo(x - diamondSize, bandY)
-        ..close();
-      canvas.drawPath(diamond, bandPaint);
-      canvas.drawCircle(Offset(x, bandY), 2, bandPaint);
+      ..strokeWidth = 1.25;
+    final rings = <(Offset, double, Color)>[
+      (Offset(size.width * .11, size.height * .20), 42, AppColors.aqua),
+      (Offset(size.width * .88, size.height * .68), 58, AppColors.pink),
+      (Offset(size.width * .72, size.height * .12), 28, AppColors.citrus),
+    ];
+    for (final ring in rings) {
+      ringPaint.color = ring.$3.withValues(alpha: dark ? .17 : .20);
+      canvas.drawCircle(ring.$1, ring.$2, ringPaint);
     }
-
-    final accentPaint = Paint()
-      ..color = AppColors.brandOrange.withValues(alpha: dark ? .18 : .15)
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(size.width - 38, 32),
-      Offset(size.width - 38, 104),
-      accentPaint,
-    );
   }
 
   @override
@@ -302,7 +320,7 @@ class _AmbientOrb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final alpha = Theme.of(context).brightness == Brightness.dark ? .28 : .36;
+    final alpha = Theme.of(context).brightness == Brightness.dark ? .46 : .50;
     return Container(
       width: size,
       height: size,
@@ -319,6 +337,42 @@ class _AmbientOrb extends StatelessWidget {
   }
 }
 
+class _ColorBubble extends StatelessWidget {
+  const _ColorBubble({required this.size, required this.colors});
+
+  final double size;
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+    opacity: Theme.of(context).brightness == Brightness.dark ? .62 : .72,
+    child: Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colors.first.withValues(alpha: .32),
+            blurRadius: 30,
+            spreadRadius: 2,
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: .28),
+            blurRadius: 9,
+            offset: const Offset(-5, -6),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 /// Adaptive frosted surface used by cards, menus, sheets, and trial content.
 class GlassPanel extends StatelessWidget {
   const GlassPanel({
@@ -327,7 +381,7 @@ class GlassPanel extends StatelessWidget {
     this.padding = const EdgeInsets.all(AppSpacing.lg),
     this.margin,
     this.borderRadius = 24,
-    this.blur = 10,
+    this.blur = 22,
     this.opacity,
     this.accent,
     this.onTap,
@@ -355,12 +409,12 @@ class GlassPanel extends StatelessWidget {
         borderRadius: radius,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? .34 : .10),
+            color: Colors.black.withValues(alpha: dark ? .26 : .09),
             blurRadius: dark ? 28 : 24,
             offset: const Offset(0, 14),
           ),
           BoxShadow(
-            color: Colors.white.withValues(alpha: dark ? .035 : .88),
+            color: Colors.white.withValues(alpha: dark ? .07 : .70),
             blurRadius: 12,
             offset: const Offset(-7, -7),
           ),
@@ -377,7 +431,7 @@ class GlassPanel extends StatelessWidget {
         child: BackdropFilter.grouped(
           filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: Material(
-            color: tint.withValues(alpha: opacity ?? (dark ? .72 : .72)),
+            color: tint.withValues(alpha: opacity ?? (dark ? .38 : .44)),
             child: InkWell(
               onTap: onTap,
               splashColor: (accent ?? theme.colorScheme.primary).withValues(
@@ -391,18 +445,18 @@ class GlassPanel extends StatelessWidget {
                   border: Border.all(
                     color: border.withValues(
                       alpha: accent == null
-                          ? (dark ? .14 : .10)
-                          : (dark ? .40 : .30),
+                          ? (dark ? .24 : .42)
+                          : (dark ? .48 : .42),
                     ),
                   ),
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.white.withValues(alpha: dark ? .10 : .62),
-                      tint.withValues(alpha: dark ? .035 : .18),
+                      Colors.white.withValues(alpha: dark ? .16 : .54),
+                      tint.withValues(alpha: dark ? .08 : .14),
                       (accent ?? theme.colorScheme.primary).withValues(
-                        alpha: dark ? .035 : .022,
+                        alpha: dark ? .08 : .06,
                       ),
                     ],
                     stops: const [0, .48, 1],
@@ -472,7 +526,7 @@ class _HoverSurfaceState extends State<HoverSurface> {
             onTap: widget.onTap,
             padding: widget.padding,
             accent: active ? accent : null,
-            opacity: dark ? (active ? .84 : .72) : (active ? .88 : .72),
+            opacity: dark ? (active ? .52 : .38) : (active ? .58 : .42),
             child: widget.child,
           ),
         ),
@@ -566,42 +620,446 @@ class BrandHero extends StatelessWidget {
   }
 }
 
-class ThemeToggleButton extends StatelessWidget {
-  const ThemeToggleButton({super.key});
+class GlassThemeToggleButton extends StatelessWidget {
+  const GlassThemeToggleButton({super.key});
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeController>();
-    return IconButton(
-      tooltip: context.tr(theme.isDark ? 'Light mode' : 'Dark mode'),
-      onPressed: theme.toggle,
-      icon: AnimatedSwitcher(
-        duration: AppMotion.fast,
-        transitionBuilder: (child, animation) => RotationTransition(
-          turns: animation,
-          child: FadeTransition(opacity: animation, child: child),
+    final tooltip = context.tr(theme.isDark ? 'Light mode' : 'Dark mode');
+    return Semantics(
+      button: true,
+      toggled: theme.isDark,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: _AnimatedThemeOrb(isDark: theme.isDark, onTap: theme.toggle),
+      ),
+    );
+  }
+}
+
+class _AnimatedThemeOrb extends StatefulWidget {
+  const _AnimatedThemeOrb({required this.isDark, required this.onTap});
+
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  State<_AnimatedThemeOrb> createState() => _AnimatedThemeOrbState();
+}
+
+class _AnimatedThemeOrbState extends State<_AnimatedThemeOrb>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 760),
+      value: widget.isDark ? 1 : 0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedThemeOrb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isDark == widget.isDark) return;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _controller.value = widget.isDark ? 1 : 0;
+      return;
+    }
+    _controller.animateTo(
+      widget.isDark ? 1 : 0,
+      duration: const Duration(milliseconds: 760),
+      curve: Curves.easeInOutCubicEmphasized,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: SystemMouseCursors.click,
+    onEnter: (_) => setState(() => _hovered = true),
+    onExit: (_) => setState(() => _hovered = false),
+    child: Listener(
+      onPointerDown: (_) => setState(() => _pressed = true),
+      onPointerUp: (_) => setState(() => _pressed = false),
+      onPointerCancel: (_) => setState(() => _pressed = false),
+      child: MotorScale(
+        scale: _pressed ? .9 : (_hovered ? 1.06 : 1),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkResponse(
+            onTap: widget.onTap,
+            radius: 28,
+            containedInkWell: true,
+            customBorder: const CircleBorder(),
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                final progress = _controller.value;
+                final pulse = 1 - .1 * _sinPulse(progress);
+                final glow = Color.lerp(
+                  const Color(0xFFFFB21A),
+                  const Color(0xFF4169E8),
+                  progress,
+                )!;
+                return Transform.scale(
+                  scale: pulse,
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: .72),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: glow.withValues(alpha: _hovered ? .42 : .27),
+                          blurRadius: _hovered ? 22 : 15,
+                          offset: const Offset(0, 7),
+                        ),
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: .35),
+                          blurRadius: 7,
+                          offset: const Offset(-3, -3),
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: CustomPaint(
+                        painter: _ThemeOrbPainter(progress: progress),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
-        child: Icon(
-          theme.isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-          key: ValueKey(theme.isDark),
+      ),
+    ),
+  );
+
+  double _sinPulse(double value) {
+    final normalized = (value * 2 - 1).abs();
+    return 1 - normalized;
+  }
+}
+
+class _ThemeOrbPainter extends CustomPainter {
+  const _ThemeOrbPainter({required this.progress});
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    final baseColor = progress < .58
+        ? Color.lerp(
+            const Color(0xFFFFB316),
+            const Color(0xFFC59C53),
+            Curves.easeInOut.transform(
+              (progress / .58).clamp(0.0, 1.0).toDouble(),
+            ),
+          )!
+        : Color.lerp(
+            const Color(0xFFC59C53),
+            const Color(0xFF4169E8),
+            Curves.easeOutCubic.transform(
+              ((progress - .58) / .42).clamp(0.0, 1.0).toDouble(),
+            ),
+          )!;
+    final deepColor = Color.lerp(
+      baseColor,
+      progress > .58 ? const Color(0xFF3458D5) : const Color(0xFFF59E0B),
+      .34,
+    )!;
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [baseColor, deepColor],
+        ).createShader(Offset.zero & size),
+    );
+
+    final rayExit = 1 - _interval(progress, 0, .62);
+    final coreExit = 1 - _interval(progress, .12, .58);
+    final moonEntry = _interval(progress, .34, .9);
+    final glyphPaint = Paint()
+      ..color = Colors.white.withValues(alpha: .96)
+      ..strokeCap = StrokeCap.round;
+
+    if (rayExit > 0) {
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(progress * .72);
+      glyphPaint
+        ..color = Colors.white.withValues(alpha: .96 * rayExit)
+        ..strokeWidth = 2.7;
+      for (var index = 0; index < 8; index++) {
+        canvas.save();
+        canvas.rotate(index * 3.141592653589793 / 4);
+        canvas.drawLine(
+          Offset(0, -12.5 + 3 * (1 - rayExit)),
+          Offset(0, -16.5 + 5 * (1 - rayExit)),
+          glyphPaint,
+        );
+        canvas.restore();
+      }
+      canvas.restore();
+    }
+
+    if (coreExit > 0) {
+      glyphPaint.color = Colors.white.withValues(alpha: .96 * coreExit);
+      canvas.drawCircle(center, 6.8 * coreExit, glyphPaint);
+    }
+
+    if (moonEntry > 0) {
+      final moonScale = .28 + .72 * Curves.easeOutBack.transform(moonEntry);
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(-.42 * (1 - moonEntry));
+      canvas.scale(moonScale);
+      final outer = Path()
+        ..addOval(Rect.fromCircle(center: Offset.zero, radius: 10.6));
+      final cutout = Path()
+        ..addOval(
+          Rect.fromCircle(center: const Offset(5.2, -4.1), radius: 9.5),
+        );
+      final crescent = Path.combine(PathOperation.difference, outer, cutout);
+      glyphPaint.color = Colors.white.withValues(alpha: .98 * moonEntry);
+      canvas.drawPath(crescent, glyphPaint);
+      canvas.restore();
+    }
+
+    canvas.drawCircle(
+      center.translate(-radius * .25, -radius * .3),
+      radius * .7,
+      Paint()
+        ..color = Colors.white.withValues(alpha: .09)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+  }
+
+  double _interval(double value, double begin, double end) =>
+      ((value - begin) / (end - begin)).clamp(0, 1);
+
+  @override
+  bool shouldRepaint(covariant _ThemeOrbPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
+class GlassLanguageToggleButton extends StatelessWidget {
+  const GlassLanguageToggleButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final localization = context.watch<LocalizationService>();
+    final tooltip = context.tr('Language');
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: _GlassActionPill(
+          width: 104,
+          accent: const [AppColors.aqua, AppColors.primary],
+          onTap: localization.toggleLanguage,
+          child: Stack(
+            children: [
+              AnimatedAlign(
+                duration: AppMotion.slow,
+                curve: AppMotion.easeOutBack,
+                alignment: localization.isAmharic
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: Container(
+                  width: 46,
+                  height: 32,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(99),
+                    gradient: const LinearGradient(
+                      colors: [AppColors.aqua, AppColors.primary],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .62),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.aqua.withValues(alpha: .28),
+                        blurRadius: 11,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  _LanguageOption(
+                    label: 'EN',
+                    selected: !localization.isAmharic,
+                  ),
+                  _LanguageOption(
+                    label: 'አማ',
+                    selected: localization.isAmharic,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class LanguageToggleButton extends StatelessWidget {
-  const LanguageToggleButton({super.key});
+class _LanguageOption extends StatelessWidget {
+  const _LanguageOption({required this.label, required this.selected});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Center(
+      child: AnimatedDefaultTextStyle(
+        duration: AppMotion.base,
+        curve: AppMotion.easeOutCustom,
+        style:
+            AppTypography.microLabel(
+              color: selected
+                  ? Colors.white
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
+            ).copyWith(
+              fontSize: 11.5,
+              fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+              letterSpacing: .5,
+            ),
+        child: AnimatedScale(
+          duration: AppMotion.base,
+          curve: AppMotion.easeOutBack,
+          scale: selected ? 1 : .92,
+          child: Text(label),
+        ),
+      ),
+    ),
+  );
+}
+
+class _GlassActionPill extends StatefulWidget {
+  const _GlassActionPill({
+    required this.width,
+    required this.accent,
+    required this.onTap,
+    required this.child,
+  });
+
+  final double width;
+  final List<Color> accent;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  State<_GlassActionPill> createState() => _GlassActionPillState();
+}
+
+class _GlassActionPillState extends State<_GlassActionPill> {
+  bool _hovered = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    final localization = context.watch<LocalizationService>();
-    return Tooltip(
-      message: context.tr('Language'),
-      child: TextButton.icon(
-        onPressed: localization.toggleLanguage,
-        icon: const Icon(Icons.translate_rounded, size: 18),
-        label: Text(localization.isAmharic ? 'EN' : 'አማ'),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final glow = widget.accent.first;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Listener(
+        onPointerDown: (_) => setState(() => _pressed = true),
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: MotorScale(
+          scale: _pressed ? .94 : (_hovered ? 1.035 : 1),
+          child: Container(
+            width: widget.width,
+            height: 42,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(99),
+              boxShadow: [
+                BoxShadow(
+                  color: glow.withValues(
+                    alpha: _hovered ? (dark ? .30 : .20) : .12,
+                  ),
+                  blurRadius: _hovered ? 20 : 12,
+                  offset: const Offset(0, 7),
+                ),
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: dark ? .05 : .60),
+                  blurRadius: 8,
+                  offset: const Offset(-4, -4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: widget.onTap,
+                    splashColor: glow.withValues(alpha: .12),
+                    highlightColor: Colors.transparent,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: Colors.white.withValues(
+                            alpha: dark ? .24 : .62,
+                          ),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.white.withValues(alpha: dark ? .15 : .62),
+                            widget.accent.first.withValues(
+                              alpha: dark ? .11 : .09,
+                            ),
+                            widget.accent.last.withValues(
+                              alpha: dark ? .16 : .11,
+                            ),
+                          ],
+                        ),
+                      ),
+                      child: widget.child,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

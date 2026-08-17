@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_motion.dart';
 import 'core/theme/app_typography.dart';
+import 'core/widgets/payment_brand.dart';
 import 'receipt_parser.dart';
 import 'api_service.dart';
 
@@ -239,18 +240,19 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF020617),
+                      color: AppColors.surfaceLow,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF1E293B)),
+                      border: Border.all(color: AppColors.surfaceContainerHigh),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'BANK: ${widget.targetBank.toUpperCase()}',
+                        PaymentBrand(
+                          provider: widget.targetBank,
+                          logoSize: 26,
                           style: const TextStyle(
-                            color: Color(0xFF64748B),
-                            fontSize: 10,
+                            color: AppColors.textFaint,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -282,13 +284,13 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                     decoration: InputDecoration(
                       labelText: 'ENTER BILL AMOUNT (ETB)',
                       labelStyle: const TextStyle(
-                        color: Color(0xFF6366F1),
+                        color: AppColors.primary,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.5,
                       ),
                       filled: true,
-                      fillColor: const Color(0xFF020617),
+                      fillColor: AppColors.surfaceLow,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -310,11 +312,6 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                             setSheetState(() => isSubmitting = true);
 
                             try {
-                              final bizData =
-                                  await ApiService.fetchCurrentBusiness();
-                              final accounts = bizData['bank_accounts'] ?? {};
-
-                              // Sanitized parameters route directly into safely optimized ApiService
                               final enteredAmount = double.tryParse(amount);
                               if (enteredAmount == null ||
                                   !enteredAmount.isFinite ||
@@ -323,72 +320,21 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                                   'Enter a valid positive bill amount.',
                                 );
                               }
-                              final result = await ApiService.verifyTransaction(
-                                transactionId,
-                                widget.targetEndpoint,
-                                expectedAmount: enteredAmount,
-                              );
+                              final result =
+                                  await ApiService.verifyAndCreateTicket(
+                                    transactionId: transactionId,
+                                    provider: widget.targetBank,
+                                    expectedAmount: enteredAmount,
+                                    tableNumber: 'TAKEAWAY',
+                                  );
 
                               if (result.isSuccess) {
-                                final apiData =
-                                    result.data?['data'] ?? result.data ?? {};
-
-                                final apiAmount =
-                                    double.tryParse(
-                                      apiData['amount']?.toString() ?? '0',
-                                    ) ??
-                                    0.0;
-                                final apiReceiverAccount =
-                                    (apiData['receiverAccount'] ??
-                                            apiData['receiver_account'] ??
-                                            '')
-                                        .toString();
-
-                                // --- TIP CALCULATION & SECURITY CHECK ---
-                                if (apiAmount < enteredAmount) {
-                                  throw Exception(
-                                    "FRAUD ALERT: Underpaid! Scanned receipt is for $apiAmount ETB, but bill is $enteredAmount ETB.",
-                                  );
-                                }
-
-                                // Calculate Tip
-                                double calculatedTip = apiAmount > enteredAmount
-                                    ? apiAmount - enteredAmount
-                                    : 0.0;
-
-                                // --- Destination Match ---
-                                String expectedAccount = '';
-
-                                if (widget.targetBank.toLowerCase().contains(
-                                  'telebirr',
-                                )) {
-                                  expectedAccount =
-                                      (accounts['telebirr_number'] ?? '')
-                                          .toString();
-                                } else if (widget.targetBank
-                                    .toLowerCase()
-                                    .contains('cbe')) {
-                                  expectedAccount =
-                                      (accounts['cbe_number'] ?? '').toString();
-                                }
-
-                                if (expectedAccount.isNotEmpty &&
-                                    !apiReceiverAccount.contains(
-                                      expectedAccount,
-                                    )) {
-                                  throw Exception(
-                                    "FRAUD ALERT: Money went to $apiReceiverAccount, not the official restaurant account ($expectedAccount).",
-                                  );
-                                }
-
-                                // Log to Database with Tip
-                                await ApiService.submitVerifiedTicket(
-                                  transactionId: transactionId,
-                                  amount: amount,
-                                  bankName: widget.targetBank,
-                                  tableNumber: 'TAKEAWAY',
-                                  tipAmount: calculatedTip,
-                                );
+                                final data =
+                                    result.data?['data'] as Map? ?? const {};
+                                final calculatedTip =
+                                    (data['tipAmount'] as num?)?.toDouble() ??
+                                    (data['tip_amount'] as num?)?.toDouble() ??
+                                    0;
 
                                 if (mounted && context.mounted) {
                                   final navigator = Navigator.of(context);
@@ -399,8 +345,8 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                                   navigator.pop(); // Go back to Dashboard
 
                                   String successMessage = calculatedTip > 0
-                                      ? 'Ticket Verified! Tip Added: $calculatedTip ETB 🎉'
-                                      : 'Ticket Verified & Logged!';
+                                      ? 'Verified • +${calculatedTip.toStringAsFixed(2)} ETB tip'
+                                      : 'Verified';
 
                                   messenger.showSnackBar(
                                     SnackBar(
@@ -443,7 +389,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                             }
                           },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6366F1),
+                      backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -512,11 +458,22 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                                 color: AppColors.primary.withValues(alpha: .5),
                               ),
                             ),
-                            child: Text(
-                              'SCANNING ${widget.targetBank.toUpperCase()}',
-                              style: AppTypography.microLabel(
-                                color: Colors.white,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                PaymentLogo(
+                                  provider: widget.targetBank,
+                                  size: 22,
+                                  padding: 2,
+                                ),
+                                const SizedBox(width: 7),
+                                Text(
+                                  'SCANNING ${widget.targetBank.toUpperCase()}',
+                                  style: AppTypography.microLabel(
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
                             ),
                           ).animate().fadeIn().shimmer(
                             duration: 2000.ms,

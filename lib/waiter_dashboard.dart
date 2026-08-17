@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'api_service.dart';
+import 'offline_storage.dart';
 import 'receipt_parser.dart';
 import 'staff_login_screen.dart'; // FIXED: Points to the new login screen
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_typography.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/widgets/app_shell.dart';
+import 'core/widgets/payment_brand.dart';
 import 'core/widgets/state_views.dart';
+import 'core/widgets/transaction_filter_bar.dart';
 import 'localization_service.dart';
 
 class WaiterDashboard extends StatefulWidget {
@@ -22,6 +26,11 @@ class WaiterDashboard extends StatefulWidget {
 class _WaiterDashboardState extends State<WaiterDashboard> {
   late Stream<List<Map<String, dynamic>>> _myTicketsStream;
   late Stream<List<Map<String, dynamic>>> _attemptsStream;
+  late Stream<List<Map<String, dynamic>>> _withdrawalRequestsStream;
+  bool _hideTipBalance = false;
+  TransactionPeriod _historyPeriod = TransactionPeriod.all;
+  DateTimeRange? _historyCustomRange;
+  String? _historyPaymentMethod;
 
   // Camera Variables
   CameraController? _cameraController;
@@ -70,6 +79,118 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     super.initState();
     _myTicketsStream = ApiService.streamWaiterTickets();
     _attemptsStream = ApiService.streamMyVerificationAttempts();
+    _withdrawalRequestsStream = ApiService.streamTipWithdrawalRequests();
+    _hideTipBalance = DeviceStorage.getHideTipBalance();
+  }
+
+  Future<void> _changeHistoryPeriod(TransactionPeriod period) async {
+    if (period == TransactionPeriod.custom) {
+      final now = DateTime.now();
+      final range = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(now.year - 2),
+        lastDate: now,
+        initialDateRange: _historyCustomRange,
+      );
+      if (range == null || !mounted) return;
+      setState(() {
+        _historyPeriod = period;
+        _historyCustomRange = range;
+      });
+      return;
+    }
+    setState(() => _historyPeriod = period);
+  }
+
+  Future<void> _toggleTipBalance() async {
+    final hidden = !_hideTipBalance;
+    setState(() => _hideTipBalance = hidden);
+    await DeviceStorage.saveHideTipBalance(hidden);
+  }
+
+  Future<void> _showWithdrawalRequest(double available) async {
+    final amountController = TextEditingController();
+    var submitting = false;
+    String? errorText;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Request tip withdrawal'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Available: ${available.toStringAsFixed(2)} ETB'),
+              const SizedBox(height: 14),
+              TextField(
+                controller: amountController,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Amount (ETB)',
+                  errorText: errorText,
+                  prefixIcon: const Icon(Icons.payments_outlined),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: submitting ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: submitting
+                  ? null
+                  : () async {
+                      final amount = double.tryParse(amountController.text);
+                      if (amount == null || amount <= 0 || amount > available) {
+                        setDialogState(
+                          () => errorText =
+                              'Enter an amount within your balance.',
+                        );
+                        return;
+                      }
+                      setDialogState(() {
+                        submitting = true;
+                        errorText = null;
+                      });
+                      try {
+                        await ApiService.requestTipWithdrawal(amount);
+                        if (!dialogContext.mounted || !mounted) return;
+                        Navigator.pop(dialogContext);
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(content: Text('Request sent.')),
+                        );
+                      } catch (error) {
+                        if (!dialogContext.mounted) return;
+                        setDialogState(() {
+                          submitting = false;
+                          errorText = error.toString().replaceFirst(
+                            'Exception: ',
+                            '',
+                          );
+                        });
+                      }
+                    },
+              child: submitting
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Send request'),
+            ),
+          ],
+        ),
+      ),
+    );
+    amountController.dispose();
   }
 
   Future<void> _selectBankAndStartCamera(String bank) async {
@@ -141,7 +262,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
-            child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+            child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
 
@@ -149,7 +270,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
           return const Center(
             child: Text(
               'No active tickets. Swipe to scan a receipt.',
-              style: TextStyle(color: Color(0xFF64748B), fontSize: 14),
+              style: TextStyle(color: AppColors.textFaint, fontSize: 14),
             ),
           );
         }
@@ -162,7 +283,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
           return const Center(
             child: Text(
               'No active tickets.',
-              style: TextStyle(color: Color(0xFF64748B), fontSize: 14),
+              style: TextStyle(color: AppColors.textFaint, fontSize: 14),
             ),
           );
         }
@@ -322,11 +443,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.account_balance_rounded,
-                            color: Colors.white,
-                            size: 18,
-                          ),
+                          PaymentLogo(provider: _selectedBank!, size: 28),
                           const SizedBox(width: 10),
                           Text(
                             _selectedBank!,
@@ -413,6 +530,15 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
         final checks = tickets.where((t) => t['status'] != 'rejected').toList();
         final settled = checks.where((t) => t['status'] == 'settled').toList();
         final pending = checks.where((t) => t['status'] == 'pending').toList();
+        final historyChecks = filterTransactions(
+          checks,
+          period: _historyPeriod,
+          customRange: _historyCustomRange,
+          paymentMethod: _historyPaymentMethod,
+        );
+        final historySettled = historyChecks
+            .where((t) => t['status'] == 'settled')
+            .toList();
         final availableTips = settled.fold<double>(
           0,
           (sum, t) => sum + ((t['tip_amount'] as num?)?.toDouble() ?? 0),
@@ -421,7 +547,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
           0,
           (sum, t) => sum + ((t['tip_amount'] as num?)?.toDouble() ?? 0),
         );
-        final totalChecked = checks.fold<double>(
+        final totalChecked = historyChecks.fold<double>(
           0,
           (sum, t) => sum + ((t['bill_amount'] as num?)?.toDouble() ?? 0),
         );
@@ -462,7 +588,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     ],
                   ),
                 ),
-                const ThemeToggleButton(),
+                const GlassThemeToggleButton(),
               ],
             ),
             const SizedBox(height: AppSpacing.xl),
@@ -505,12 +631,30 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         style: AppTypography.microLabel(color: walletMuted),
                       ),
                       const Spacer(),
+                      IconButton(
+                        tooltip: _hideTipBalance
+                            ? 'Show balance'
+                            : 'Hide balance',
+                        onPressed: _toggleTipBalance,
+                        color: walletMuted,
+                        icon: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: Icon(
+                            _hideTipBalance
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                            key: ValueKey(_hideTipBalance),
+                          ),
+                        ),
+                      ),
                       const BrandMark(size: 32),
                     ],
                   ),
                   const SizedBox(height: 28),
                   Text(
-                    '${availableTips.toStringAsFixed(2)} ETB',
+                    _hideTipBalance
+                        ? '••••••'
+                        : '${availableTips.toStringAsFixed(2)} ETB',
                     style: AppTypography.money(size: 32, color: walletText),
                   ),
                   const SizedBox(height: 10),
@@ -526,12 +670,89 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                 ],
               ),
             ),
+            const SizedBox(height: AppSpacing.md),
+            StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _withdrawalRequestsStream,
+              builder: (context, withdrawalSnapshot) {
+                final requests = withdrawalSnapshot.data ?? const [];
+                final committed = requests
+                    .where(
+                      (request) =>
+                          request['status'] == 'pending' ||
+                          request['status'] == 'approved',
+                    )
+                    .fold<double>(
+                      0,
+                      (sum, request) =>
+                          sum + ((request['amount'] as num?)?.toDouble() ?? 0),
+                    );
+                final withdrawable = (availableTips - committed)
+                    .clamp(0, double.infinity)
+                    .toDouble();
+                final pendingRequests = requests
+                    .where((request) => request['status'] == 'pending')
+                    .length;
+                return GlassPanel(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.outbox_rounded,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Tip withdrawal',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              pendingRequests > 0
+                                  ? '$pendingRequests request pending'
+                                  : '${withdrawable.toStringAsFixed(2)} ETB available',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: withdrawable > 0
+                            ? () => _showWithdrawalRequest(withdrawable)
+                            : null,
+                        icon: const Icon(Icons.send_rounded, size: 18),
+                        label: const Text('Request'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             const SizedBox(height: AppSpacing.xl),
+            TransactionFilterBar(
+              period: _historyPeriod,
+              customRange: _historyCustomRange,
+              onPeriodChanged: _changeHistoryPeriod,
+              paymentMethods:
+                  checks
+                      .map((ticket) => ticket['bank']?.toString() ?? '')
+                      .where((method) => method.isNotEmpty)
+                      .toSet()
+                      .toList()
+                    ..sort(),
+              paymentMethod: _historyPaymentMethod,
+              onPaymentMethodChanged: (value) =>
+                  setState(() => _historyPaymentMethod = value),
+            ),
+            const SizedBox(height: AppSpacing.lg),
             Row(
               children: [
                 Expanded(
                   child: HoverSurface(
-                    onTap: () => _showReceiptHistory(checks),
+                    onTap: () => _showReceiptHistory(historyChecks),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -541,7 +762,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         ),
                         const SizedBox(height: 18),
                         Text(
-                          '${checks.length}',
+                          '${historyChecks.length}',
                           style: AppTypography.money(size: 26),
                         ),
                         const SizedBox(height: 4),
@@ -588,7 +809,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          '${settled.length} settled',
+                          '${historySettled.length} settled',
                           style: AppTypography.microLabel(
                             color: AppColors.success,
                           ),
@@ -809,19 +1030,9 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                               : AppColors.warning,
                           child: Row(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.all(11),
-                                decoration: BoxDecoration(
-                                  color: AppColors.bank(
-                                    t['bank']?.toString(),
-                                  ).withValues(alpha: .12),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Icon(
-                                  Icons.receipt_rounded,
-                                  color: AppColors.bank(t['bank']?.toString()),
-                                  size: 20,
-                                ),
+                              PaymentLogo(
+                                provider: t['bank']?.toString() ?? '',
+                                size: 42,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -891,30 +1102,6 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     return '${date.year}-${two(date.month)}-${two(date.day)} ${two(date.hour)}:${two(date.minute)}';
   }
 
-  Future<void> _recordAttemptBestEffort({
-    required String provider,
-    required String reference,
-    required double expectedAmount,
-    double? verifiedAmount,
-    double tipAmount = 0,
-    required bool verified,
-    String? error,
-  }) async {
-    try {
-      await ApiService.recordVerificationAttempt(
-        provider: provider,
-        transactionRef: reference,
-        expectedAmount: expectedAmount,
-        verifiedAmount: verifiedAmount,
-        tipAmount: tipAmount,
-        verified: verified,
-        errorMessage: error,
-      );
-    } catch (e) {
-      debugPrint('Verification audit could not be recorded: $e');
-    }
-  }
-
   Widget _buildBankPicker() {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -927,7 +1114,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
         ),
         const SizedBox(height: 8),
         Text(
-          'We’ll configure the scanner and receipt rules for that bank before opening the camera.',
+          'Select a provider to scan its receipt.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
@@ -953,11 +1140,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        bank.icon,
-                        color: AppColors.bank(bank.name),
-                        size: 26,
-                      ),
+                      PaymentLogo(provider: bank.name, size: 42),
                       const Spacer(),
                       Text(
                         bank.name,
@@ -992,6 +1175,15 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
 
     try {
       final XFile imageFile = await _cameraController!.takePicture();
+      final originalBytes = await imageFile.readAsBytes();
+      final receiptImageBytes = await FlutterImageCompress.compressWithList(
+        originalBytes,
+        minWidth: 1280,
+        minHeight: 1600,
+        quality: 68,
+        format: CompressFormat.jpeg,
+        keepExif: false,
+      );
       final inputImage = InputImage.fromFilePath(imageFile.path);
       final textRecognizer = TextRecognizer(
         script: TextRecognitionScript.latin,
@@ -1009,7 +1201,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       setState(() => _isExtracting = false);
 
       if (!mounted) return;
-      _showSubmissionSheet(extractedId);
+      _showSubmissionSheet(extractedId, receiptImageBytes: receiptImageBytes);
     } catch (e) {
       if (mounted) {
         setState(() => _isExtracting = false);
@@ -1021,7 +1213,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
   }
 
   // --- TICKET SUBMISSION SHEET ---
-  void _showSubmissionSheet(String? initialTransactionId) {
+  void _showSubmissionSheet(
+    String? initialTransactionId, {
+    required Uint8List receiptImageBytes,
+  }) {
     final refController = TextEditingController(
       text: initialTransactionId ?? '',
     );
@@ -1059,7 +1254,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     const Text(
                       'SUBMIT TICKET',
                       style: TextStyle(
-                        color: Color(0xFF6366F1),
+                        color: AppColors.primary,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 2,
                         fontSize: 12,
@@ -1080,26 +1275,29 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         Icons.account_balance,
                       ),
                       items: const [
-                        DropdownMenuItem(
+                        DropdownMenuItem<String>(
                           value: 'Telebirr',
-                          child: Text('Telebirr'),
+                          child: PaymentBrand(provider: 'Telebirr'),
                         ),
-                        DropdownMenuItem(
+                        DropdownMenuItem<String>(
                           value: 'CBE',
-                          child: Text('Commercial Bank of Ethiopia'),
+                          child: PaymentBrand(provider: 'CBE'),
                         ),
-                        DropdownMenuItem(
+                        DropdownMenuItem<String>(
                           value: 'Abyssinia',
-                          child: Text('Bank of Abyssinia'),
+                          child: PaymentBrand(provider: 'Abyssinia'),
                         ),
-                        DropdownMenuItem(value: 'MPesa', child: Text('M-Pesa')),
-                        DropdownMenuItem(
+                        DropdownMenuItem<String>(
+                          value: 'MPesa',
+                          child: PaymentBrand(provider: 'M-Pesa'),
+                        ),
+                        DropdownMenuItem<String>(
                           value: 'Dashen',
-                          child: Text('Dashen Bank'),
+                          child: PaymentBrand(provider: 'Dashen'),
                         ),
-                        DropdownMenuItem(
+                        DropdownMenuItem<String>(
                           value: 'CBEBirr',
-                          child: Text('CBE Birr'),
+                          child: PaymentBrand(provider: 'CBE Birr'),
                         ),
                       ],
                       onChanged: (val) {
@@ -1184,7 +1382,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     const SizedBox(height: 8),
                     const Text(
                       'Any transferred amount exceeding this expected bill will be classified as a tip by the cashier.',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 10),
+                      style: TextStyle(
+                        color: AppColors.textFaint,
+                        fontSize: 10,
+                      ),
                     ),
                     const SizedBox(height: 24),
 
@@ -1241,17 +1442,13 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                   );
                                 }
 
-                                // 2. Fetch the Admin's Official Bank Config
-                                final bizData =
-                                    await ApiService.fetchCurrentBusiness();
-                                final accounts = bizData['bank_accounts'] ?? {};
-
-                                // 3. Verify with Leul's External API
                                 final result =
-                                    await ApiService.verifyTransaction(
-                                      transactionId,
-                                      selectedBank,
+                                    await ApiService.verifyAndCreateTicket(
+                                      transactionId: transactionId,
+                                      provider: selectedBank,
                                       expectedAmount: enteredAmount,
+                                      tableNumber: tableController.text.trim(),
+                                      receiptImageBytes: receiptImageBytes,
                                       suffix:
                                           selectedBank == 'CBE' ||
                                               selectedBank == 'Abyssinia'
@@ -1263,69 +1460,13 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                     );
 
                                 if (result.isSuccess) {
-                                  final apiData =
-                                      result.data?['data'] ?? result.data ?? {};
-                                  final apiAmount =
-                                      double.tryParse(
-                                        apiData['amount']?.toString() ?? '0',
-                                      ) ??
-                                      0.0;
-                                  final apiReceiverAccount =
-                                      (apiData['receiverAccount'] ??
-                                              apiData['receiver_account'] ??
-                                              '')
-                                          .toString();
-
-                                  // --- SECURITY CHECK 1: Underpayment ---
-                                  if (apiAmount < enteredAmount) {
-                                    throw Exception(
-                                      "FRAUD ALERT: Underpaid! Transaction is for $apiAmount ETB, but bill is $enteredAmount ETB.",
-                                    );
-                                  }
-
-                                  // Calculate Tip
-                                  double calculatedTip =
-                                      apiAmount > enteredAmount
-                                      ? apiAmount - enteredAmount
-                                      : 0.0;
-
-                                  // --- SECURITY CHECK 2: Destination Match ---
-                                  String expectedAccount = '';
-                                  if (selectedBank == 'Telebirr') {
-                                    expectedAccount =
-                                        (accounts['telebirr_number'] ?? '')
-                                            .toString();
-                                  } else if (selectedBank == 'CBE') {
-                                    expectedAccount =
-                                        (accounts['cbe_number'] ?? '')
-                                            .toString();
-                                  }
-
-                                  if (expectedAccount.isNotEmpty &&
-                                      !apiReceiverAccount.contains(
-                                        expectedAccount,
-                                      )) {
-                                    throw Exception(
-                                      "FRAUD ALERT: Money went to $apiReceiverAccount, not the official restaurant account.",
-                                    );
-                                  }
-
-                                  // 4. Submit to Supabase with the calculated tip
-                                  await ApiService.submitVerifiedTicket(
-                                    transactionId: transactionId,
-                                    bankName: selectedBank,
-                                    amount: enteredAmount.toStringAsFixed(2),
-                                    tableNumber: tableController.text.trim(),
-                                    tipAmount: calculatedTip, // Pass the tip!
-                                  );
-                                  await _recordAttemptBestEffort(
-                                    provider: selectedBank,
-                                    reference: transactionId,
-                                    expectedAmount: enteredAmount,
-                                    verifiedAmount: apiAmount,
-                                    tipAmount: calculatedTip,
-                                    verified: true,
-                                  );
+                                  final data =
+                                      result.data?['data'] as Map? ?? const {};
+                                  final calculatedTip =
+                                      (data['tipAmount'] as num?)?.toDouble() ??
+                                      (data['tip_amount'] as num?)
+                                          ?.toDouble() ??
+                                      0;
 
                                   if (!context.mounted) return;
                                   Navigator.pop(context); // Close the sheet
@@ -1335,20 +1476,13 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                     SnackBar(
                                       content: Text(
                                         calculatedTip > 0
-                                            ? 'Ticket Verified! Tip: $calculatedTip ETB 🎉'
-                                            : 'Ticket Verified!',
+                                            ? 'Verified • +${calculatedTip.toStringAsFixed(2)} ETB tip'
+                                            : 'Verified',
                                       ),
                                       backgroundColor: const Color(0xFF10B981),
                                     ),
                                   );
                                 } else {
-                                  await _recordAttemptBestEffort(
-                                    provider: selectedBank,
-                                    reference: transactionId,
-                                    expectedAmount: enteredAmount,
-                                    verified: false,
-                                    error: result.errorMessage,
-                                  );
                                   throw Exception(
                                     result.errorMessage ??
                                         "Invalid Transaction ID.",
@@ -1368,7 +1502,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                               }
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
+                        backgroundColor: AppColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 20),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
@@ -1418,7 +1552,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
               );
             },
           ),
-          actions: const [LanguageToggleButton(), ThemeToggleButton()],
+          actions: const [
+            GlassLanguageToggleButton(),
+            GlassThemeToggleButton(),
+          ],
           bottom: TabBar(
             dividerHeight: 0,
             tabs: [

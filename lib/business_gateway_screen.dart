@@ -12,6 +12,7 @@ import 'core/widgets/app_shell.dart';
 import 'core/widgets/state_views.dart';
 import 'localization_service.dart';
 import 'trial_mode_screen.dart';
+import 'pricing_screen.dart';
 
 class BusinessGatewayScreen extends StatefulWidget {
   const BusinessGatewayScreen({super.key});
@@ -43,25 +44,6 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
     FocusScope.of(context).unfocus();
 
     try {
-      // --- GOD MODE BYPASS FOR SUPER ADMIN ---
-      if (code == 'MASTER99') {
-        await DeviceStorage.lockDeviceToBusiness(
-          'SYSTEM_MASTER',
-          'GOD MODE TERMINAL',
-          'MASTER99',
-        );
-        final hasVib = await Vibration.hasVibrator();
-        if (hasVib == true) Vibration.vibrate(pattern: [0, 50, 100, 50]);
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            CupertinoPageRoute(builder: (_) => const StaffLoginScreen()),
-          );
-        }
-        return;
-      }
-      // ---------------------------------------
-
       final bizData = await ApiService.verifyBusinessCode(code);
 
       if (bizData != null) {
@@ -108,8 +90,8 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    const LanguageToggleButton(),
-                    const ThemeToggleButton(),
+                    const GlassLanguageToggleButton(),
+                    const GlassThemeToggleButton(),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -194,14 +176,30 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const TrialModeScreen(),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: AppSpacing.md,
+                        runSpacing: AppSpacing.md,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const TrialModeScreen(),
+                              ),
+                            ),
+                            icon: const Icon(Icons.auto_awesome_rounded),
+                            label: Text(context.tr('TRY THE LIVE DEMO')),
                           ),
-                        ),
-                        icon: const Icon(Icons.auto_awesome_rounded),
-                        label: Text(context.tr('TRY THE LIVE DEMO')),
+                          TextButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PricingScreen(),
+                              ),
+                            ),
+                            icon: const Icon(Icons.sell_outlined),
+                            label: const Text('VIEW PRICING'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
