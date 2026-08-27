@@ -23,9 +23,8 @@ class Skeleton extends StatelessWidget {
           width: width,
           height: height,
           decoration: ShapeDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHigh.withValues(alpha: .7),
+            color: Theme.of(context).colorScheme.surfaceContainerHigh
+                .withValues(alpha: .7),
             shape: shape,
           ),
         )

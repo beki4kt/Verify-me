@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 
 import '../theme/app_colors.dart';
 
@@ -104,20 +105,13 @@ class PaymentLogo extends StatelessWidget {
           ],
         ),
         child: brand.asset.isEmpty
-            ? Icon(
-                Icons.account_balance_wallet_rounded,
-                color: brand.color,
-                size: size * .52,
-              )
+            ? Icon(AppIcons.wallet, color: brand.color, size: size * .52)
             : Image.asset(
                 brand.asset,
                 fit: BoxFit.contain,
                 filterQuality: FilterQuality.high,
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.account_balance_wallet_rounded,
-                  color: brand.color,
-                  size: size * .52,
-                ),
+                errorBuilder: (_, _, _) =>
+                    Icon(AppIcons.wallet, color: brand.color, size: size * .52),
               ),
       ),
     );
@@ -153,9 +147,8 @@ class PaymentBrand extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style:
                 style ??
-                Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
           ),
         ),
       ],

@@ -4,6 +4,8 @@ export declare function normalizeAccount(value: unknown): string;
  * least six stable characters and accept exact or suffix-equivalent matches.
  */
 export declare function matchesReceivingAccount(configuredAccount: unknown, verifiedAccount: unknown, minimumStableCharacters?: number): boolean;
+/** Match CBE's first-character plus final-four account mask. */
+export declare function matchesCbeReceivingAccount(configuredAccount: unknown, verifiedAccount: unknown): boolean;
 /**
  * Abyssinia verifies the credit account through a five-digit suffix supplied
  * with the upstream request, but its normalized success payload does not
@@ -11,6 +13,12 @@ export declare function matchesReceivingAccount(configuredAccount: unknown, veri
  * server-side configuration, never from Flutter input.
  */
 export declare function authoritativeAbyssiniaSuffix(configuredAccount: unknown): string | null;
+/**
+ * Provider lookup parameters must be derived from the authenticated tenant's
+ * configured receiving account, never supplied by a waiter client.
+ */
+export declare function authoritativeAccountSuffix(configuredAccount: unknown, length: number): string | null;
+export declare function authoritativeEthiopianPhone(configuredAccount: unknown): string | null;
 export type TransactionFreshnessResult = {
     ok: true;
     transactionDate: Date;

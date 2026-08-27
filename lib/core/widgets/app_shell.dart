@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../localization_service.dart';
@@ -160,7 +161,7 @@ class _EntryBackdropDecor extends StatelessWidget {
           angle: -.08,
           child: _FloatingGlassTile(
             dark: dark,
-            icon: Icons.receipt_long_rounded,
+            icon: AppIcons.receipt,
             accent: AppColors.success,
           ),
         ),
@@ -172,7 +173,7 @@ class _EntryBackdropDecor extends StatelessWidget {
           angle: .075,
           child: _FloatingGlassTile(
             dark: dark,
-            icon: Icons.table_restaurant_rounded,
+            icon: AppIcons.table,
             accent: AppColors.brandOrange,
             compact: true,
           ),
@@ -536,20 +537,20 @@ class _HoverSurfaceState extends State<HoverSurface> {
 }
 
 class BrandLockup extends StatelessWidget {
-  const BrandLockup({super.key, this.compact = false});
+  const BrandLockup({super.key, this.compact = false, this.onLogoTap});
   final bool compact;
+  final VoidCallback? onLogoTap;
 
   @override
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      BrandMark(size: compact ? 34 : 46),
+      BrandMark(size: compact ? 34 : 46, onTap: onLogoTap),
       const SizedBox(width: 12),
       Text(
         'CHEKMI',
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(letterSpacing: 1.1),
+        style: Theme.of(context).textTheme.titleLarge
+            ?.copyWith(letterSpacing: 1.1),
       ),
     ],
   );
@@ -557,9 +558,10 @@ class BrandLockup extends StatelessWidget {
 
 /// Larger centered brand treatment for entry and authentication screens.
 class BrandHero extends StatelessWidget {
-  const BrandHero({super.key, this.subtitle});
+  const BrandHero({super.key, this.subtitle, this.onLogoTap});
 
   final String? subtitle;
+  final VoidCallback? onLogoTap;
 
   @override
   Widget build(BuildContext context) {
@@ -569,7 +571,7 @@ class BrandHero extends StatelessWidget {
       label: subtitle == null ? 'CHEKMI' : 'CHEKMI. $subtitle',
       child: Column(
         children: [
-          const BrandMark(size: 82),
+          BrandMark(size: 82, onTap: onLogoTap),
           const SizedBox(height: AppSpacing.lg),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -702,7 +704,7 @@ class _AnimatedThemeOrbState extends State<_AnimatedThemeOrb>
           shape: const CircleBorder(),
           child: InkResponse(
             onTap: widget.onTap,
-            radius: 28,
+            radius: 20,
             containedInkWell: true,
             customBorder: const CircleBorder(),
             child: AnimatedBuilder(
@@ -718,8 +720,8 @@ class _AnimatedThemeOrbState extends State<_AnimatedThemeOrb>
                 return Transform.scale(
                   scale: pulse,
                   child: Container(
-                    width: 46,
-                    height: 46,
+                    width: 32,
+                    height: 32,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
@@ -812,13 +814,13 @@ class _ThemeOrbPainter extends CustomPainter {
       canvas.rotate(progress * .72);
       glyphPaint
         ..color = Colors.white.withValues(alpha: .96 * rayExit)
-        ..strokeWidth = 2.7;
+        ..strokeWidth = radius * .117;
       for (var index = 0; index < 8; index++) {
         canvas.save();
         canvas.rotate(index * 3.141592653589793 / 4);
         canvas.drawLine(
-          Offset(0, -12.5 + 3 * (1 - rayExit)),
-          Offset(0, -16.5 + 5 * (1 - rayExit)),
+          Offset(0, -radius * .54 + radius * .13 * (1 - rayExit)),
+          Offset(0, -radius * .72 + radius * .22 * (1 - rayExit)),
           glyphPaint,
         );
         canvas.restore();
@@ -828,7 +830,7 @@ class _ThemeOrbPainter extends CustomPainter {
 
     if (coreExit > 0) {
       glyphPaint.color = Colors.white.withValues(alpha: .96 * coreExit);
-      canvas.drawCircle(center, 6.8 * coreExit, glyphPaint);
+      canvas.drawCircle(center, radius * .30 * coreExit, glyphPaint);
     }
 
     if (moonEntry > 0) {
@@ -838,10 +840,13 @@ class _ThemeOrbPainter extends CustomPainter {
       canvas.rotate(-.42 * (1 - moonEntry));
       canvas.scale(moonScale);
       final outer = Path()
-        ..addOval(Rect.fromCircle(center: Offset.zero, radius: 10.6));
+        ..addOval(Rect.fromCircle(center: Offset.zero, radius: radius * .46));
       final cutout = Path()
         ..addOval(
-          Rect.fromCircle(center: const Offset(5.2, -4.1), radius: 9.5),
+          Rect.fromCircle(
+            center: Offset(radius * .23, -radius * .18),
+            radius: radius * .41,
+          ),
         );
       final crescent = Path.combine(PathOperation.difference, outer, cutout);
       glyphPaint.color = Colors.white.withValues(alpha: .98 * moonEntry);
@@ -879,7 +884,7 @@ class GlassLanguageToggleButton extends StatelessWidget {
       child: Tooltip(
         message: tooltip,
         child: _GlassActionPill(
-          width: 104,
+          width: 72,
           accent: const [AppColors.aqua, AppColors.primary],
           onTap: localization.toggleLanguage,
           child: Stack(
@@ -891,9 +896,9 @@ class GlassLanguageToggleButton extends StatelessWidget {
                     ? Alignment.centerRight
                     : Alignment.centerLeft,
                 child: Container(
-                  width: 46,
-                  height: 32,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: 31,
+                  height: 24,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(99),
                     gradient: const LinearGradient(
@@ -950,7 +955,7 @@ class _LanguageOption extends StatelessWidget {
                   ? Colors.white
                   : Theme.of(context).colorScheme.onSurfaceVariant,
             ).copyWith(
-              fontSize: 11.5,
+              fontSize: 9.5,
               fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
               letterSpacing: .5,
             ),
@@ -1002,7 +1007,7 @@ class _GlassActionPillState extends State<_GlassActionPill> {
           scale: _pressed ? .94 : (_hovered ? 1.035 : 1),
           child: Container(
             width: widget.width,
-            height: 42,
+            height: 32,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(99),
               boxShadow: [
@@ -1066,29 +1071,44 @@ class _GlassActionPillState extends State<_GlassActionPill> {
 }
 
 class BrandMark extends StatelessWidget {
-  const BrandMark({super.key, this.size = 52});
+  const BrandMark({super.key, this.size = 52, this.onTap});
   final double size;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(size * .32),
-      color: Colors.white.withValues(alpha: .94),
-      border: Border.all(color: Colors.white.withValues(alpha: .55)),
-      boxShadow: [
-        BoxShadow(
-          color: AppColors.telebirr.withValues(alpha: .20),
-          blurRadius: 18,
+  Widget build(BuildContext context) {
+    final mark = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * .32),
+        color: Colors.white.withValues(alpha: .94),
+        border: Border.all(color: Colors.white.withValues(alpha: .55)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.telebirr.withValues(alpha: .20),
+            blurRadius: 18,
+          ),
+        ],
+      ),
+      padding: EdgeInsets.all(size * .10),
+      child: Image.asset(
+        'assets/branding/chekmi_mark_256.png',
+        cacheWidth: (size * 2).round(),
+        filterQuality: FilterQuality.medium,
+      ),
+    );
+    if (onTap == null) return mark;
+    return Semantics(
+      button: true,
+      label: 'Open protected owner access',
+      child: Tooltip(
+        message: 'Owner access',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(onTap: onTap, child: mark),
         ),
-      ],
-    ),
-    padding: EdgeInsets.all(size * .10),
-    child: Image.asset(
-      'assets/branding/chekmi_mark_256.png',
-      cacheWidth: (size * 2).round(),
-      filterQuality: FilterQuality.medium,
-    ),
-  );
+      ),
+    );
+  }
 }

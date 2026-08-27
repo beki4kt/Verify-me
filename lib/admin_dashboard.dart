@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+
 import 'api_service.dart';
 import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
 import 'core/theme/app_colors.dart';
@@ -17,6 +19,8 @@ import 'core/widgets/transaction_filter_bar.dart';
 import 'localization_service.dart';
 import 'plan_catalog.dart';
 import 'pricing_screen.dart';
+import 'support_privacy_screen.dart';
+import 'core/config/app_variant.dart';
 
 class _PaymentAccountProvider {
   const _PaymentAccountProvider({
@@ -45,7 +49,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
     numberLabel: 'Mobile / merchant number',
     numberKey: 'telebirr_number',
     nameKey: 'telebirr_name',
-    icon: Icons.phone_android_rounded,
+    icon: AppIcons.mobile,
     color: Color(0xFF0EA5E9),
   ),
   _PaymentAccountProvider(
@@ -54,7 +58,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
     numberLabel: 'CBE account number',
     numberKey: 'cbe_number',
     nameKey: 'cbe_name',
-    icon: Icons.account_balance_rounded,
+    icon: AppIcons.banking,
     color: Color(0xFFA855F7),
   ),
   _PaymentAccountProvider(
@@ -63,7 +67,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
     numberLabel: 'CBE Birr wallet number',
     numberKey: 'cbebirr_number',
     nameKey: 'cbebirr_name',
-    icon: Icons.account_balance_wallet_rounded,
+    icon: AppIcons.wallet,
     color: Color(0xFF7C3AED),
   ),
   _PaymentAccountProvider(
@@ -72,7 +76,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
     numberLabel: 'Dashen account number',
     numberKey: 'dashen_number',
     nameKey: 'dashen_name',
-    icon: Icons.account_balance_outlined,
+    icon: AppIcons.banking,
     color: Color(0xFFF59E0B),
   ),
   _PaymentAccountProvider(
@@ -81,7 +85,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
     numberLabel: 'Abyssinia account number',
     numberKey: 'abyssinia_number',
     nameKey: 'abyssinia_name',
-    icon: Icons.account_balance_rounded,
+    icon: AppIcons.banking,
     color: Color(0xFFEF4444),
   ),
   _PaymentAccountProvider(
@@ -90,7 +94,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
     numberLabel: 'M-Pesa number / till',
     numberKey: 'mpesa_number',
     nameKey: 'mpesa_name',
-    icon: Icons.wallet_rounded,
+    icon: AppIcons.wallet,
     color: Color(0xFF22C55E),
   ),
 ];
@@ -168,7 +172,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
-                    Icons.workspace_premium_rounded,
+                    AppIcons.premium,
                     color: AppColors.primarySoft,
                     size: 20,
                   ),
@@ -181,26 +185,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Turn every verification into a clearer business decision.',
-                textAlign: compact ? TextAlign.center : TextAlign.start,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Upgrade to Pro for daily revenue reports, bank deposit analytics, and staff, date, and provider filters.',
-                textAlign: compact ? TextAlign.center : TextAlign.start,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              if (!AppVariant.usesMinimalCopy) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Turn every verification into a clearer business decision.',
+                  textAlign: compact ? TextAlign.center : TextAlign.start,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Upgrade to Pro for daily revenue reports, bank deposit analytics, and staff, date, and provider filters.',
+                  textAlign: compact ? TextAlign.center : TextAlign.start,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
             ],
           );
           final action = FilledButton.icon(
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const PricingScreen())),
-            icon: const Icon(Icons.auto_awesome_rounded),
-            label: const Text('EXPLORE PRO'),
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const PricingScreen())),
+            icon: const Icon(AppIcons.sparkle),
+            label: Text(AppVariant.usesMinimalCopy ? 'PLANS' : 'EXPLORE PRO'),
           );
           if (compact) {
             return Column(
@@ -222,7 +227,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: const Icon(Icons.insights_rounded, color: Colors.white),
+                child: const Icon(AppIcons.analytics, color: Colors.white),
               ),
               const SizedBox(width: AppSpacing.lg),
               Expanded(child: copy),
@@ -448,7 +453,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: const Icon(
-                                      Icons.account_balance_rounded,
+                                      AppIcons.banking,
                                       color: AppColors.success,
                                     ),
                                   ),
@@ -465,17 +470,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                                 fontWeight: FontWeight.w900,
                                               ),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Add the official receiving account for every provider your restaurant accepts.',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                color: theme
-                                                    .colorScheme
-                                                    .onSurfaceVariant,
-                                                height: 1.4,
-                                              ),
-                                        ),
+                                        if (!AppVariant.usesMinimalCopy) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Add the official receiving account for every provider your restaurant accepts.',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                  height: 1.4,
+                                                ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -501,45 +508,48 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 14),
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(
-                                    alpha: .08,
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
+                              if (!AppVariant.usesMinimalCopy) ...[
+                                const SizedBox(height: 14),
+                                Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
                                     color: AppColors.primary.withValues(
-                                      alpha: .18,
+                                      alpha: .08,
                                     ),
-                                  ),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Icon(
-                                      Icons.verified_user_outlined,
-                                      color: AppColors.primary,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        'Receipt destinations are checked against these values. Leave a provider blank only when the restaurant does not accept it.',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(height: 1.45),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: AppColors.primary.withValues(
+                                        alpha: .18,
                                       ),
                                     ),
-                                  ],
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(
+                                        AppIcons.secureUser,
+                                        color: AppColors.primary,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          'Receipt destinations are checked against these values. Leave a provider blank only when the restaurant does not accept it.',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(height: 1.45),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
+                              ],
                               const SizedBox(height: 18),
                               DropdownButtonFormField<String>(
                                 initialValue: selectedProvider.numberKey,
                                 decoration: const InputDecoration(
                                   labelText: 'Payment method',
-                                  prefixIcon: Icon(Icons.payments_outlined),
+                                  prefixIcon: Icon(AppIcons.money),
                                 ),
                                 items: _paymentAccountProviders
                                     .map(
@@ -618,18 +628,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                                                       .w900,
                                                             ),
                                                       ),
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        provider.description,
-                                                        style: theme
-                                                            .textTheme
-                                                            .bodySmall
-                                                            ?.copyWith(
-                                                              color: theme
-                                                                  .colorScheme
-                                                                  .onSurfaceVariant,
-                                                            ),
-                                                      ),
+                                                      if (!AppVariant
+                                                          .usesMinimalCopy) ...[
+                                                        const SizedBox(
+                                                          height: 2,
+                                                        ),
+                                                        Text(
+                                                          provider.description,
+                                                          style: theme
+                                                              .textTheme
+                                                              .bodySmall
+                                                              ?.copyWith(
+                                                                color: theme
+                                                                    .colorScheme
+                                                                    .onSurfaceVariant,
+                                                              ),
+                                                        ),
+                                                      ],
                                                     ],
                                                   ),
                                                 ),
@@ -661,7 +676,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                                   decoration:
                                                       _buildInputDecoration(
                                                         provider.numberLabel,
-                                                        Icons.numbers_rounded,
+                                                        AppIcons.number,
                                                       ),
                                                 );
                                                 final nameField = TextField(
@@ -673,10 +688,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                                   textInputAction:
                                                       TextInputAction.next,
                                                   maxLength: 80,
-                                                  decoration: _buildInputDecoration(
-                                                    'Account holder / merchant name',
-                                                    Icons.storefront_outlined,
-                                                  ).copyWith(counterText: ''),
+                                                  decoration:
+                                                      _buildInputDecoration(
+                                                        'Account holder / merchant name',
+                                                        AppIcons.storefront,
+                                                      ).copyWith(
+                                                        counterText: '',
+                                                      ),
                                                 );
                                                 if (constraints.maxWidth <
                                                     560) {
@@ -720,7 +738,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   child: Row(
                                     children: [
                                       const Icon(
-                                        Icons.error_outline_rounded,
+                                        AppIcons.error,
                                         color: AppColors.danger,
                                       ),
                                       const SizedBox(width: 10),
@@ -819,15 +837,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                           if (!sheetContext.mounted) return;
                                           Navigator.of(sheetContext).pop();
                                           if (mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Accounts updated.',
-                                                ),
-                                              ),
-                                            );
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Accounts updated.',
+                                                    ),
+                                                  ),
+                                                );
                                           }
                                         } catch (error) {
                                           if (!sheetContext.mounted) return;
@@ -850,7 +867,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                           color: Colors.white,
                                         ),
                                       )
-                                    : const Icon(Icons.save_outlined),
+                                    : const Icon(AppIcons.save),
                                 label: Text(
                                   isSubmitting
                                       ? 'Saving accounts…'
@@ -926,19 +943,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 autocorrect: false,
                 enableSuggestions: false,
                 textInputAction: textInputAction,
-                decoration:
-                    _buildInputDecoration(
-                      label,
-                      Icons.lock_outline_rounded,
-                    ).copyWith(
+                decoration: _buildInputDecoration(label, AppIcons.lock)
+                    .copyWith(
                       hintText: hint,
                       suffixIcon: IconButton(
                         tooltip: obscure ? 'Show password' : 'Hide password',
                         onPressed: toggleVisibility,
                         icon: Icon(
-                          obscure
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
+                          obscure ? AppIcons.visible : AppIcons.hidden,
                         ),
                       ),
                     ),
@@ -981,7 +993,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: const Icon(
-                          Icons.password_rounded,
+                          AppIcons.password,
                           color: AppColors.primary,
                           size: 28,
                         ),
@@ -1042,7 +1054,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         child: const Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.shield_outlined, size: 20),
+                            Icon(AppIcons.shield, size: 20),
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -1090,8 +1102,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 }
                                 if (newPassword.length < 8) {
                                   setSheetState(() {
-                                    errorText =
-                                        'The new password must be at least 8 characters.';
+                                    errorText = 'The new password must be at least 8 characters.';
                                   });
                                   return;
                                 }
@@ -1104,8 +1115,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 }
                                 if (newPassword == currentPassword) {
                                   setSheetState(() {
-                                    errorText =
-                                        'Choose a new password different from the current password.';
+                                    errorText = 'Choose a new password different from the current password.';
                                   });
                                   return;
                                 }
@@ -1149,7 +1159,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.lock_reset_rounded),
+                            : const Icon(AppIcons.resetPassword),
                         label: Text(
                           isSubmitting
                               ? 'Updating password…'
@@ -1191,9 +1201,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface.withValues(alpha: .94),
+      backgroundColor: Theme.of(context).colorScheme.surface
+          .withValues(alpha: .94),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
@@ -1227,7 +1236,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       style: Theme.of(context).textTheme.bodyLarge,
                       decoration: _buildInputDecoration(
                         'FULL NAME',
-                        Icons.person_outline,
+                        AppIcons.user,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1245,7 +1254,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                       decoration: _buildInputDecoration(
                         'PHONE NUMBER',
-                        Icons.phone,
+                        AppIcons.phone,
                         isPhone: true,
                       ),
                     ),
@@ -1260,7 +1269,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             style: Theme.of(context).textTheme.bodyLarge,
                             decoration: _buildInputDecoration(
                               'PASSWORD',
-                              Icons.lock,
+                              AppIcons.lock,
                             ),
                           ),
                         ),
@@ -1278,7 +1287,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 ),
                             decoration: _buildInputDecoration(
                               'ID',
-                              Icons.badge,
+                              AppIcons.staffBadge,
                             ).copyWith(counterText: ""),
                           ),
                         ),
@@ -1288,12 +1297,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     DropdownButtonFormField<String>(
                       initialValue: selectedRole,
                       dropdownColor: Theme.of(context).colorScheme.surface,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
                       decoration: _buildInputDecoration(
                         'SYSTEM ROLE',
-                        Icons.work,
+                        AppIcons.work,
                       ),
                       items: _getAvailableRoles(),
                       onChanged: (val) =>
@@ -1328,8 +1336,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   phoneController.text.length != 8 ||
                                   passwordController.text.isEmpty) {
                                 setSheetState(
-                                  () => errorText =
-                                      'Please fill out all fields and ensure phone is 8 digits.',
+                                  () => errorText = 'Please fill out all fields and ensure phone is 8 digits.',
                                 );
                                 return;
                               }
@@ -1416,9 +1423,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface.withValues(alpha: .94),
+      backgroundColor: Theme.of(context).colorScheme.surface
+          .withValues(alpha: .94),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
@@ -1452,7 +1458,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       style: Theme.of(context).textTheme.bodyLarge,
                       decoration: _buildInputDecoration(
                         'FULL NAME',
-                        Icons.person_outline,
+                        AppIcons.user,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1470,7 +1476,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                       decoration: _buildInputDecoration(
                         'PHONE NUMBER',
-                        Icons.phone,
+                        AppIcons.phone,
                         isPhone: true,
                       ),
                     ),
@@ -1482,19 +1488,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       obscureText: true,
                       decoration: _buildInputDecoration(
                         'NEW PASSWORD (OPTIONAL)',
-                        Icons.lock,
+                        AppIcons.lock,
                       ),
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       initialValue: selectedRole,
                       dropdownColor: Theme.of(context).colorScheme.surface,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
                       decoration: _buildInputDecoration(
                         'SYSTEM ROLE',
-                        Icons.work,
+                        AppIcons.work,
                       ),
                       items: _getAvailableRoles(),
                       onChanged: (val) =>
@@ -1528,16 +1533,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               if (nameController.text.isEmpty ||
                                   phoneController.text.length != 8) {
                                 setSheetState(
-                                  () => errorText =
-                                      'Name is required and phone must be 8 digits.',
+                                  () => errorText = 'Name is required and phone must be 8 digits.',
                                 );
                                 return;
                               }
                               if (passwordController.text.isNotEmpty &&
                                   passwordController.text.length < 8) {
                                 setSheetState(
-                                  () => errorText =
-                                      'A new password must be at least 8 characters.',
+                                  () => errorText = 'A new password must be at least 8 characters.',
                                 );
                                 return;
                               }
@@ -1683,9 +1686,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: .68),
+                color: Theme.of(context).colorScheme.surface
+                    .withValues(alpha: .68),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: Theme.of(context).colorScheme.outlineVariant,
@@ -1697,8 +1699,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     backgroundColor: roleColor.withValues(alpha: 0.1),
                     child: Icon(
                       roleName == 'CASHIER'
-                          ? Icons.point_of_sale
-                          : Icons.restaurant_menu,
+                          ? AppIcons.pointOfSale
+                          : AppIcons.menu,
                       color: roleColor,
                       size: 18,
                     ),
@@ -1731,7 +1733,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   IconButton(
                     icon: const Icon(
-                      Icons.edit,
+                      AppIcons.edit,
                       color: AppColors.textFaint,
                       size: 20,
                     ),
@@ -1777,14 +1779,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
-                  leading: const Icon(Icons.verified_user_rounded),
+                  leading: const Icon(AppIcons.secureUser),
                   title: const Text('Receipt evidence'),
                   subtitle: Text(
                     '${data?['byte_size'] ?? bytes.length} bytes • SHA-256 protected',
                   ),
                   trailing: IconButton(
                     onPressed: () => Navigator.pop(dialogContext),
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(AppIcons.close),
                   ),
                 ),
                 Flexible(
@@ -1821,12 +1823,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
             return Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.payments_rounded),
+                  leading: const Icon(AppIcons.money),
                   title: const Text('Tip withdrawal requests'),
                   subtitle: Text('${requests.length} recent requests'),
                   trailing: IconButton(
                     onPressed: () => Navigator.pop(sheetContext),
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(AppIcons.close),
                   ),
                 ),
                 const Divider(height: 1),
@@ -1834,7 +1836,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   child: requests.isEmpty
                       ? const EmptyView(
                           message: 'No withdrawal requests.',
-                          icon: Icons.inbox_outlined,
+                          icon: AppIcons.inbox,
                         )
                       : ListView.separated(
                           padding: const EdgeInsets.all(16),
@@ -1852,7 +1854,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               child: Row(
                                 children: [
                                   const CircleAvatar(
-                                    child: Icon(Icons.person_rounded),
+                                    child: Icon(AppIcons.user),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -1862,16 +1864,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       children: [
                                         Text(
                                           'Staff ${request['staff_number']}',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.titleSmall,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleSmall,
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
                                           '${amount.toStringAsFixed(2)} ETB • ${request['status'].toString().toUpperCase()}',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
                                         ),
                                       ],
                                     ),
@@ -1884,7 +1886,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                             request['request_id'].toString(),
                                             'rejected',
                                           ),
-                                      icon: const Icon(Icons.close_rounded),
+                                      icon: const Icon(AppIcons.close),
                                     ),
                                     const SizedBox(width: 6),
                                     IconButton.filled(
@@ -1894,7 +1896,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                             request['request_id'].toString(),
                                             'approved',
                                           ),
-                                      icon: const Icon(Icons.check_rounded),
+                                      icon: const Icon(AppIcons.check),
                                     ),
                                   ] else if (approved) ...[
                                     FilledButton.icon(
@@ -1903,7 +1905,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                             request['request_id'].toString(),
                                             'paid',
                                           ),
-                                      icon: const Icon(Icons.payments_rounded),
+                                      icon: const Icon(AppIcons.money),
                                       label: const Text('Mark paid'),
                                     ),
                                   ],
@@ -1921,10 +1923,194 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Widget _buildAdminToolsTab() {
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: _businessStream,
+      builder: (context, businessSnapshot) {
+        final rawAccounts = businessSnapshot.data?['bank_accounts'];
+        final accounts = rawAccounts is Map
+            ? Map<String, dynamic>.from(rawAccounts)
+            : <String, dynamic>{};
+        final configuredAccounts = _paymentAccountProviders.where((provider) {
+          return accounts[provider.numberKey]?.toString().trim().isNotEmpty ==
+              true;
+        }).length;
+
+        return StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _withdrawalRequestsStream,
+          builder: (context, withdrawalSnapshot) {
+            final pendingWithdrawals =
+                (withdrawalSnapshot.data ?? const <Map<String, dynamic>>[])
+                    .where((request) => request['status'] == 'pending')
+                    .length;
+            return ListView(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Icon(
+                        AppIcons.settings,
+                        color: AppColors.primary,
+                        size: 27,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Text(
+                        'Admin tools',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 720 ? 2 : 1;
+                    final width = columns == 1
+                        ? constraints.maxWidth
+                        : (constraints.maxWidth - AppSpacing.md) / 2;
+                    return Wrap(
+                      spacing: AppSpacing.md,
+                      runSpacing: AppSpacing.md,
+                      children: [
+                        _adminToolCard(
+                          width: width,
+                          icon: AppIcons.addUser,
+                          color: AppColors.primary,
+                          title: 'Add staff',
+                          detail: 'Create account',
+                          onTap: _showAddStaffSheet,
+                        ),
+                        _adminToolCard(
+                          width: width,
+                          icon: AppIcons.banking,
+                          color: configuredAccounts == 0
+                              ? AppColors.danger
+                              : AppColors.success,
+                          title: 'Payment accounts',
+                          detail:
+                              '$configuredAccounts / ${_paymentAccountProviders.length} set',
+                          onTap: () => _showBankConfigSheet(accounts),
+                        ),
+                        _adminToolCard(
+                          width: width,
+                          icon: AppIcons.notifications,
+                          color: pendingWithdrawals > 0
+                              ? AppColors.warning
+                              : AppColors.success,
+                          title: 'Tip requests',
+                          detail: pendingWithdrawals > 0
+                              ? '$pendingWithdrawals pending'
+                              : 'All clear',
+                          onTap: _showWithdrawalRequests,
+                        ),
+                        _adminToolCard(
+                          width: width,
+                          icon: AppIcons.password,
+                          color: AppColors.violet,
+                          title: 'Password',
+                          detail: 'Change password',
+                          onTap: _showChangePasswordSheet,
+                        ),
+                        _adminToolCard(
+                          width: width,
+                          icon: AppIcons.support,
+                          color: AppColors.aqua,
+                          title: 'Support & privacy',
+                          detail: 'Help and account',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SupportPrivacyScreen(
+                                allowAccountDeletion: true,
+                              ),
+                            ),
+                          ),
+                        ),
+                        _adminToolCard(
+                          width: width,
+                          icon: AppIcons.refresh,
+                          color: AppColors.success,
+                          title: 'Refresh',
+                          detail: 'Reload transactions',
+                          onTap: _refreshData,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _adminToolCard({
+    required double width,
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String detail,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Semantics(
+        button: true,
+        label: title,
+        child: HoverSurface(
+          onTap: onTap,
+          accent: color,
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(icon, color: color, size: 27),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Icon(AppIcons.chevronRight, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: StreamBuilder<Map<String, dynamic>>(
@@ -1941,12 +2127,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(
-                    type,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  if (!AppVariant.usesMinimalCopy)
+                    Text(
+                      type,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
                 ],
               );
             },
@@ -1954,7 +2141,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           titleTextStyle: AppTypography.appBarTitle(),
           leading: IconButton(
             tooltip: 'Sign out',
-            icon: const Icon(Icons.logout_rounded, color: AppColors.danger),
+            icon: const Icon(AppIcons.logout, color: AppColors.danger),
             onPressed: () {
               ApiService.logoutStaff();
               Navigator.pushReplacement(
@@ -1966,80 +2153,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
           actions: [
             const GlassLanguageToggleButton(),
             const GlassThemeToggleButton(),
-            IconButton(
-              tooltip: 'Change admin password',
-              icon: const Icon(Icons.password_rounded),
-              onPressed: _showChangePasswordSheet,
-            ),
-            IconButton(
-              tooltip: 'Refresh data',
-              icon: const Icon(Icons.refresh_rounded),
-              onPressed: _refreshData,
-            ),
-            StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _withdrawalRequestsStream,
-              builder: (context, snapshot) {
-                final pending = (snapshot.data ?? const [])
-                    .where((request) => request['status'] == 'pending')
-                    .length;
-                return IconButton(
-                  tooltip: 'Tip withdrawal requests',
-                  onPressed: _showWithdrawalRequests,
-                  icon: Badge(
-                    isLabelVisible: pending > 0,
-                    label: Text('$pending'),
-                    child: const Icon(Icons.notifications_outlined),
-                  ),
-                );
-              },
-            ),
-            StreamBuilder<Map<String, dynamic>>(
-              stream: _businessStream,
-              builder: (context, snapshot) {
-                final rawAccounts = snapshot.data?['bank_accounts'];
-                final accounts = rawAccounts is Map
-                    ? Map<String, dynamic>.from(rawAccounts)
-                    : <String, dynamic>{};
-                final configuredCount = _paymentAccountProviders.where((
-                  provider,
-                ) {
-                  return accounts[provider.numberKey]
-                          ?.toString()
-                          .trim()
-                          .isNotEmpty ==
-                      true;
-                }).length;
-                return IconButton(
-                  tooltip:
-                      'Payment accounts ($configuredCount/${_paymentAccountProviders.length})',
-                  icon: Icon(
-                    Icons.account_balance_outlined,
-                    color: configuredCount == 0
-                        ? AppColors.danger
-                        : configuredCount == _paymentAccountProviders.length
-                        ? AppColors.success
-                        : AppColors.warning,
-                  ),
-                  onPressed: () => _showBankConfigSheet(accounts),
-                );
-              },
-            ),
-            IconButton(
-              tooltip: 'Add staff member',
-              icon: const Icon(Icons.person_add_alt_1_rounded),
-              onPressed: _showAddStaffSheet,
-            ),
           ],
           bottom: TabBar(
             dividerHeight: 0,
             tabs: [
               Tab(
-                icon: const Icon(Icons.insights_outlined, size: 18),
+                icon: const Icon(AppIcons.analytics, size: 18),
                 text: context.tr('Overview'),
               ),
               Tab(
-                icon: const Icon(Icons.groups_outlined, size: 18),
+                icon: const Icon(AppIcons.team, size: 18),
                 text: context.tr('Team'),
+              ),
+              const Tab(
+                icon: Icon(AppIcons.settings, size: 18),
+                text: 'Manage',
               ),
             ],
           ),
@@ -2187,9 +2315,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                                       ),
                                                       Text(
                                                         '${bankCounts[entry.key] ?? 0} payments • ${totalRevenue == 0 ? '0' : (entry.value / totalRevenue * 100).toStringAsFixed(1)}%',
-                                                        style: Theme.of(
-                                                          context,
-                                                        ).textTheme.bodySmall,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall,
                                                       ),
                                                     ],
                                                   ),
@@ -2308,7 +2436,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       Row(
                                         children: [
                                           Icon(
-                                            Icons.receipt_long,
+                                            AppIcons.receipt,
                                             color: statusColor,
                                             size: 16,
                                           ),
@@ -2368,7 +2496,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       ticket['ticket_id'].toString(),
                                     ),
                                     icon: const Icon(
-                                      Icons.image_search_rounded,
+                                      AppIcons.scanImage,
                                       color: AppColors.primary,
                                     ),
                                   ),
@@ -2386,6 +2514,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
               // TAB 2: STAFF ROSTER
               _buildStaffRosterTab(),
+              // TAB 3: LARGE ADMIN ACTIONS
+              _buildAdminToolsTab(),
             ],
           ),
         ),

@@ -1,0 +1,6 @@
+{
+  "CHEKMI_ENV": "production",
+  "VERIFY_ME_API_URL": "https://YOUR-CHEKMI-API.example/api",
+  "CHEKMI_SUPABASE_URL": "https://YOUR_PROJECT.supabase.co",
+  "CHEKMI_SUPABASE_PUBLISHABLE_KEY": "CHANGE_ME"
+}

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/config/app_variant.dart';
 import 'offline_storage.dart';
 
 /// English and Amharic product copy with a safe English fallback.
@@ -102,6 +103,67 @@ class LocalizationService extends ChangeNotifier {
         'ዝግጁ ሲሆኑ የምግብ ቤትዎን የስራ ቦታ ያገናኙ።',
   };
 
+  /// Short, action-first English used by the Test 2 review build.
+  ///
+  /// Operational warnings, confirmations, and legal copy deliberately keep
+  /// their full wording. Only navigation, headings, helper copy, and common
+  /// actions are condensed.
+  static const Map<String, String> _minimalEnglish = {
+    'Connect this terminal': 'Workspace',
+    'Enter your restaurant workspace code. You only need to do this once on this device.':
+        'Enter your code',
+    'WORKSPACE CODE': 'CODE',
+    'CONNECT WORKSPACE': 'CONNECT',
+    'Explore before you connect': 'Preview',
+    'TRY THE LIVE DEMO': 'DEMO',
+    'No account, setup, or payment required': 'No setup',
+    'Encrypted tenant connection': 'SECURE',
+    'Welcome back': 'Sign in',
+    'Sign in to continue to your shift.': 'Staff access',
+    'This is not your restaurant? Change workspace': 'Change workspace',
+    'Restaurant overview': 'Overview',
+    'TOTAL REVENUE': 'REVENUE',
+    'ACTIVE BILLS': 'BILLS',
+    'BANK DEPOSIT BREAKDOWN': 'DEPOSITS',
+    'MASTER TRANSACTION LEDGER': 'TRANSACTIONS',
+    'No verified transactions yet.': 'No transactions',
+    'Ledger is clear.': 'No transactions',
+    'No staff members found.': 'No staff',
+    'No active floor staff.': 'No active staff',
+    'Cashier terminal': 'Cashier',
+    'Waiter workspace': 'Waiter',
+    'No settled tickets yet.': 'No tickets',
+    'Queue is clear.': 'Queue clear',
+    'All recorded tips are settled': 'Settled',
+    'Total checks': 'Checks',
+    'View receipts': 'Receipts',
+    'Verified volume': 'Volume',
+    'RECENT SCANS': 'SCANS',
+    'Verified and failed attempts': 'Recent activity',
+    'No receipt scans recorded yet.': 'No scans',
+    'Checked receipts': 'Receipts',
+    'No checked receipts yet.': 'No receipts',
+    'Choose a payment provider': 'Provider',
+    'CAPTURE RECEIPT': 'CAPTURE',
+    'READING RECEIPT': 'READING',
+    'Trial mode': 'Demo',
+    'A guided, risk-free tour of CHEKMI': 'Offline preview',
+    'Choose a role': 'Role',
+    'Available tips': 'Tips',
+    'Open tickets': 'Open',
+    'Staff online': 'Online',
+    'Verify a receipt': 'Verify',
+    'Verify receipt': 'Verify',
+    'Receipt verified': 'Verified',
+    'Select a provider, then verify the sample receipt.': 'Choose and verify',
+    'Preview verification': 'Preview',
+    'A sample Telebirr payment was verified successfully.': 'Payment verified',
+    'Sample data only — no live transaction was created.': 'Demo data',
+    'Ready to use CHEKMI?': 'Go live?',
+    'Connect your restaurant workspace when you are ready.':
+        'Connect workspace',
+  };
+
   Future<void> toggleLanguage() => setLanguage(isAmharic ? 'en' : 'am');
 
   Future<void> setLanguage(String languageCode) async {
@@ -113,8 +175,11 @@ class LocalizationService extends ChangeNotifier {
   }
 
   String translate(String english) {
-    if (!isAmharic) return english;
-    return _amharic[english] ?? english;
+    final copy = AppVariant.usesMinimalCopy
+        ? (_minimalEnglish[english] ?? english)
+        : english;
+    if (!isAmharic) return copy;
+    return _amharic[copy] ?? _amharic[english] ?? copy;
   }
 }
 

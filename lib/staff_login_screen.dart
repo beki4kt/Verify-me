@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+
 import 'api_service.dart';
 import 'offline_storage.dart';
 import 'business_gateway_screen.dart';
 import 'waiter_dashboard.dart';
 import 'cashier_dashboard.dart';
-import 'super_admin_dashboard.dart';
+import 'super_admin_login_screen.dart';
 import 'admin_dashboard.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_motion.dart';
@@ -16,6 +18,7 @@ import 'core/widgets/app_shell.dart';
 import 'core/widgets/state_views.dart';
 import 'localization_service.dart';
 import 'trial_mode_screen.dart';
+import 'core/config/app_variant.dart';
 
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
@@ -30,6 +33,9 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   late Map<String, String?> _lockedBusiness;
+
+  bool get _isTestDemoWorkspace =>
+      AppVariant.isTest2 && _lockedBusiness['code'] == 'MESOB-DEMO';
 
   @override
   void initState() {
@@ -81,7 +87,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
         // APPLY CURLY BRACES TO ALL FLOW CONTROL STRUCTURES
         if (role == 'super_admin') {
-          nextScreen = const SuperAdminDashboard();
+          nextScreen = const SuperAdminLoginScreen();
         } else if (role == 'admin') {
           nextScreen = const AdminDashboard();
         } else if (role == 'cashier') {
@@ -114,13 +120,21 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     }
   }
 
+  void _useDemoAccount({required String phone, required String password}) {
+    _phoneController.text = phone;
+    _passwordController.text = password;
+    _handleLogin();
+  }
+
   void _confirmUnbindDevice() {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Unbind Terminal?'),
-        content: const Text(
-          'This will remove the current restaurant connection from this device.',
+        title: Text(
+          AppVariant.usesMinimalCopy ? 'Change workspace?' : 'Unbind Terminal?',
+        ),
+        content: Text(
+          AppVariant.usesMinimalCopy ? 'Remove this workspace?' : 'This will remove the current restaurant connection from this device.',
         ),
         actions: [
           TextButton(
@@ -176,19 +190,27 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                const BrandHero(),
+                BrandHero(
+                  onLogoTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SuperAdminLoginScreen(),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.xl),
                 Text(
                   context.tr('Welcome back'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displayMedium,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  context.tr('Sign in to continue to your shift.'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                if (!AppVariant.usesMinimalCopy) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.tr('Sign in to continue to your shift.'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.xl),
                 Align(
                   child: Container(
@@ -207,7 +229,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.storefront_rounded,
+                          AppIcons.storefront,
                           color: AppColors.success,
                           size: 16,
                         ),
@@ -228,6 +250,55 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (_isTestDemoWorkspace) ...[
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
+                          children: [
+                            ActionChip(
+                              avatar: const Icon(
+                                AppIcons.administration,
+                                size: 17,
+                              ),
+                              label: const Text('Admin'),
+                              onPressed: _isLoading
+                                  ? null
+                                  : () => _useDemoAccount(
+                                      phone: '11000001',
+                                      password: 'AdminTest!2026',
+                                    ),
+                            ),
+                            ActionChip(
+                              avatar: const Icon(
+                                AppIcons.pointOfSale,
+                                size: 17,
+                              ),
+                              label: const Text('Cashier'),
+                              onPressed: _isLoading
+                                  ? null
+                                  : () => _useDemoAccount(
+                                      phone: '11000002',
+                                      password: 'CashierTest!2026',
+                                    ),
+                            ),
+                            ActionChip(
+                              avatar: const Icon(
+                                AppIcons.serviceBell,
+                                size: 17,
+                              ),
+                              label: const Text('Waiter'),
+                              onPressed: _isLoading
+                                  ? null
+                                  : () => _useDemoAccount(
+                                      phone: '11000003',
+                                      password: 'WaiterTest!2026',
+                                    ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
                       TextField(
                         controller: _phoneController,
                         keyboardType: TextInputType.number,
@@ -252,7 +323,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(
-                                  Icons.phone_outlined,
+                                  AppIcons.phone,
                                   color: AppColors.primary,
                                 ),
                                 const SizedBox(width: 12),
@@ -285,7 +356,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                         onSubmitted: (_) => _handleLogin(),
                         decoration: InputDecoration(
                           labelText: context.tr('Password'),
-                          prefixIcon: const Icon(Icons.lock_outline_rounded),
+                          prefixIcon: const Icon(AppIcons.lock),
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -309,7 +380,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.login_rounded),
+                              : const Icon(AppIcons.login),
                           label: Text(
                             context.tr(_isLoading ? 'SIGNING IN' : 'SIGN IN'),
                           ),
@@ -330,7 +401,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const TrialModeScreen()),
                   ),
-                  icon: const Icon(Icons.auto_awesome_rounded),
+                  icon: const Icon(AppIcons.sparkle),
                   label: Text(context.tr('TRY THE LIVE DEMO')),
                 ),
               ],

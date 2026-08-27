@@ -8,13 +8,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Keep known demo credentials out of production migrations
+        run: >-
+          ! grep -R -E
+          'AdminTest!2026|CashierTest!2026|WaiterTest!2026'
+          supabase/migrations
       - uses: subosito/flutter-action@v2
         with: {channel: stable, cache: true}
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze --no-pub
       - run: flutter test --no-pub
-      - run: flutter build web --release --no-pub
+      - name: Build production-configured web bundle
+        run: >-
+          flutter build web --release --no-pub
+          --dart-define=CHEKMI_ENV=production
+          --dart-define=VERIFY_ME_API_URL=https://api.ci.chekmi.example/api
+          --dart-define=CHEKMI_SUPABASE_URL=https://ci.supabase.co
+          --dart-define=CHEKMI_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_configuration_only
   backend:
     runs-on: ubuntu-latest
     defaults:

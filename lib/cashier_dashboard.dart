@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
@@ -18,6 +19,8 @@ import 'core/widgets/success_overlay.dart';
 import 'core/widgets/segmented_tabs.dart';
 import 'core/widgets/app_shell.dart';
 import 'localization_service.dart';
+import 'support_privacy_screen.dart';
+import 'core/config/app_variant.dart';
 
 class CashierDashboard extends StatefulWidget {
   const CashierDashboard({super.key});
@@ -81,7 +84,9 @@ class _CashierDashboardState extends State<CashierDashboard> {
             return AppSheetBody(
               children: [
                 AppSheetHeader(
-                  title: 'VERIFY PAYMENT',
+                  title: AppVariant.usesMinimalCopy
+                      ? 'VERIFY'
+                      : 'VERIFY PAYMENT',
                   color: AppColors.primary,
                 ),
                 const SizedBox(height: 24),
@@ -89,9 +94,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: ShapeDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surface.withValues(alpha: .62),
+                    color: Theme.of(context).colorScheme.surface
+                        .withValues(alpha: .62),
                     shape: AppShapes.cardSm,
                   ),
                   child: Column(
@@ -101,7 +105,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                       _summaryRow('WAITER', 'ID: $waiterId'),
                       const Divider(color: AppColors.hairline, height: 24),
                       _summaryRow(
-                        'EXPECTED BILL',
+                        AppVariant.usesMinimalCopy ? 'BILL' : 'EXPECTED BILL',
                         '${expectedAmount.toStringAsFixed(2)} ETB',
                         valueColor: AppColors.success,
                       ),
@@ -130,9 +134,11 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   ),
                   onChanged: (_) => setSheetState(() {}),
                   decoration: InputDecoration(
-                    labelText: 'PROVIDER VERIFIED AMOUNT (ETB)',
+                    labelText: AppVariant.usesMinimalCopy
+                        ? 'AMOUNT (ETB)'
+                        : 'PROVIDER VERIFIED AMOUNT (ETB)',
                     prefixIcon: Icon(
-                      Icons.account_balance_wallet,
+                      AppIcons.wallet,
                       color: isShortfall ? AppColors.danger : AppColors.primary,
                     ),
                   ),
@@ -149,7 +155,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'CALCULATED TIP',
+                          AppVariant.usesMinimalCopy ? 'TIP' : 'CALCULATED TIP',
                           style: AppTypography.microLabel(
                             color: AppColors.success,
                           ),
@@ -174,14 +180,14 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     child: Row(
                       children: [
                         const Icon(
-                          Icons.warning_amber_rounded,
+                          AppIcons.warning,
                           color: AppColors.danger,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'SHORTFALL. Amount is less than the bill. Settlement blocked.',
+                            AppVariant.usesMinimalCopy ? 'AMOUNT BELOW BILL' : 'SHORTFALL. Amount is less than the bill. Settlement blocked.',
                             style: AppTypography.microLabel(
                               color: AppColors.danger,
                             ).copyWith(fontSize: 12),
@@ -234,7 +240,11 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     ),
                     child: isSubmitting
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('REJECT TICKET'),
+                        : Text(
+                            AppVariant.usesMinimalCopy
+                                ? 'REJECT'
+                                : 'REJECT TICKET',
+                          ),
                   )
                 else
                   ElevatedButton(
@@ -273,7 +283,11 @@ class _CashierDashboardState extends State<CashierDashboard> {
                           },
                     child: isSubmitting
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('SETTLE TICKET'),
+                        : Text(
+                            AppVariant.usesMinimalCopy
+                                ? 'SETTLE'
+                                : 'SETTLE TICKET',
+                          ),
                   ),
               ],
             );
@@ -317,7 +331,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
         if (pending.isEmpty) {
           return EmptyView(
             message: context.tr('Queue is clear.'),
-            icon: Icons.check_circle_outline,
+            icon: AppIcons.success,
           );
         }
         return ListView.builder(
@@ -333,9 +347,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
                 decoration: ShapeDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.surface.withValues(alpha: .64),
+                  color: Theme.of(context).colorScheme.surface
+                      .withValues(alpha: .64),
                   shape: AppShapes.cardSm,
                 ),
                 child: Row(
@@ -347,7 +360,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
-                        Icons.notifications_active,
+                        AppIcons.alertNotification,
                         color: AppColors.primary,
                         size: 20,
                       ),
@@ -378,7 +391,10 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         ],
                       ),
                     ),
-                    const Icon(Icons.chevron_right, color: AppColors.textFaint),
+                    const Icon(
+                      AppIcons.chevronRight,
+                      color: AppColors.textFaint,
+                    ),
                   ],
                 ),
               ),
@@ -406,7 +422,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
         if (past.isEmpty) {
           return EmptyView(
             message: context.tr('No settled tickets yet.'),
-            icon: Icons.receipt_long,
+            icon: AppIcons.receipt,
           );
         }
         return ListView.builder(
@@ -427,9 +443,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: ShapeDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: .64),
+                color: Theme.of(context).colorScheme.surface
+                    .withValues(alpha: .64),
                 shape: AppShapes.cardSm,
               ),
               child: Column(
@@ -440,7 +455,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                       StatusDot(
                         label: status,
                         color: statusColor,
-                        icon: isSettled ? Icons.check_circle : Icons.cancel,
+                        icon: isSettled ? AppIcons.success : AppIcons.cancel,
                       ),
                       const Spacer(),
                       BankChip(bank: bank, color: AppColors.bank(bank)),
@@ -503,15 +518,22 @@ class _CashierDashboardState extends State<CashierDashboard> {
         elevation: 0,
         leading: IconButton(
           tooltip: 'Sign out',
-          icon: const Icon(Icons.logout, color: AppColors.danger),
+          icon: const Icon(AppIcons.logout, color: AppColors.danger),
           onPressed: _handleLogout,
         ),
         actions: [
           const GlassLanguageToggleButton(),
           const GlassThemeToggleButton(),
           IconButton(
+            tooltip: 'Help and privacy',
+            icon: const Icon(AppIcons.support),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SupportPrivacyScreen()),
+            ),
+          ),
+          IconButton(
             tooltip: 'Refresh tickets',
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(AppIcons.refresh),
             onPressed: _refreshData,
           ),
         ],

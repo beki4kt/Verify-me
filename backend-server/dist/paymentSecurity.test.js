@@ -19,6 +19,19 @@ const paymentSecurity_1 = require("./paymentSecurity");
     strict_1.default.equal((0, paymentSecurity_1.authoritativeAbyssiniaSuffix)("1000 12345 67890"), "67890");
     strict_1.default.equal((0, paymentSecurity_1.authoritativeAbyssiniaSuffix)("1234"), null);
 });
+(0, node_test_1.default)("new CBE receipt masks match first character and final four digits", () => {
+    strict_1.default.equal((0, paymentSecurity_1.matchesCbeReceivingAccount)("1000123456789012", "1****9012"), true);
+    strict_1.default.equal((0, paymentSecurity_1.matchesCbeReceivingAccount)("1000123456789012", "1****9999"), false);
+});
+(0, node_test_1.default)("CBE lookup values are derived from the configured business account", () => {
+    strict_1.default.equal((0, paymentSecurity_1.authoritativeAccountSuffix)("1000 1234 5678 9012", 8), "56789012");
+    strict_1.default.equal((0, paymentSecurity_1.authoritativeAccountSuffix)("1234567", 8), null);
+});
+(0, node_test_1.default)("CBE Birr lookup uses a normalized configured Ethiopian phone", () => {
+    strict_1.default.equal((0, paymentSecurity_1.authoritativeEthiopianPhone)("0911 222 333"), "251911222333");
+    strict_1.default.equal((0, paymentSecurity_1.authoritativeEthiopianPhone)("0711 222 333"), "251711222333");
+    strict_1.default.equal((0, paymentSecurity_1.authoritativeEthiopianPhone)("1000123456789"), null);
+});
 (0, node_test_1.default)("amount validation rejects client edge cases", () => {
     strict_1.default.equal((0, paymentSecurity_1.positiveAmount)("1800.50"), 1800.5);
     strict_1.default.equal((0, paymentSecurity_1.positiveAmount)(0), null);

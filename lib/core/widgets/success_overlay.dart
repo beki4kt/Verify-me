@@ -67,9 +67,8 @@ class _SuccessOverlayState extends State<_SuccessOverlay>
                   width: 200,
                   padding: const EdgeInsets.all(24),
                   decoration: ShapeDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surface.withValues(alpha: .88),
+                    color: Theme.of(context).colorScheme.surface
+                        .withValues(alpha: .88),
                     shape: AppShapes.card,
                   ),
                   child: Column(

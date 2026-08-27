@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -85,7 +86,7 @@ class AppSheetHeader extends StatelessWidget {
         ),
         if (onClose != null)
           IconButton(
-            icon: const Icon(Icons.close, color: Color(0x88FFFFFF)),
+            icon: const Icon(AppIcons.close, color: Color(0x88FFFFFF)),
             onPressed: onClose,
           ),
       ],

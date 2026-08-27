@@ -32,9 +32,8 @@ class SegmentedTabs extends StatelessWidget {
           height: 44,
           padding: const EdgeInsets.all(4),
           decoration: ShapeDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHigh.withValues(alpha: .72),
+            color: Theme.of(context).colorScheme.surfaceContainerHigh
+                .withValues(alpha: .72),
             shape: AppShapes.pill,
           ),
           child: Stack(
@@ -81,9 +80,9 @@ class SegmentedTabs extends StatelessWidget {
                             style: AppTypography.microLabel(
                               color: active
                                   ? Colors.white
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                                  : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                             ).copyWith(fontSize: 11),
                           ),
                         ),

@@ -55,8 +55,9 @@ user explicitly acknowledges them; they cannot migrate to another session.
 
 **Status: implemented for a controlled pilot.** Dated trial/active/overdue/grace,
 cancelled and suspended states, invoices, payment history, expiry progression,
-and server-side staff/cashier entitlements are present. A payment gateway and
-customer-facing upgrade checkout still require provider selection/integration.
+and server-side staff/cashier entitlements are present. The one-screen pricing
+flow now routes authenticated plan requests into the protected billing/support
+queue. Automated checkout still requires payment-gateway selection/integration.
 
 - Add subscription start/end dates and trial, active, overdue, grace-period, cancelled, and suspended states.
 - Add invoices, payments, billing history, renewal reminders, and upgrade/downgrade flows.
@@ -67,8 +68,11 @@ customer-facing upgrade checkout still require provider selection/integration.
 
 **Status: partial.** Release builds no longer use debug signing; CI, HTTPS/CORS,
 rate limiting, structured request logs, readiness checks, and backup/restore
-runbooks are included. Real keys, hosting, monitoring/crash vendors, alerting,
-and a completed restore drill remain deployment work.
+runbooks are included. Flutter now separates development and production public
+configuration, blocks incomplete/non-HTTPS release startup, disables Android
+release cleartext traffic and backups, and includes finished CHEKMI web metadata.
+Real keys, hosting, monitoring/crash vendors, alerting, store listing assets, and
+a completed restore drill remain deployment work.
 
 - Configure real Android release signing and remove debug signing from release builds.
 - Complete product metadata, environment separation, HTTPS-only production configuration, and reproducible database bootstrap migrations.
@@ -76,10 +80,11 @@ and a completed restore drill remain deployment work.
 
 ## 7. Legal, privacy, and customer support readiness
 
-**Status: backend foundation implemented.** Versioned legal consent, retention
-configuration, tenant-scoped support cases, and audited account-deletion
-requests are modeled. Replace placeholder legal URLs, publish reviewed policy
-text, add the customer-facing forms, and validate retention rules with counsel.
+**Status: application workflow implemented.** Versioned legal consent, retention
+configuration, tenant-scoped support cases, audited account-deletion requests,
+customer forms, case history, in-app policy summaries, and protected owner
+review are present. Replace placeholder legal URLs, publish counsel-reviewed
+full policy text, and validate retention rules before public launch.
 
 - Add privacy and terms acceptance with versioned consent records.
 - Define receipt-image and financial-record retention/deletion rules.

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  authoritativeAccountSuffix,
   authoritativeAbyssiniaSuffix,
+  authoritativeEthiopianPhone,
+  matchesCbeReceivingAccount,
   matchesReceivingAccount,
   normalizeAccount,
   positiveAmount,
@@ -23,6 +26,28 @@ test("destination matching supports exact and masked suffix values", () => {
 test("Abyssinia suffix is derived only from the configured business account", () => {
   assert.equal(authoritativeAbyssiniaSuffix("1000 12345 67890"), "67890");
   assert.equal(authoritativeAbyssiniaSuffix("1234"), null);
+});
+
+test("new CBE receipt masks match first character and final four digits", () => {
+  assert.equal(
+    matchesCbeReceivingAccount("1000123456789012", "1****9012"),
+    true,
+  );
+  assert.equal(
+    matchesCbeReceivingAccount("1000123456789012", "1****9999"),
+    false,
+  );
+});
+
+test("CBE lookup values are derived from the configured business account", () => {
+  assert.equal(authoritativeAccountSuffix("1000 1234 5678 9012", 8), "56789012");
+  assert.equal(authoritativeAccountSuffix("1234567", 8), null);
+});
+
+test("CBE Birr lookup uses a normalized configured Ethiopian phone", () => {
+  assert.equal(authoritativeEthiopianPhone("0911 222 333"), "251911222333");
+  assert.equal(authoritativeEthiopianPhone("0711 222 333"), "251711222333");
+  assert.equal(authoritativeEthiopianPhone("1000123456789"), null);
 });
 
 test("amount validation rejects client edge cases", () => {

@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+
 import 'api_service.dart';
 import 'offline_storage.dart';
 import 'receipt_parser.dart';
@@ -15,9 +18,18 @@ import 'core/widgets/payment_brand.dart';
 import 'core/widgets/state_views.dart';
 import 'core/widgets/transaction_filter_bar.dart';
 import 'localization_service.dart';
+import 'support_privacy_screen.dart';
+import 'core/config/app_variant.dart';
 
 class WaiterDashboard extends StatefulWidget {
-  const WaiterDashboard({super.key});
+  const WaiterDashboard({
+    super.key,
+    @visibleForTesting this.forceManualReceiptEntry = false,
+    this.trialMode = false,
+  });
+
+  final bool forceManualReceiptEntry;
+  final bool trialMode;
 
   @override
   State<WaiterDashboard> createState() => _WaiterDashboardState();
@@ -42,37 +54,15 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
   String? _cameraError;
 
   static const _banks = <({String name, String subtitle, IconData icon})>[
-    (
-      name: 'Telebirr',
-      subtitle: 'Mobile money',
-      icon: Icons.phone_android_rounded,
-    ),
-    (
-      name: 'CBE',
-      subtitle: 'Commercial Bank',
-      icon: Icons.account_balance_rounded,
-    ),
-    (
-      name: 'CBEBirr',
-      subtitle: 'CBE mobile wallet',
-      icon: Icons.wallet_rounded,
-    ),
-    (
-      name: 'Dashen',
-      subtitle: 'Dashen Bank',
-      icon: Icons.account_balance_outlined,
-    ),
-    (
-      name: 'Abyssinia',
-      subtitle: 'Bank of Abyssinia',
-      icon: Icons.apartment_rounded,
-    ),
-    (
-      name: 'MPesa',
-      subtitle: 'M-Pesa wallet',
-      icon: Icons.send_to_mobile_rounded,
-    ),
+    (name: 'Telebirr', subtitle: 'Mobile money', icon: AppIcons.mobile),
+    (name: 'CBE', subtitle: 'Commercial Bank', icon: AppIcons.banking),
+    (name: 'CBEBirr', subtitle: 'CBE mobile wallet', icon: AppIcons.wallet),
+    (name: 'Dashen', subtitle: 'Dashen Bank', icon: AppIcons.banking),
+    (name: 'Abyssinia', subtitle: 'Bank of Abyssinia', icon: AppIcons.business),
+    (name: 'MPesa', subtitle: 'M-Pesa wallet', icon: AppIcons.sendToMobile),
   ];
+
+  bool get _manualReceiptEntryOnly => kIsWeb || widget.forceManualReceiptEntry;
 
   @override
   void initState() {
@@ -135,7 +125,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                 decoration: InputDecoration(
                   labelText: 'Amount (ETB)',
                   errorText: errorText,
-                  prefixIcon: const Icon(Icons.payments_outlined),
+                  prefixIcon: const Icon(AppIcons.money),
                 ),
               ),
             ],
@@ -230,8 +220,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       if (mounted) {
         setState(() {
           _isCameraInitializing = false;
-          _cameraError =
-              'Camera access failed. Check the device permission and try again.';
+          _cameraError = 'Camera access failed. Check the device permission and try again.';
         });
       }
     }
@@ -267,10 +256,12 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
         }
 
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const Center(
+          return Center(
             child: Text(
-              'No active tickets. Swipe to scan a receipt.',
-              style: TextStyle(color: AppColors.textFaint, fontSize: 14),
+              AppVariant.usesMinimalCopy
+                  ? 'No tickets'
+                  : 'No active tickets. Swipe to scan a receipt.',
+              style: const TextStyle(color: AppColors.textFaint, fontSize: 14),
             ),
           );
         }
@@ -311,7 +302,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        isSettled ? Icons.check_circle : Icons.hourglass_empty,
+                        isSettled ? AppIcons.success : AppIcons.pending,
                         color: statusColor,
                         size: 20,
                       ),
@@ -385,7 +376,41 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     if (_cameraError != null) {
       return Padding(
         padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Center(child: ErrorBanner(message: _cameraError!)),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ErrorBanner(message: _cameraError!),
+                const SizedBox(height: AppSpacing.lg),
+                FilledButton.icon(
+                  onPressed: () => _showSubmissionSheet(
+                    null,
+                    initialProvider: _selectedBank,
+                  ),
+                  icon: const Icon(AppIcons.keyboard),
+                  label: Text(
+                    AppVariant.usesMinimalCopy
+                        ? 'ENTER MANUALLY'
+                        : 'ENTER PAYMENT DETAILS MANUALLY',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                TextButton.icon(
+                  onPressed: _changeBank,
+                  icon: const Icon(AppIcons.transfer),
+                  label: Text(
+                    AppVariant.usesMinimalCopy
+                        ? 'CHANGE PROVIDER'
+                        : 'CHOOSE ANOTHER PROVIDER',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
     if (!_isCameraInitialized || _cameraController == null) {
@@ -453,7 +478,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                           ),
                           const Spacer(),
                           const Icon(
-                            Icons.shield_outlined,
+                            AppIcons.shield,
                             color: AppColors.success,
                             size: 16,
                           ),
@@ -465,7 +490,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                   IconButton.filledTonal(
                     tooltip: 'Change bank',
                     onPressed: _changeBank,
-                    icon: const Icon(Icons.swap_horiz_rounded),
+                    icon: const Icon(AppIcons.transfer),
                   ),
                 ],
               ),
@@ -483,8 +508,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
               bottom: 24,
               child: Column(
                 children: [
-                  const Text(
-                    'Align the transaction reference inside the frame',
+                  Text(
+                    AppVariant.usesMinimalCopy
+                        ? 'Align receipt'
+                        : 'Align the transaction reference inside the frame',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white70,
@@ -505,7 +532,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Icon(Icons.document_scanner_rounded),
+                          : const Icon(AppIcons.scanReceipt),
                       label: Text(
                         context.tr(
                           _isExtracting ? 'READING RECEIPT' : 'CAPTURE RECEIPT',
@@ -569,7 +596,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     ),
                     borderRadius: BorderRadius.circular(18),
                   ),
-                  child: const Icon(Icons.person_rounded, color: Colors.white),
+                  child: const Icon(AppIcons.user, color: Colors.white),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -580,11 +607,13 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         'Waiter ${ApiService.currentStaffNumber ?? ''}',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Verified staff profile',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                      if (!AppVariant.usesMinimalCopy) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          'Verified staff profile',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -621,10 +650,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.account_balance_wallet_rounded,
-                        color: walletMuted,
-                      ),
+                      Icon(AppIcons.wallet, color: walletMuted),
                       const SizedBox(width: 10),
                       Text(
                         context.tr('AVAILABLE TIPS'),
@@ -641,8 +667,8 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                           duration: const Duration(milliseconds: 180),
                           child: Icon(
                             _hideTipBalance
-                                ? Icons.visibility_off_rounded
-                                : Icons.visibility_rounded,
+                                ? AppIcons.hidden
+                                : AppIcons.visible,
                             key: ValueKey(_hideTipBalance),
                           ),
                         ),
@@ -696,17 +722,16 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.outbox_rounded,
-                        color: AppColors.success,
-                      ),
+                      const Icon(AppIcons.outbox, color: AppColors.success),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Tip withdrawal',
+                            Text(
+                              AppVariant.usesMinimalCopy
+                                  ? 'Withdraw'
+                                  : 'Tip withdrawal',
                               style: TextStyle(fontWeight: FontWeight.w800),
                             ),
                             const SizedBox(height: 3),
@@ -723,7 +748,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         onPressed: withdrawable > 0
                             ? () => _showWithdrawalRequest(withdrawable)
                             : null,
-                        icon: const Icon(Icons.send_rounded, size: 18),
+                        icon: const Icon(AppIcons.send, size: 18),
                         label: const Text('Request'),
                       ),
                     ],
@@ -756,10 +781,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.receipt_long_rounded,
-                          color: AppColors.primary,
-                        ),
+                        const Icon(AppIcons.receipt, color: AppColors.primary),
                         const SizedBox(height: 18),
                         Text(
                           '${historyChecks.length}',
@@ -780,7 +802,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                               ),
                             ),
                             const Spacer(),
-                            const Icon(Icons.arrow_forward_rounded, size: 16),
+                            const Icon(AppIcons.forward, size: 16),
                           ],
                         ),
                       ],
@@ -793,10 +815,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.payments_outlined,
-                          color: AppColors.success,
-                        ),
+                        const Icon(AppIcons.money, color: AppColors.success),
                         const SizedBox(height: 18),
                         Text(
                           '${totalChecked.toStringAsFixed(0)} ETB',
@@ -844,7 +863,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                   return HoverSurface(
                     child: EmptyView(
                       message: context.tr('No receipt scans recorded yet.'),
-                      icon: Icons.document_scanner_outlined,
+                      icon: AppIcons.scanReceipt,
                     ),
                   );
                 }
@@ -860,9 +879,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         child: Row(
                           children: [
                             Icon(
-                              verified
-                                  ? Icons.verified_rounded
-                                  : Icons.error_outline_rounded,
+                              verified ? AppIcons.verified : AppIcons.error,
                               color: verified
                                   ? AppColors.success
                                   : AppColors.danger,
@@ -883,9 +900,9 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                   const SizedBox(height: 4),
                                   Text(
                                     '${attempt['provider'] ?? 'provider'} • ${_formatTicketTime(attempt['created_at'])}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
                                   ),
                                 ],
                               ),
@@ -925,18 +942,18 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
               child: Column(
                 children: [
                   _profileRow(
-                    Icons.badge_outlined,
+                    AppIcons.staffBadge,
                     'Staff ID',
                     ApiService.currentStaffNumber ?? '—',
                   ),
                   const Divider(height: 28),
                   _profileRow(
-                    Icons.storefront_outlined,
+                    AppIcons.storefront,
                     'Workspace',
                     'Current restaurant',
                   ),
                   const Divider(height: 28),
-                  _profileRow(Icons.shield_outlined, 'Access', 'Waiter'),
+                  _profileRow(AppIcons.shield, 'Access', 'Waiter'),
                 ],
               ),
             ),
@@ -954,9 +971,8 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       const Spacer(),
       Text(
         value,
-        style: Theme.of(
-          context,
-        ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+        style: Theme.of(context).textTheme.bodyMedium
+            ?.copyWith(fontWeight: FontWeight.w800),
       ),
     ],
   );
@@ -992,17 +1008,19 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                           context.tr('Checked receipts'),
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${tickets.length} verified transactions',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                        if (!AppVariant.usesMinimalCopy) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '${tickets.length} verified transactions',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(AppIcons.close),
                   ),
                 ],
               ),
@@ -1011,7 +1029,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
               child: tickets.isEmpty
                   ? EmptyView(
                       message: context.tr('No checked receipts yet.'),
-                      icon: Icons.receipt_long_outlined,
+                      icon: AppIcons.receipt,
                     )
                   : ListView.separated(
                       controller: controller,
@@ -1046,9 +1064,9 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                     const SizedBox(height: 4),
                                     Text(
                                       '${t['bank'] ?? 'Bank'} • ${_formatTicketTime(t['created_at'])}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
@@ -1108,15 +1126,37 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       children: [
         Text(
           context.tr('Choose a payment provider'),
-          style: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(context).textTheme.headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Select a provider to scan its receipt.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
+        if (!AppVariant.usesMinimalCopy) ...[
+          const SizedBox(height: 8),
+          Text(
+            _manualReceiptEntryOnly
+                ? 'Select a provider, then enter the payment details from the receipt.'
+                : 'Select a provider to scan its receipt.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
+        if (_manualReceiptEntryOnly) ...[
+          const SizedBox(height: AppSpacing.lg),
+          const GlassPanel(
+            padding: EdgeInsets.all(AppSpacing.md),
+            accent: AppColors.aqua,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(AppIcons.language, color: AppColors.aqua),
+                SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    'Browser testing uses secure manual receipt entry. Camera OCR remains available in the mobile app.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 24),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -1134,7 +1174,13 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
               itemBuilder: (context, index) {
                 final bank = _banks[index];
                 return HoverSurface(
-                  onTap: () => _selectBankAndStartCamera(bank.name),
+                  onTap: () {
+                    if (_manualReceiptEntryOnly) {
+                      _showSubmissionSheet(null, initialProvider: bank.name);
+                    } else {
+                      _selectBankAndStartCamera(bank.name);
+                    }
+                  },
                   accent: AppColors.bank(bank.name),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1205,9 +1251,8 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     } catch (e) {
       if (mounted) {
         setState(() => _isExtracting = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Scanner Error: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Scanner Error: $e')));
       }
     }
   }
@@ -1215,24 +1260,23 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
   // --- TICKET SUBMISSION SHEET ---
   void _showSubmissionSheet(
     String? initialTransactionId, {
-    required Uint8List receiptImageBytes,
+    Uint8List? receiptImageBytes,
+    String? initialProvider,
   }) {
     final refController = TextEditingController(
       text: initialTransactionId ?? '',
     );
     final billController = TextEditingController();
-    final providerExtraController = TextEditingController();
     final tableController = TextEditingController();
-    String selectedBank = _selectedBank ?? 'Telebirr';
+    String selectedBank = initialProvider ?? _selectedBank ?? 'Telebirr';
     bool isSubmitting = false;
     String? errorText;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface.withValues(alpha: .94),
+      backgroundColor: Theme.of(context).colorScheme.surface
+          .withValues(alpha: .94),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
@@ -1251,8 +1295,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'SUBMIT TICKET',
+                    Text(
+                      AppVariant.usesMinimalCopy
+                          ? 'NEW TICKET'
+                          : 'SUBMIT TICKET',
                       style: TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w900,
@@ -1264,15 +1310,14 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
 
                     DropdownButtonFormField<String>(
                       initialValue: selectedBank,
-                      dropdownColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHigh,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      dropdownColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHigh,
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
                       decoration: _buildInputDecoration(
-                        'SELECT BANK',
-                        Icons.account_balance,
+                        AppVariant.usesMinimalCopy ? 'BANK' : 'SELECT BANK',
+                        AppIcons.banking,
                       ),
                       items: const [
                         DropdownMenuItem<String>(
@@ -1307,34 +1352,14 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    if (selectedBank == 'CBE' ||
-                        selectedBank == 'Abyssinia' ||
-                        selectedBank == 'CBEBirr') ...[
-                      TextField(
-                        controller: providerExtraController,
-                        keyboardType: TextInputType.number,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                        decoration: _buildInputDecoration(
-                          selectedBank == 'CBE'
-                              ? 'LAST 8 ACCOUNT DIGITS'
-                              : selectedBank == 'Abyssinia'
-                              ? '5-DIGIT ACCOUNT SUFFIX'
-                              : 'CBE BIRR PHONE NUMBER',
-                          selectedBank == 'CBEBirr' ? Icons.phone : Icons.pin,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-
                     TextField(
                       controller: tableController,
                       textCapitalization: TextCapitalization.characters,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
                       decoration: _buildInputDecoration(
-                        'TABLE NUMBER',
-                        Icons.table_restaurant,
+                        AppVariant.usesMinimalCopy ? 'TABLE' : 'TABLE NUMBER',
+                        AppIcons.table,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1347,8 +1372,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         letterSpacing: 1.5,
                       ),
                       decoration: _buildInputDecoration(
-                        'TRANSACTION REF',
-                        Icons.receipt,
+                        AppVariant.usesMinimalCopy
+                            ? 'REFERENCE'
+                            : 'TRANSACTION REF',
+                        AppIcons.receipt,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1370,23 +1397,26 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                       ),
                       decoration:
                           _buildInputDecoration(
-                            'EXPECTED BILL AMOUNT (ETB)',
-                            Icons.payments,
+                            AppVariant.usesMinimalCopy
+                                ? 'AMOUNT (ETB)'
+                                : 'EXPECTED BILL AMOUNT (ETB)',
+                            AppIcons.money,
                           ).copyWith(
                             filled: true,
-                            fillColor: const Color(
-                              0xFF10B981,
-                            ).withValues(alpha: 0.1),
+                            fillColor: const Color(0xFF10B981)
+                                .withValues(alpha: 0.1),
                           ),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Any transferred amount exceeding this expected bill will be classified as a tip by the cashier.',
-                      style: TextStyle(
-                        color: AppColors.textFaint,
-                        fontSize: 10,
+                    if (!AppVariant.usesMinimalCopy) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Any transferred amount exceeding this expected bill will be classified as a tip by the cashier.',
+                        style: TextStyle(
+                          color: AppColors.textFaint,
+                          fontSize: 10,
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 24),
 
                     if (errorText != null)
@@ -1415,8 +1445,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                   refController.text.isEmpty ||
                                   billController.text.isEmpty) {
                                 setSheetState(
-                                  () => errorText =
-                                      'Please provide the table number, transaction ref, and bill amount.',
+                                  () => errorText = 'Please provide the table number, transaction ref, and bill amount.',
                                 );
                                 return;
                               }
@@ -1449,14 +1478,6 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                       expectedAmount: enteredAmount,
                                       tableNumber: tableController.text.trim(),
                                       receiptImageBytes: receiptImageBytes,
-                                      suffix:
-                                          selectedBank == 'CBE' ||
-                                              selectedBank == 'Abyssinia'
-                                          ? providerExtraController.text
-                                          : null,
-                                      phoneNumber: selectedBank == 'CBEBirr'
-                                          ? providerExtraController.text
-                                          : null,
                                     );
 
                                 if (result.isSuccess) {
@@ -1483,10 +1504,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                     ),
                                   );
                                 } else {
-                                  throw Exception(
-                                    result.errorMessage ??
-                                        "Invalid Transaction ID.",
-                                  );
+                                  throw Exception(result.displayErrorMessage);
                                 }
                               } catch (e) {
                                 setSheetState(
@@ -1510,9 +1528,11 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                       ),
                       child: isSubmitting
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text(
-                              'SUBMIT TICKET',
-                              style: TextStyle(
+                          : Text(
+                              AppVariant.usesMinimalCopy
+                                  ? 'SUBMIT'
+                                  : 'SUBMIT TICKET',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: 1.5,
@@ -1542,36 +1562,48 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
           title: const BrandLockup(compact: true),
           titleTextStyle: AppTypography.appBarTitle(),
           leading: IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout_rounded, color: AppColors.danger),
-            onPressed: () {
-              ApiService.logoutStaff();
+            tooltip: widget.trialMode ? 'Exit demo' : 'Sign out',
+            icon: Icon(
+              widget.trialMode ? AppIcons.close : AppIcons.logout,
+              color: AppColors.danger,
+            ),
+            onPressed: () async {
+              if (widget.trialMode) {
+                Navigator.of(context).pop();
+                return;
+              }
+              await ApiService.logoutStaff();
+              if (!context.mounted) return;
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (_) => const StaffLoginScreen()),
               );
             },
           ),
-          actions: const [
-            GlassLanguageToggleButton(),
-            GlassThemeToggleButton(),
+          actions: [
+            const GlassLanguageToggleButton(),
+            const GlassThemeToggleButton(),
+            IconButton(
+              tooltip: 'Help and privacy',
+              icon: const Icon(AppIcons.support),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SupportPrivacyScreen()),
+              ),
+            ),
           ],
           bottom: TabBar(
             dividerHeight: 0,
             tabs: [
               Tab(
-                icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                icon: const Icon(AppIcons.receipt, size: 18),
                 text: context.tr('Tickets'),
               ),
               Tab(
-                icon: const Icon(Icons.document_scanner_outlined, size: 18),
+                icon: const Icon(AppIcons.scanReceipt, size: 18),
                 text: context.tr('Scan receipt'),
               ),
               Tab(
-                icon: const Icon(
-                  Icons.account_balance_wallet_outlined,
-                  size: 18,
-                ),
+                icon: const Icon(AppIcons.wallet, size: 18),
                 text: context.tr('Wallet'),
               ),
             ],

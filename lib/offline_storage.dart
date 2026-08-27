@@ -38,9 +38,8 @@ class SyncManager {
     await Hive.initFlutter();
     Hive.registerAdapter(PendingTicketAdapter());
     await Hive.openBox<PendingTicket>(_boxName);
-    instance.quarantinedLegacyCount.value = Hive.box<PendingTicket>(
-      _boxName,
-    ).length;
+    instance.quarantinedLegacyCount.value = Hive.box<PendingTicket>(_boxName)
+        .length;
     await DeviceStorage.init(); // Initialize the Business Lock Storage
   }
 
@@ -64,9 +63,8 @@ class SyncManager {
         .map(
           (ticket) => {
             'reference': ticket.transactionId,
-            'created_at': DateTime.fromMillisecondsSinceEpoch(
-              ticket.timestamp,
-            ).toIso8601String(),
+            'created_at': DateTime.fromMillisecondsSinceEpoch(ticket.timestamp)
+                .toIso8601String(),
             'status': 'quarantined',
             'action': 'Rescan while online',
           },

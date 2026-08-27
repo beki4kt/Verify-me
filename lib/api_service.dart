@@ -1,36 +1,66 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
+
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'core/config/app_environment.dart';
 import 'core/session/session_controller.dart';
 
 class VerificationResult {
   final bool isSuccess;
   final String? errorMessage;
+  final String? errorCode;
+  final bool retryable;
+  final int? retryAfterSeconds;
   final Map<String, dynamic>? data;
-  VerificationResult({required this.isSuccess, this.errorMessage, this.data});
+
+  VerificationResult({
+    required this.isSuccess,
+    this.errorMessage,
+    this.errorCode,
+    this.retryable = false,
+    this.retryAfterSeconds,
+    this.data,
+  });
+
+  String get displayErrorMessage {
+    final message = errorMessage ?? 'Payment verification failed.';
+    return switch (errorCode) {
+      'SESSION_REQUIRED' || 'SESSION_EXPIRED' => 'Your staff session expired. Sign in again before verifying this payment.',
+      'RECEIVING_ACCOUNT_INVALID' =>
+        '$message Ask the restaurant administrator to update this provider account.',
+      'DESTINATION_MISMATCH' =>
+        '$message Confirm that the customer paid the restaurant account shown at checkout.',
+      'UNDERPAID' => '$message Ask the customer to pay the remaining balance.',
+      'TRANSACTION_TOO_OLD' =>
+        '$message Use a receipt inside the allowed verification window.',
+      'DUPLICATE_PAYMENT' =>
+        '$message Refresh the ticket list before attempting another verification.',
+      'RATE_LIMIT' || 'VERIFIER_TEMPORARILY_UNAVAILABLE' || 'VERIFIER_ERROR' =>
+        retryAfterSeconds == null
+            ? '$message Try again shortly.'
+            : '$message Try again in about $retryAfterSeconds seconds.',
+      'CONNECTION_FAILED' =>
+        '$message Check the connection, then refresh the ticket list before retrying.',
+      'TIMEOUT' =>
+        '$message Refresh the ticket list before retrying because the first request may have completed.',
+      _ => message,
+    };
+  }
 }
 
 class ApiService {
-  // --- LOCAL MACHINE TESTING CONFIGURATION ---
-  // Replace "192.168.1.X" with your actual computer's local IP address so your physical phone can connect!
-  static const String _configuredBaseUrl = String.fromEnvironment(
-    'VERIFY_ME_API_URL',
-    defaultValue: 'http://172.20.10.4:3000/api',
+  static String get baseUrl => AppEnvironment.apiBaseUrl;
+
+  // CHEKMI uses its own short-lived backend sessions. A bare public client is
+  // sufficient for the remaining tenant RPCs and avoids an unused browser auth
+  // restoration step delaying app startup.
+  static final _supabase = SupabaseClient(
+    AppEnvironment.supabaseUrl,
+    AppEnvironment.supabasePublishableKey,
   );
-
-  // 0.0.0.0 is a server bind address, never a destination a phone can call.
-  // Fall back to the current development machine if an old launch profile
-  // accidentally injects it at build time.
-  static const String baseUrl = _configuredBaseUrl == 'http://0.0.0.0:3000/api'
-      ? 'http://172.20.10.4:3000/api'
-      : _configuredBaseUrl;
-
-  // Keep your live domain here as a comment for when you switch to production:
-  // static const String baseUrl = "https://verifyapi.leulzenebe.pro/api";
-
-  static final _supabase = Supabase.instance.client;
   static SessionController? _session;
 
   static void configureSession(SessionController session) {
@@ -52,17 +82,39 @@ class ApiService {
   // --- 1. AUTHENTICATION & BUSINESS LAYER ---
 
   static Future<Map<String, dynamic>?> verifyBusinessCode(String code) async {
-    final response = await _supabase.rpc(
-      'lookup_business',
-      params: {'p_code': code.toUpperCase()},
-    );
+    final normalizedCode = code.trim().toUpperCase();
+    dynamic response;
+    try {
+      response = await _supabase.rpc(
+        'lookup_business',
+        params: {'p_code': normalizedCode},
+      );
+    } on PostgrestException catch (error) {
+      final lookupRpcMissing =
+          error.code == 'PGRST202' && error.message.contains('lookup_business');
+      if (!lookupRpcMissing) rethrow;
+
+      // Compatibility path for installations that still use the original
+      // CHEKMI schema. The restricted RPC remains the primary path; this
+      // selects only the four public fields it would have returned.
+      try {
+        response = await _supabase
+            .from('businesses')
+            .select('business_id,name,business_code,is_active')
+            .eq('business_code', normalizedCode)
+            .maybeSingle();
+      } on PostgrestException {
+        throw Exception('Workspace service is unavailable.');
+      }
+    }
 
     if (response == null) throw Exception("Invalid Business Code.");
-    if (response['is_active'] != true) {
+    final business = Map<String, dynamic>.from(response as Map);
+    if (business['is_active'] != true) {
       throw Exception("This business account is currently suspended.");
     }
 
-    return response;
+    return business;
   }
 
   static Future<String?> loginStaffUnderBusiness(
@@ -153,6 +205,7 @@ class ApiService {
         return VerificationResult(
           isSuccess: false,
           errorMessage: 'Unknown provider: $providerOrEndpoint',
+          errorCode: 'INVALID_PROVIDER',
         );
       }
 
@@ -192,6 +245,7 @@ class ApiService {
                       data['message'] ??
                       'API rejected the transaction.')
                   .toString(),
+          errorCode: data['code']?.toString(),
         );
       }
 
@@ -205,7 +259,10 @@ class ApiService {
                 .toString();
         return VerificationResult(
           isSuccess: false,
-          errorMessage: response.statusCode == 503 ? serverError : serverError,
+          errorMessage: serverError,
+          errorCode: data['code']?.toString(),
+          retryable: data['retryable'] == true,
+          retryAfterSeconds: (data['retryAfterSeconds'] as num?)?.toInt(),
         );
       } catch (_) {
         return VerificationResult(
@@ -218,6 +275,8 @@ class ApiService {
       return VerificationResult(
         isSuccess: false,
         errorMessage: 'Connection Failed: $e',
+        errorCode: 'CONNECTION_FAILED',
+        retryable: true,
       );
     }
   }
@@ -231,14 +290,13 @@ class ApiService {
     required double expectedAmount,
     required String tableNumber,
     Uint8List? receiptImageBytes,
-    String? suffix,
-    String? phoneNumber,
   }) async {
     final normalizedProvider = _normalizeProvider(provider);
     if (normalizedProvider == null) {
       return VerificationResult(
         isSuccess: false,
         errorMessage: 'Unknown provider: $provider',
+        errorCode: 'INVALID_PROVIDER',
       );
     }
     try {
@@ -258,10 +316,6 @@ class ApiService {
               'tableNumber': tableNumber.trim(),
               if (receiptImageBytes != null)
                 'receiptImageBase64': base64Encode(receiptImageBytes),
-              if (suffix != null && suffix.trim().isNotEmpty)
-                'suffix': suffix.trim(),
-              if (phoneNumber != null && phoneNumber.trim().isNotEmpty)
-                'phoneNumber': phoneNumber.trim(),
             }),
           )
           .timeout(const Duration(seconds: 35));
@@ -276,17 +330,24 @@ class ApiService {
         errorMessage:
             decoded['error']?.toString() ??
             'Verification failed (${response.statusCode}).',
+        errorCode: decoded['code']?.toString(),
+        retryable: decoded['retryable'] == true,
+        retryAfterSeconds: (decoded['retryAfterSeconds'] as num?)?.toInt(),
         data: decoded,
       );
     } on TimeoutException {
       return VerificationResult(
         isSuccess: false,
         errorMessage: 'Verification timed out. Check before retrying.',
+        errorCode: 'TIMEOUT',
+        retryable: true,
       );
     } catch (error) {
       return VerificationResult(
         isSuccess: false,
         errorMessage: 'Connection failed: $error',
+        errorCode: 'CONNECTION_FAILED',
+        retryable: true,
       );
     }
   }
@@ -703,6 +764,16 @@ class ApiService {
         'p_priority': priority,
       },
     );
+  }
+
+  static Future<List<Map<String, dynamic>>> listMySupportCases() async {
+    final response = await _supabase.rpc(
+      'list_my_support_cases',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
   }
 
   static Future<void> requestBusinessDeletion(String reason) async {

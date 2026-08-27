@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 
 import '../theme/app_spacing.dart';
 import 'payment_brand.dart';
@@ -59,9 +60,8 @@ List<Map<String, dynamic>> filterTransactions(
           return false;
         }
         if (start == null) return true;
-        final created = DateTime.tryParse(
-          row['created_at']?.toString() ?? '',
-        )?.toLocal();
+        final created = DateTime.tryParse(row['created_at']?.toString() ?? '')
+            ?.toLocal();
         if (created == null || created.isBefore(start)) return false;
         if (endExclusive != null && !created.isBefore(endExclusive)) {
           return false;
@@ -111,7 +111,7 @@ class TransactionFilterBar extends StatelessWidget {
             initialValue: period,
             decoration: const InputDecoration(
               labelText: 'Time',
-              prefixIcon: Icon(Icons.calendar_today_rounded),
+              prefixIcon: Icon(AppIcons.calendar),
             ),
             items: TransactionPeriod.values
                 .map(
@@ -126,7 +126,7 @@ class TransactionFilterBar extends StatelessWidget {
         ),
         if (period == TransactionPeriod.custom)
           ActionChip(
-            avatar: const Icon(Icons.date_range_rounded, size: 18),
+            avatar: const Icon(AppIcons.calendar, size: 18),
             label: Text(rangeLabel),
             onPressed: () => onPeriodChanged(TransactionPeriod.custom),
           ),
@@ -138,7 +138,7 @@ class TransactionFilterBar extends StatelessWidget {
               initialValue: staffNumber,
               decoration: const InputDecoration(
                 labelText: 'Staff member',
-                prefixIcon: Icon(Icons.badge_outlined),
+                prefixIcon: Icon(AppIcons.staffBadge),
               ),
               items: [
                 const DropdownMenuItem<String?>(
@@ -162,7 +162,7 @@ class TransactionFilterBar extends StatelessWidget {
             initialValue: paymentMethod,
             decoration: const InputDecoration(
               labelText: 'Payment method',
-              prefixIcon: Icon(Icons.payments_outlined),
+              prefixIcon: Icon(AppIcons.money),
             ),
             items: [
               const DropdownMenuItem<String?>(

@@ -94,7 +94,7 @@ class AppTheme {
         foregroundColor: scheme.onSurface,
         centerTitle: false,
         titleTextStyle: AppTypography.appBarTitle(color: scheme.onSurface),
-        iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
+        iconTheme: IconThemeData(color: scheme.onSurfaceVariant, size: 21),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: scheme.surfaceContainerHigh.withValues(alpha: .98),
@@ -130,7 +130,7 @@ class AppTheme {
         thickness: 1,
         space: 1,
       ),
-      iconTheme: IconThemeData(color: scheme.onSurfaceVariant, size: 22),
+      iconTheme: IconThemeData(color: scheme.onSurfaceVariant, size: 21),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: fieldFill,
@@ -197,9 +197,8 @@ class AppTheme {
           shape: const WidgetStatePropertyAll(AppShapes.button),
           animationDuration: const Duration(milliseconds: 180),
           textStyle: WidgetStatePropertyAll(
-            AppTypography.microLabel(
-              color: Colors.white,
-            ).copyWith(inherit: false, fontSize: 12.5),
+            AppTypography.microLabel(color: Colors.white)
+                .copyWith(inherit: false, fontSize: 12.5),
           ),
         ),
       ),
@@ -221,9 +220,8 @@ class AppTheme {
           ),
           shape: const WidgetStatePropertyAll(AppShapes.button),
           textStyle: WidgetStatePropertyAll(
-            AppTypography.microLabel(
-              color: scheme.primary,
-            ).copyWith(inherit: false, fontSize: 12),
+            AppTypography.microLabel(color: scheme.primary)
+                .copyWith(inherit: false, fontSize: 12),
           ),
         ),
       ),
@@ -235,21 +233,40 @@ class AppTheme {
           ),
           shape: const WidgetStatePropertyAll(AppShapes.button),
           textStyle: WidgetStatePropertyAll(
-            AppTypography.microLabel(
-              color: scheme.primary,
-            ).copyWith(inherit: false, fontSize: 11.5),
+            AppTypography.microLabel(color: scheme.primary)
+                .copyWith(inherit: false, fontSize: 11.5),
           ),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: ButtonStyle(
           foregroundColor: WidgetStatePropertyAll(scheme.onSurfaceVariant),
-          backgroundColor: WidgetStateProperty.resolveWith(
-            (states) => states.contains(WidgetState.hovered)
-                ? scheme.primary.withValues(alpha: .10)
-                : Colors.transparent,
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.pressed)) {
+              return scheme.primary.withValues(alpha: .16);
+            }
+            if (states.contains(WidgetState.hovered)) {
+              return scheme.primary.withValues(alpha: .10);
+            }
+            return scheme.surfaceContainerHigh.withValues(
+              alpha: dark ? .56 : .70,
+            );
+          }),
+          overlayColor: WidgetStatePropertyAll(
+            scheme.primary.withValues(alpha: .08),
           ),
-          shape: const WidgetStatePropertyAll(AppShapes.button),
+          side: WidgetStateProperty.resolveWith(
+            (states) => BorderSide(
+              color: states.contains(WidgetState.hovered)
+                  ? scheme.primary.withValues(alpha: .34)
+                  : scheme.outlineVariant.withValues(alpha: .72),
+            ),
+          ),
+          minimumSize: const WidgetStatePropertyAll(Size.square(42)),
+          padding: const WidgetStatePropertyAll(EdgeInsets.all(10)),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+          ),
         ),
       ),
       tabBarTheme: TabBarThemeData(
@@ -264,13 +281,34 @@ class AppTheme {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
+        height: 72,
         backgroundColor: scheme.surfaceContainer.withValues(alpha: .92),
         surfaceTintColor: Colors.transparent,
         indicatorColor: scheme.primary.withValues(alpha: dark ? .23 : .14),
+        indicatorShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
         elevation: 0,
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(
+            color: states.contains(WidgetState.selected)
+                ? scheme.primary
+                : scheme.onSurfaceVariant,
+            size: states.contains(WidgetState.selected) ? 22 : 21,
+          ),
+        ),
         labelTextStyle: WidgetStatePropertyAll(
           AppTypography.microLabel(color: scheme.onSurfaceVariant),
         ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        elevation: 7,
+        focusElevation: 7,
+        hoverElevation: 10,
+        iconSize: 22,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(

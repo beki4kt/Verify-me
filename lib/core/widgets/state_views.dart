@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 
 import '../theme/app_colors.dart';
 
@@ -36,7 +37,7 @@ class EmptyView extends StatelessWidget {
   const EmptyView({
     super.key,
     required this.message,
-    this.icon = Icons.inbox_outlined,
+    this.icon = AppIcons.inbox,
   });
   final String message;
   final IconData icon;

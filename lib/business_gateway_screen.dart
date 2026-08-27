@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:vibration/vibration.dart';
+
 import 'api_service.dart';
 import 'offline_storage.dart';
 import 'staff_login_screen.dart';
@@ -13,6 +15,8 @@ import 'core/widgets/state_views.dart';
 import 'localization_service.dart';
 import 'trial_mode_screen.dart';
 import 'pricing_screen.dart';
+import 'super_admin_login_screen.dart';
+import 'core/config/app_variant.dart';
 
 class BusinessGatewayScreen extends StatefulWidget {
   const BusinessGatewayScreen({super.key});
@@ -90,27 +94,43 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (AppVariant.isTest2) ...[
+                      const Chip(label: Text('T2')),
+                      const SizedBox(width: AppSpacing.sm),
+                    ],
                     const GlassLanguageToggleButton(),
                     const GlassThemeToggleButton(),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                const BrandHero(),
+                BrandHero(
+                  onLogoTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SuperAdminLoginScreen(),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.xl),
                 Text(
                   context.tr('Connect this terminal'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displayMedium,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  context.tr(
-                    'Enter your restaurant workspace code. You only need to do this once on this device.',
+                if (!AppVariant.usesMinimalCopy) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    context.tr(
+                      'Enter your restaurant workspace code. You only need to do this once on this device.',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
+                ],
+                SizedBox(
+                  height: AppVariant.usesMinimalCopy
+                      ? AppSpacing.xl
+                      : AppSpacing.xxl,
                 ),
-                const SizedBox(height: AppSpacing.xxl),
                 HoverSurface(
                   padding: const EdgeInsets.all(AppSpacing.xl),
                   child: Column(
@@ -126,12 +146,11 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                         textCapitalization: TextCapitalization.characters,
                         textAlign: TextAlign.center,
                         onSubmitted: (_) => _verifyAndLock(),
-                        style: AppTypography.money(
-                          size: 22,
-                        ).copyWith(letterSpacing: 4),
+                        style: AppTypography.money(size: 22)
+                            .copyWith(letterSpacing: 4),
                         decoration: const InputDecoration(
                           hintText: 'MESOB-DEMO',
-                          prefixIcon: Icon(Icons.key_rounded),
+                          prefixIcon: Icon(AppIcons.key),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
@@ -149,7 +168,7 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.arrow_forward_rounded),
+                            : const Icon(AppIcons.forward),
                         label: Text(
                           context.tr(
                             _isLoading ? 'CONNECTING' : 'CONNECT WORKSPACE',
@@ -165,17 +184,19 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                   accent: AppColors.success,
                   child: Column(
                     children: [
-                      Text(
-                        context.tr('Explore before you connect'),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        context.tr('No account, setup, or payment required'),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
+                      if (!AppVariant.usesMinimalCopy) ...[
+                        Text(
+                          context.tr('Explore before you connect'),
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          context.tr('No account, setup, or payment required'),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
                       Wrap(
                         alignment: WrapAlignment.center,
                         spacing: AppSpacing.md,
@@ -187,7 +208,7 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                                 builder: (_) => const TrialModeScreen(),
                               ),
                             ),
-                            icon: const Icon(Icons.auto_awesome_rounded),
+                            icon: const Icon(AppIcons.sparkle),
                             label: Text(context.tr('TRY THE LIVE DEMO')),
                           ),
                           TextButton.icon(
@@ -196,30 +217,36 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                                 builder: (_) => const PricingScreen(),
                               ),
                             ),
-                            icon: const Icon(Icons.sell_outlined),
-                            label: const Text('VIEW PRICING'),
+                            icon: const Icon(AppIcons.tag),
+                            label: Text(
+                              AppVariant.usesMinimalCopy
+                                  ? 'PLANS'
+                                  : 'VIEW PRICING',
+                            ),
                           ),
                         ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.lock_outline_rounded,
-                      size: 14,
-                      color: AppColors.textFaint,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      context.tr('Encrypted tenant connection'),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
+                if (!AppVariant.usesMinimalCopy) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        AppIcons.lock,
+                        size: 14,
+                        color: AppColors.textFaint,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        context.tr('Encrypted tenant connection'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

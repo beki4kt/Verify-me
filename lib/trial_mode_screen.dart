@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import 'business_gateway_screen.dart';
+import 'api_service.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/widgets/app_shell.dart';
 import 'core/widgets/payment_brand.dart';
+import 'core/widgets/state_views.dart';
 import 'localization_service.dart';
 import 'pricing_screen.dart';
+import 'core/config/app_variant.dart';
+import 'waiter_dashboard.dart';
 
 enum TrialRole { waiter, cashier, admin }
 
@@ -31,6 +36,8 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
   TrialRole _role = TrialRole.waiter;
   String _selectedProvider = 'Telebirr';
   bool _verified = false;
+  bool _openingWaiter = false;
+  String? _waiterError;
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +108,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
       IconButton(
         tooltip: context.tr('EXIT TRIAL'),
         onPressed: _exit,
-        icon: const Icon(Icons.close_rounded),
+        icon: const Icon(AppIcons.close),
       ),
     ],
   );
@@ -121,7 +128,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
             borderRadius: BorderRadius.circular(18),
           ),
           child: const Icon(
-            Icons.auto_awesome_rounded,
+            AppIcons.sparkle,
             color: AppColors.primarySoft,
             size: 30,
           ),
@@ -135,17 +142,23 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
                 context.tr('Trial mode'),
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
-              const SizedBox(height: 5),
-              Text(
-                context.tr('A guided, risk-free tour of CHEKMI'),
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
+              if (!AppVariant.usesMinimalCopy) ...[
+                const SizedBox(height: 5),
+                Text(
+                  context.tr('A guided, risk-free tour of CHEKMI'),
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ],
             ],
           ),
         ),
-        const Chip(
-          avatar: Icon(Icons.shield_outlined, size: 16),
-          label: Text('100% OFFLINE'),
+        Chip(
+          avatar: const Icon(AppIcons.shield, size: 16),
+          label: Text(
+            _role == TrialRole.waiter
+                ? (AppVariant.usesMinimalCopy ? 'LIVE' : 'LIVE WAITER FLOW')
+                : (AppVariant.usesMinimalCopy ? 'DEMO' : 'GUIDED DEMO'),
+          ),
         ),
       ],
     ),
@@ -156,29 +169,30 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-          child: Text(
-            context.tr('Choose a role'),
-            style: Theme.of(context).textTheme.titleMedium,
+        if (!AppVariant.usesMinimalCopy)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+            child: Text(
+              context.tr('Choose a role'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
-        ),
         SegmentedButton<TrialRole>(
           showSelectedIcon: false,
           segments: [
             ButtonSegment(
               value: TrialRole.waiter,
-              icon: const Icon(Icons.room_service_rounded),
+              icon: const Icon(AppIcons.serviceBell),
               label: Text(context.tr('Waiter')),
             ),
             ButtonSegment(
               value: TrialRole.cashier,
-              icon: const Icon(Icons.point_of_sale_rounded),
+              icon: const Icon(AppIcons.pointOfSale),
               label: Text(context.tr('Cashier')),
             ),
             ButtonSegment(
               value: TrialRole.admin,
-              icon: const Icon(Icons.insights_rounded),
+              icon: const Icon(AppIcons.analytics),
               label: Text(context.tr('Admin')),
             ),
           ],
@@ -186,6 +200,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
           onSelectionChanged: (value) => setState(() {
             _role = value.first;
             _verified = false;
+            _waiterError = null;
           }),
         ),
       ],
@@ -196,7 +211,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
     final data = switch (_role) {
       TrialRole.waiter => (
         title: context.tr('Waiter workspace'),
-        icon: Icons.room_service_rounded,
+        icon: AppIcons.serviceBell,
         color: AppColors.telebirr,
         metrics: [
           (context.tr('Available tips'), '420 ETB'),
@@ -206,7 +221,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
       ),
       TrialRole.cashier => (
         title: context.tr('Cashier terminal'),
-        icon: Icons.point_of_sale_rounded,
+        icon: AppIcons.pointOfSale,
         color: AppColors.warning,
         metrics: [
           (context.tr('Pending'), '5'),
@@ -216,7 +231,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
       ),
       TrialRole.admin => (
         title: context.tr('Restaurant overview'),
-        icon: Icons.insights_rounded,
+        icon: AppIcons.analytics,
         color: AppColors.success,
         metrics: [
           (context.tr('TOTAL REVENUE'), '24,850 ETB'),
@@ -245,9 +260,8 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
               const SizedBox(width: 8),
               Text(
                 'DEMO',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(color: data.color),
+                style: Theme.of(context).textTheme.labelSmall
+                    ?.copyWith(color: data.color),
               ),
             ],
           ),
@@ -321,22 +335,68 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
           ),
           Text(
             '1,250 ETB',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(color: color),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: color),
           ),
         ],
       ),
     );
   }
 
-  Widget _guidedAction() => GlassPanel(
+  Widget _guidedAction() => _role == TrialRole.waiter
+      ? _liveWaiterAction()
+      : _previewVerificationAction();
+
+  Widget _liveWaiterAction() => GlassPanel(
+    accent: AppColors.telebirr,
+    padding: const EdgeInsets.all(AppSpacing.xl),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Icon(AppIcons.scanReceipt, color: AppColors.telebirr, size: 52),
+        const SizedBox(height: AppSpacing.lg),
+        Text(
+          context.tr('Waiter workspace'),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        if (!AppVariant.usesMinimalCopy) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Open the real waiter scanner, ticket, and wallet workflow.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
+        if (_waiterError != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          ErrorBanner(message: _waiterError!),
+        ],
+        const SizedBox(height: AppSpacing.xl),
+        ElevatedButton.icon(
+          onPressed: _openingWaiter ? null : _openWaiterTrial,
+          icon: _openingWaiter
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(AppIcons.forward),
+          label: Text(_openingWaiter ? 'OPENING' : 'OPEN WAITER'),
+        ),
+      ],
+    ),
+  );
+
+  Widget _previewVerificationAction() => GlassPanel(
     padding: const EdgeInsets.all(AppSpacing.xl),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Icon(
-          _verified ? Icons.verified_rounded : Icons.document_scanner_rounded,
+          _verified ? AppIcons.verified : AppIcons.scanReceipt,
           color: _verified ? AppColors.success : AppColors.primary,
           size: 52,
         ),
@@ -346,16 +406,18 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleLarge,
         ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          context.tr(
-            _verified
-                ? 'Verified with ${PaymentBrandData.resolve(_selectedProvider).name}.'
-                : 'Select a provider, then verify the sample receipt.',
+        if (!AppVariant.usesMinimalCopy) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            context.tr(
+              _verified
+                  ? 'Verified with ${PaymentBrandData.resolve(_selectedProvider).name}.'
+                  : 'Select a provider, then verify the sample receipt.',
+            ),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
+        ],
         const SizedBox(height: AppSpacing.lg),
         Wrap(
           alignment: WrapAlignment.center,
@@ -366,14 +428,44 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
         const SizedBox(height: AppSpacing.xl),
         ElevatedButton.icon(
           onPressed: () => setState(() => _verified = true),
-          icon: Icon(
-            _verified ? Icons.check_rounded : Icons.document_scanner_rounded,
-          ),
+          icon: Icon(_verified ? AppIcons.check : AppIcons.scanReceipt),
           label: Text(context.tr(_verified ? 'VERIFIED' : 'VERIFY RECEIPT')),
         ),
       ],
     ),
   );
+
+  Future<void> _openWaiterTrial() async {
+    setState(() {
+      _openingWaiter = true;
+      _waiterError = null;
+    });
+    try {
+      final business = await ApiService.verifyBusinessCode('MESOB-DEMO');
+      if (business == null) throw Exception('Demo workspace unavailable.');
+      final role = await ApiService.loginStaffUnderBusiness(
+        business['business_id'].toString(),
+        '+251911000003',
+        'WaiterTest!2026',
+      );
+      if (role != 'waiter') throw Exception('Demo waiter unavailable.');
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const WaiterDashboard(trialMode: true),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _waiterError = error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    } finally {
+      await ApiService.logoutStaff();
+      if (mounted) setState(() => _openingWaiter = false);
+    }
+  }
 
   Widget _providerChoice(String provider) {
     final selected = provider == _selectedProvider;
@@ -451,20 +543,22 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
                 context.tr('Ready to use CHEKMI?'),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 6),
-              Text(
-                context.tr(
-                  'Compare Basic and Pro, then choose the right next step for your restaurant.',
+              if (!AppVariant.usesMinimalCopy) ...[
+                const SizedBox(height: 6),
+                Text(
+                  context.tr(
+                    'Compare Basic and Pro, then choose the right next step for your restaurant.',
+                  ),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              ],
             ],
           ),
         ),
         ElevatedButton.icon(
           onPressed: _showPricing,
-          icon: const Icon(Icons.sell_outlined),
-          label: const Text('SEE PRICING'),
+          icon: const Icon(AppIcons.tag),
+          label: Text(AppVariant.usesMinimalCopy ? 'PLANS' : 'SEE PRICING'),
         ),
       ],
     ),

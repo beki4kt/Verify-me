@@ -14,7 +14,9 @@ if (releaseKeystoreFile.exists()) {
 val buildingRelease = gradle.startParameter.taskNames.any {
     it.contains("release", ignoreCase = true)
 }
-if (buildingRelease && !releaseKeystoreFile.exists()) {
+val buildingTest2 = System.getenv("CHEKMI_TEST2_BUILD")
+    ?.equals("true", ignoreCase = true) == true
+if (buildingRelease && !releaseKeystoreFile.exists() && !buildingTest2) {
     throw GradleException(
         "Release signing is not configured. Copy android/key.properties.example " +
             "to android/key.properties and supply the upload keystore values."
@@ -33,11 +35,29 @@ android {
     kotlinOptions { jvmTarget = "17" }
 
     defaultConfig {
-        applicationId = "com.leulverify.verify_me"
+        applicationId = if (buildingTest2) {
+            "com.leulverify.verify_me.test2"
+        } else {
+            "com.leulverify.verify_me"
+        }
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionCode = if (buildingTest2) {
+            flutter.versionCode + 2
+        } else {
+            flutter.versionCode
+        }
+        versionName = if (buildingTest2) {
+            "${flutter.versionName}-test2.2"
+        } else {
+            flutter.versionName
+        }
+        manifestPlaceholders["appLabel"] = if (buildingTest2) {
+            "CHEKMI Test 2"
+        } else {
+            "CHEKMI"
+        }
+        manifestPlaceholders["usesCleartextTraffic"] = buildingTest2.toString()
     }
 
     signingConfigs {
@@ -51,7 +71,19 @@ android {
         }
     }
     buildTypes {
-        release { signingConfig = signingConfigs.getByName("release") }
+        release {
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = if (releaseKeystoreFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                // Installable review builds only. Production releases still
+                // fail above when the upload keystore is unavailable.
+                signingConfigs.getByName("debug")
+            }
+        }
     }
 }
 

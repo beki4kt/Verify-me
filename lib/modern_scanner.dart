@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:vibration/vibration.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_motion.dart';
 import 'core/theme/app_typography.dart';
 import 'core/widgets/payment_brand.dart';
 import 'receipt_parser.dart';
 import 'api_service.dart';
+import 'core/config/app_variant.dart';
 
 class ModernScannerScreen extends StatefulWidget {
   final String targetBank;
@@ -189,9 +191,8 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
       isScrollControlled: true,
       isDismissible: false,
       enableDrag: false,
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface.withValues(alpha: .94),
+      backgroundColor: Theme.of(context).colorScheme.surface
+          .withValues(alpha: .94),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
@@ -212,9 +213,11 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'TRANSACTION FOUND',
-                        style: TextStyle(
+                      Text(
+                        AppVariant.usesMinimalCopy
+                            ? 'FOUND'
+                            : 'TRANSACTION FOUND',
+                        style: const TextStyle(
                           color: Color(0xFF10B981),
                           fontWeight: FontWeight.w900,
                           letterSpacing: 2,
@@ -222,7 +225,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                         ),
                       ).animate().fadeIn().slideX(),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white54),
+                        icon: const Icon(AppIcons.close, color: Colors.white54),
                         onPressed: () {
                           Navigator.pop(context);
                           setState(() {
@@ -282,7 +285,9 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                     ),
                     textAlign: TextAlign.center,
                     decoration: InputDecoration(
-                      labelText: 'ENTER BILL AMOUNT (ETB)',
+                      labelText: AppVariant.usesMinimalCopy
+                          ? 'AMOUNT (ETB)'
+                          : 'ENTER BILL AMOUNT (ETB)',
                       labelStyle: const TextStyle(
                         color: AppColors.primary,
                         fontSize: 12,
@@ -296,7 +301,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                         borderSide: BorderSide.none,
                       ),
                       prefixIcon: const Icon(
-                        CupertinoIcons.money_dollar,
+                        AppIcons.money,
                         color: Color(0xFF10B981),
                       ),
                     ),
@@ -362,10 +367,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                                   );
                                 }
                               } else {
-                                throw Exception(
-                                  result.errorMessage ??
-                                      "Invalid Transaction ID.",
-                                );
+                                throw Exception(result.displayErrorMessage);
                               }
                             } catch (e) {
                               if (context.mounted) {
@@ -397,9 +399,11 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                     ),
                     child: isSubmitting
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text(
-                            'VERIFY & QUEUE TICKET',
-                            style: TextStyle(
+                        : Text(
+                            AppVariant.usesMinimalCopy
+                                ? 'VERIFY'
+                                : 'VERIFY & QUEUE TICKET',
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 1.5,
@@ -440,7 +444,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                         children: [
                           IconButton(
                             icon: const Icon(
-                              CupertinoIcons.back,
+                              AppIcons.back,
                               color: Colors.white,
                             ),
                             onPressed: () => Navigator.pop(context),
@@ -468,7 +472,9 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                                 ),
                                 const SizedBox(width: 7),
                                 Text(
-                                  'SCANNING ${widget.targetBank.toUpperCase()}',
+                                  AppVariant.usesMinimalCopy
+                                      ? widget.targetBank.toUpperCase()
+                                      : 'SCANNING ${widget.targetBank.toUpperCase()}',
                                   style: AppTypography.microLabel(
                                     color: Colors.white,
                                   ),
@@ -511,7 +517,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                       child: _transactionFound
                           ? const Center(
                               child: Icon(
-                                Icons.check_circle_rounded,
+                                AppIcons.success,
                                 color: AppColors.success,
                                 size: 64,
                               ),
@@ -521,10 +527,11 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
 
                     const SizedBox(height: 32),
                     Text(
-                      'Hold the receipt steady inside the frame',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                      AppVariant.usesMinimalCopy
+                          ? 'Hold steady'
+                          : 'Hold the receipt steady inside the frame',
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: Colors.white70),
                     ).animate().fadeIn(duration: AppMotion.base),
                     const Spacer(flex: 2),
                   ],

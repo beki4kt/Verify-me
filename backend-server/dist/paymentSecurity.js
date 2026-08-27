@@ -2,7 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeAccount = normalizeAccount;
 exports.matchesReceivingAccount = matchesReceivingAccount;
+exports.matchesCbeReceivingAccount = matchesCbeReceivingAccount;
 exports.authoritativeAbyssiniaSuffix = authoritativeAbyssiniaSuffix;
+exports.authoritativeAccountSuffix = authoritativeAccountSuffix;
+exports.authoritativeEthiopianPhone = authoritativeEthiopianPhone;
 exports.validateTransactionFreshness = validateTransactionFreshness;
 exports.positiveAmount = positiveAmount;
 function normalizeAccount(value) {
@@ -12,9 +15,9 @@ function normalizeAccount(value) {
     // Ethiopian mobile wallets commonly return the same account as 09...,
     // 9..., or +2519.... Canonicalize only phone-shaped values; bank account
     // numbers keep their original digits.
-    if (/^09\d{8}$/.test(normalized))
+    if (/^0[79]\d{8}$/.test(normalized))
         return `251${normalized.slice(1)}`;
-    if (/^9\d{8}$/.test(normalized))
+    if (/^[79]\d{8}$/.test(normalized))
         return `251${normalized}`;
     return normalized;
 }
@@ -32,6 +35,20 @@ function matchesReceivingAccount(configuredAccount, verifiedAccount, minimumStab
         configured.endsWith(verified) ||
         verified.endsWith(configured));
 }
+/** Match CBE's first-character plus final-four account mask. */
+function matchesCbeReceivingAccount(configuredAccount, verifiedAccount) {
+    const configured = normalizeAccount(configuredAccount);
+    const rawVerified = String(verifiedAccount ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9*]/g, "");
+    if (!rawVerified.includes("*")) {
+        return matchesReceivingAccount(configuredAccount, verifiedAccount);
+    }
+    const match = rawVerified.match(/^([a-z0-9])\*+([a-z0-9]{4})$/);
+    if (!match || configured.length < 8)
+        return false;
+    return configured.startsWith(match[1] ?? "") && configured.endsWith(match[2] ?? "");
+}
 /**
  * Abyssinia verifies the credit account through a five-digit suffix supplied
  * with the upstream request, but its normalized success payload does not
@@ -39,8 +56,21 @@ function matchesReceivingAccount(configuredAccount, verifiedAccount, minimumStab
  * server-side configuration, never from Flutter input.
  */
 function authoritativeAbyssiniaSuffix(configuredAccount) {
+    return authoritativeAccountSuffix(configuredAccount, 5);
+}
+/**
+ * Provider lookup parameters must be derived from the authenticated tenant's
+ * configured receiving account, never supplied by a waiter client.
+ */
+function authoritativeAccountSuffix(configuredAccount, length) {
+    if (!Number.isInteger(length) || length <= 0)
+        return null;
     const digits = String(configuredAccount ?? "").replace(/\D/g, "");
-    return digits.length >= 5 ? digits.slice(-5) : null;
+    return digits.length >= length ? digits.slice(-length) : null;
+}
+function authoritativeEthiopianPhone(configuredAccount) {
+    const normalized = normalizeAccount(configuredAccount);
+    return /^251[79]\d{8}$/.test(normalized) ? normalized : null;
 }
 function validateTransactionFreshness(providerDate, options = {}) {
     if (providerDate === null || providerDate === undefined || String(providerDate).trim() === "") {

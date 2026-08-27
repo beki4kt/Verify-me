@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import 'api_service.dart';
 import 'business_gateway_screen.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_spacing.dart';
@@ -8,6 +10,7 @@ import 'core/theme/app_typography.dart';
 import 'core/widgets/app_shell.dart';
 import 'plan_catalog.dart';
 import 'trial_mode_screen.dart';
+import 'core/config/app_variant.dart';
 
 class PricingScreen extends StatefulWidget {
   const PricingScreen({super.key, this.openedFromTrial = false});
@@ -20,48 +23,35 @@ class PricingScreen extends StatefulWidget {
 
 class _PricingScreenState extends State<PricingScreen> {
   BillingPeriod _period = BillingPeriod.monthly;
+  PlanDefinition _selectedPlan = PlanCatalog.pro;
+  bool _submitting = false;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AppBackdrop(
-        maxWidth: 1220,
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.md,
-                AppSpacing.lg,
-                0,
+        maxWidth: 1160,
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.xxxl,
+                ),
+                sliver: SliverList.list(
+                  children: [
+                    _header(),
+                    const SizedBox(height: AppSpacing.lg),
+                    _decisionSurface(),
+                  ],
+                ),
               ),
-              sliver: SliverToBoxAdapter(child: _header()),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.xl,
-                AppSpacing.lg,
-                AppSpacing.xxxl,
-              ),
-              sliver: SliverList.list(
-                children: [
-                  _hero(),
-                  const SizedBox(height: AppSpacing.xl),
-                  _trialBanner(),
-                  const SizedBox(height: AppSpacing.xl),
-                  _billingPicker(),
-                  const SizedBox(height: AppSpacing.xl),
-                  _planCards(),
-                  const SizedBox(height: AppSpacing.xxxl),
-                  _comparison(),
-                  const SizedBox(height: AppSpacing.xl),
-                  _closingCard(),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -72,7 +62,7 @@ class _PricingScreenState extends State<PricingScreen> {
       IconButton(
         tooltip: 'Back',
         onPressed: () => Navigator.maybePop(context),
-        icon: const Icon(Icons.arrow_back_rounded),
+        icon: const Icon(AppIcons.back),
       ),
       const SizedBox(width: 4),
       const BrandLockup(compact: true),
@@ -82,137 +72,107 @@ class _PricingScreenState extends State<PricingScreen> {
     ],
   );
 
-  Widget _hero() => Semantics(
-    header: true,
+  Widget _decisionSurface() => GlassPanel(
+    accent: _selectedPlan.recommended ? AppColors.primary : AppColors.aqua,
+    padding: const EdgeInsets.all(AppSpacing.xl),
     child: Column(
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: .12),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: AppColors.primary.withValues(alpha: .34)),
-          ),
-          child: Text(
-            'SIMPLE, FLEXIBLE PRICING',
-            style: AppTypography.microLabel(color: AppColors.primarySoft),
-          ),
+        _hero(),
+        const SizedBox(height: AppSpacing.xl),
+        _billingPicker(),
+        const SizedBox(height: AppSpacing.xl),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final basic = _PlanChoice(
+              plan: PlanCatalog.basic,
+              period: _period,
+              selected: _selectedPlan.id == PlanCatalog.basic.id,
+              onTap: () => setState(() => _selectedPlan = PlanCatalog.basic),
+            );
+            final pro = _PlanChoice(
+              plan: PlanCatalog.pro,
+              period: _period,
+              selected: _selectedPlan.id == PlanCatalog.pro.id,
+              onTap: () => setState(() => _selectedPlan = PlanCatalog.pro),
+            );
+            if (constraints.maxWidth >= 760) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: basic),
+                  const SizedBox(width: AppSpacing.lg),
+                  Expanded(child: pro),
+                ],
+              );
+            }
+            return Column(
+              children: [
+                basic,
+                const SizedBox(height: AppSpacing.lg),
+                pro,
+              ],
+            );
+          },
         ),
-        const SizedBox(height: AppSpacing.lg),
-        Text(
-          'Choose the plan that grows\nwith your restaurant',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.displayLarge?.copyWith(
-            fontSize: MediaQuery.sizeOf(context).width < 520 ? 34 : 48,
-            height: 1.08,
-            letterSpacing: -1.3,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
-          child: Text(
-            'Start with reliable payment verification, then unlock the reporting, team controls, and operational tools that make CHEKMI your daily command center.',
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(height: 1.55),
-          ),
-        ),
+        const SizedBox(height: AppSpacing.xl),
+        _actionBar(),
       ],
     ),
-  ).animate().fadeIn(duration: 450.ms).slideY(begin: .06, end: 0);
+  ).animate().fadeIn(duration: 420.ms).scaleXY(begin: .985, end: 1);
 
-  Widget _trialBanner() => GlassPanel(
-    accent: AppColors.aqua,
-    padding: const EdgeInsets.all(AppSpacing.xl),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 720;
-        final copy = Column(
-          crossAxisAlignment: compact
-              ? CrossAxisAlignment.center
-              : CrossAxisAlignment.start,
+  Widget _hero() => Column(
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.primary.withValues(alpha: .35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: AppColors.aqua,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'FREE INTERACTIVE TRIAL',
-                  style: AppTypography.microLabel(color: AppColors.aqua),
-                ),
-              ],
+            const Icon(
+              AppIcons.sparkle,
+              size: 16,
+              color: AppColors.primarySoft,
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(width: 7),
             Text(
-              widget.openedFromTrial
-                  ? 'You explored CHEKMI. Now choose your next step.'
-                  : 'See the Pro experience before you choose.',
-              textAlign: compact ? TextAlign.center : TextAlign.start,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 5),
-            Text(
-              'Try waiter, cashier, and admin workflows with sample data—no account, setup, or live payment required.',
-              textAlign: compact ? TextAlign.center : TextAlign.start,
-              style: Theme.of(context).textTheme.bodyMedium,
+              AppVariant.usesMinimalCopy ? 'PLANS' : 'SIMPLE, FLEXIBLE PRICING',
+              style: AppTypography.microLabel(color: AppColors.primarySoft),
             ),
           ],
-        );
-        final action = OutlinedButton.icon(
-          onPressed: _openTrial,
-          icon: Icon(
-            widget.openedFromTrial
-                ? Icons.replay_rounded
-                : Icons.play_arrow_rounded,
-          ),
-          label: Text(widget.openedFromTrial ? 'REPLAY TRIAL' : 'TRY IT FREE'),
-        );
-        if (compact) {
-          return Column(
-            children: [
-              copy,
-              const SizedBox(height: AppSpacing.lg),
-              action,
-            ],
-          );
-        }
-        return Row(
-          children: [
-            Container(
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                color: AppColors.aqua.withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(19),
-              ),
-              child: const Icon(
-                Icons.smart_display_rounded,
-                color: AppColors.aqua,
-                size: 30,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.lg),
-            Expanded(child: copy),
-            const SizedBox(width: AppSpacing.lg),
-            action,
-          ],
-        );
-      },
-    ),
-  ).animate().fadeIn(delay: 100.ms).slideY(begin: .05, end: 0);
+        ),
+      ).animate().fadeIn(delay: 80.ms).slideY(begin: -.15, end: 0),
+      const SizedBox(height: AppSpacing.md),
+      Text(
+        AppVariant.usesMinimalCopy
+            ? 'Choose a plan'
+            : 'Two plans. One clear choice.',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.displaySmall?.copyWith(
+          fontSize: MediaQuery.sizeOf(context).width < 520 ? 30 : 40,
+          height: 1.08,
+          letterSpacing: -1,
+        ),
+      ).animate().fadeIn(delay: 130.ms).slideY(begin: .12, end: 0),
+      if (!AppVariant.usesMinimalCopy) ...[
+        const SizedBox(height: 8),
+        Text(
+          'Start small with Basic, or choose Pro for the complete restaurant command center.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ).animate().fadeIn(delay: 180.ms),
+      ],
+    ],
+  );
 
   Widget _billingPicker() => Center(
     child: Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: .55),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: .58),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: Theme.of(context).colorScheme.outline.withValues(alpha: .18),
@@ -221,134 +181,135 @@ class _PricingScreenState extends State<PricingScreen> {
       child: SegmentedButton<BillingPeriod>(
         showSelectedIcon: false,
         segments: const [
-          ButtonSegment(
-            value: BillingPeriod.monthly,
-            label: Text('Monthly'),
-            icon: Icon(Icons.calendar_view_month_rounded),
-          ),
+          ButtonSegment(value: BillingPeriod.monthly, label: Text('Monthly')),
           ButtonSegment(
             value: BillingPeriod.quarterly,
-            label: Text('3 months  •  SAVE'),
-            icon: Icon(Icons.savings_outlined),
+            label: Text('3 months · SAVE'),
+            icon: Icon(AppIcons.savings),
           ),
         ],
         selected: {_period},
         onSelectionChanged: (value) => setState(() => _period = value.first),
       ),
     ),
-  );
+  ).animate().fadeIn(delay: 220.ms).slideY(begin: .1, end: 0);
 
-  Widget _planCards() => LayoutBuilder(
-    builder: (context, constraints) {
-      final basic = _PlanCard(
-        plan: PlanCatalog.basic,
-        period: _period,
-        onSelected: () => _selectPlan(PlanCatalog.basic),
-      );
-      final pro = _PlanCard(
-        plan: PlanCatalog.pro,
-        period: _period,
-        onSelected: () => _selectPlan(PlanCatalog.pro),
-      );
-      if (constraints.maxWidth >= 820) {
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: basic),
-            const SizedBox(width: AppSpacing.xl),
-            Expanded(child: pro),
-          ],
-        );
-      }
-      return Column(
-        children: [
-          basic,
-          const SizedBox(height: AppSpacing.xl),
-          pro,
-        ],
-      );
-    },
-  );
-
-  Widget _comparison() {
-    const rows = [
-      ('Monthly verifications', '2,500', 'Unlimited'),
-      ('Staff seats', '1', 'Unlimited'),
-      ('Payment providers', 'All 6', 'All 6'),
-      ('Receipt scan & live ticket queue', 'Included', 'Included'),
-      ('Daily revenue reports', '—', 'Included'),
-      ('Staff, date & provider analytics', '—', 'Included'),
-      ('Cashier and tip payout workflows', '—', 'Included'),
-      ('Receipt evidence archive', '—', 'Included'),
-      ('Multi-device operations', '—', 'Included'),
-      ('Support', 'Standard', 'Priority'),
-    ];
-    return Column(
-      children: [
-        Text(
-          'Compare every detail',
-          style: Theme.of(context).textTheme.headlineMedium,
+  Widget _actionBar() {
+    final signedIn =
+        ApiService.currentBusinessId != null &&
+        ApiService.currentUserRole != null;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: (_selectedPlan.recommended ? AppColors.primary : AppColors.aqua)
+            .withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color:
+              (_selectedPlan.recommended ? AppColors.primary : AppColors.aqua)
+                  .withValues(alpha: .28),
         ),
-        const SizedBox(height: 6),
-        Text(
-          'Basic keeps verification simple. Pro turns payment data into operational control.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: AppSpacing.xl),
-        GlassPanel(
-          padding: EdgeInsets.zero,
-          child: Column(
-            children: [
-              const _ComparisonHeader(),
-              for (var index = 0; index < rows.length; index++)
-                _ComparisonRow(
-                  label: rows[index].$1,
-                  basic: rows[index].$2,
-                  pro: rows[index].$3,
-                  shaded: index.isEven,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 680;
+          final summary = AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween(
+                  begin: const Offset(0, .12),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Column(
+              key: ValueKey('${_selectedPlan.id}-${_period.name}'),
+              crossAxisAlignment: compact
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppVariant.usesMinimalCopy
+                      ? _selectedPlan.name
+                      : '${_selectedPlan.name} is selected',
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _closingCard() => GlassPanel(
-    accent: AppColors.primary,
-    padding: const EdgeInsets.all(AppSpacing.xl),
-    child: Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: AppSpacing.xl,
-      runSpacing: AppSpacing.lg,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 670),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+                if (!AppVariant.usesMinimalCopy) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    signedIn
+                        ? 'Send the owner team a billing request. Your current service stays active during review.'
+                        : 'Connect your restaurant workspace and the CHEKMI team will activate your selection.',
+                    textAlign: compact ? TextAlign.center : TextAlign.start,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          );
+          final actions = Wrap(
+            alignment: compact ? WrapAlignment.center : WrapAlignment.end,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             children: [
-              Text(
-                'Already have a CHEKMI workspace?',
-                style: Theme.of(context).textTheme.titleLarge,
+              TextButton.icon(
+                onPressed: _openTrial,
+                icon: Icon(
+                  widget.openedFromTrial
+                      ? AppIcons.refresh
+                      : AppIcons.playCircle,
+                ),
+                label: Text(
+                  AppVariant.usesMinimalCopy
+                      ? 'DEMO'
+                      : (widget.openedFromTrial
+                            ? 'REPLAY TRIAL'
+                            : 'TRY IT FREE'),
+                ),
               ),
-              const SizedBox(height: 5),
-              Text(
-                'Connect this device with the workspace code provided during onboarding.',
-                style: Theme.of(context).textTheme.bodyMedium,
+              FilledButton.icon(
+                onPressed: _submitting ? null : _continueWithPlan,
+                icon: _submitting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(signedIn ? AppIcons.send : AppIcons.forward),
+                label: Text(
+                  AppVariant.usesMinimalCopy
+                      ? (signedIn ? 'REQUEST' : 'START')
+                      : (signedIn
+                            ? 'REQUEST ${_selectedPlan.name.toUpperCase()}'
+                            : 'GET STARTED'),
+                ),
               ),
             ],
-          ),
-        ),
-        FilledButton.icon(
-          onPressed: _connectWorkspace,
-          icon: const Icon(Icons.login_rounded),
-          label: const Text('CONNECT WORKSPACE'),
-        ),
-      ],
-    ),
-  );
+          );
+          if (compact) {
+            return Column(
+              children: [
+                summary,
+                const SizedBox(height: AppSpacing.md),
+                actions,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: summary),
+              const SizedBox(width: AppSpacing.lg),
+              actions,
+            ],
+          );
+        },
+      ),
+    ).animate().fadeIn(delay: 420.ms).slideY(begin: .08, end: 0);
+  }
 
   void _openTrial() {
     Navigator.of(context).pushReplacement(
@@ -356,133 +317,89 @@ class _PricingScreenState extends State<PricingScreen> {
     );
   }
 
-  void _connectWorkspace() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const BusinessGatewayScreen()),
-      (_) => false,
-    );
-  }
-
-  Future<void> _selectPlan(PlanDefinition plan) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.lg,
-          AppSpacing.lg,
-          AppSpacing.lg,
-          MediaQuery.viewInsetsOf(sheetContext).bottom + AppSpacing.lg,
-        ),
-        child: GlassPanel(
-          accent: plan.recommended ? AppColors.primary : AppColors.aqua,
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color:
-                          (plan.recommended
-                                  ? AppColors.primary
-                                  : AppColors.aqua)
-                              .withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(
-                      plan.recommended
-                          ? Icons.workspace_premium_rounded
-                          : Icons.rocket_launch_rounded,
-                      color: plan.recommended
-                          ? AppColors.primarySoft
-                          : AppColors.aqua,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${plan.name} selected',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        Text(
-                          plan.recommended
-                              ? 'Pro pricing will be finalized with your commercial setup.'
-                              : 'Your selected billing cycle is ${_period == BillingPeriod.monthly ? 'monthly' : 'every 3 months'}.',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              Text(
-                plan.recommended
-                    ? 'Choose Pro for unlimited growth, complete revenue visibility, cashier controls, and priority support.'
-                    : 'Choose Basic for focused payment verification with one staff seat and predictable limits.',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  _connectWorkspace();
-                },
-                icon: const Icon(Icons.arrow_forward_rounded),
-                label: Text(
-                  plan.recommended
-                      ? 'CONTINUE WITH PRO'
-                      : 'CONTINUE WITH BASIC',
-                ),
-              ),
-            ],
+  Future<void> _continueWithPlan() async {
+    final signedIn =
+        ApiService.currentBusinessId != null &&
+        ApiService.currentUserRole != null;
+    if (!signedIn) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const BusinessGatewayScreen()),
+        (_) => false,
+      );
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      final billingLabel = _period == BillingPeriod.monthly
+          ? 'monthly'
+          : 'three-month';
+      await ApiService.openSupportCase(
+        category: 'billing',
+        subject: '${_selectedPlan.name} plan request',
+        description:
+            'Please review and activate the ${_selectedPlan.name} plan on the $billingLabel billing cycle for this restaurant.',
+        priority: 'normal',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_selectedPlan.name} request sent. The owner team can now review it.',
           ),
+          backgroundColor: AppColors.success,
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 }
 
-class _PlanCard extends StatelessWidget {
-  const _PlanCard({
+class _PlanChoice extends StatelessWidget {
+  const _PlanChoice({
     required this.plan,
     required this.period,
-    required this.onSelected,
+    required this.selected,
+    required this.onTap,
   });
 
   final PlanDefinition plan;
   final BillingPeriod period;
-  final VoidCallback onSelected;
+  final bool selected;
+  final VoidCallback onTap;
 
   static const _basicFeatures = [
-    '2,500 payment verifications every month',
-    '1 staff seat',
-    'All 6 supported payment providers',
-    'Receipt scanning and live ticket queue',
+    '2,500 verifications each month',
+    '1 staff seat and all 6 providers',
+    'Receipt scanning and live tickets',
     'Recent transaction history',
   ];
 
   static const _proFeatures = [
-    'Unlimited payment verifications',
-    'Unlimited staff seats',
+    'Unlimited verifications and staff',
     'Daily revenue reports and bank analytics',
-    'Advanced date, staff, and provider filters',
-    'Cashier workspace and tip payout controls',
-    'Receipt evidence archive and multi-device access',
-    'Priority onboarding and support',
+    'Cashier controls and tip payouts',
+    'Evidence archive and priority support',
+  ];
+
+  static const _minimalBasicFeatures = [
+    '2,500 checks / month',
+    '1 staff · 6 providers',
+    'Scan · tickets · history',
+  ];
+
+  static const _minimalProFeatures = [
+    'Unlimited checks · staff',
+    'Reports · analytics',
+    'Cashier · tips · support',
   ];
 
   @override
@@ -492,196 +409,249 @@ class _PlanCard extends StatelessWidget {
     final savings = period == BillingPeriod.quarterly
         ? plan.quarterlySavingsEtb
         : null;
-    final features = plan.recommended ? _proFeatures : _basicFeatures;
-    return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            GlassPanel(
-              accent: plan.recommended ? accent : null,
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: plan.recommended
-                                ? const [AppColors.primary, AppColors.violet]
-                                : const [AppColors.aqua, AppColors.brandBlue],
-                          ),
-                          borderRadius: BorderRadius.circular(16),
+    final features = AppVariant.usesMinimalCopy
+        ? (plan.recommended ? _minimalProFeatures : _minimalBasicFeatures)
+        : (plan.recommended ? _proFeatures : _basicFeatures);
+    return Semantics(
+          button: true,
+          selected: selected,
+          label: 'Choose ${plan.name}',
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutBack,
+            scale: selected ? 1 : .975,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: selected
+                    ? accent.withValues(alpha: .105)
+                    : Theme.of(context).colorScheme.surface
+                          .withValues(alpha: .38),
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(
+                  color: selected
+                      ? accent.withValues(alpha: .76)
+                      : Theme.of(context).colorScheme.outline
+                            .withValues(alpha: .16),
+                  width: selected ? 2 : 1,
+                ),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: accent.withValues(alpha: .16),
+                          blurRadius: 30,
+                          offset: const Offset(0, 12),
                         ),
-                        child: Icon(
-                          plan.recommended
-                              ? Icons.workspace_premium_rounded
-                              : Icons.bolt_rounded,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      ]
+                    : null,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(26),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Text(
-                              plan.name,
-                              style: Theme.of(context).textTheme.headlineSmall,
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 280),
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: plan.recommended
+                                      ? const [
+                                          AppColors.primary,
+                                          AppColors.pink,
+                                        ]
+                                      : const [
+                                          AppColors.aqua,
+                                          AppColors.brandBlue,
+                                        ],
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: selected
+                                    ? [
+                                        BoxShadow(
+                                          color: accent.withValues(alpha: .25),
+                                          blurRadius: 18,
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Icon(
+                                plan.recommended
+                                    ? AppIcons.premium
+                                    : AppIcons.quickAction,
+                                color: Colors.white,
+                              ),
                             ),
-                            const SizedBox(height: 3),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    plan.name,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall,
+                                  ),
+                                  if (!AppVariant.usesMinimalCopy)
+                                    Text(
+                                      plan.recommended
+                                          ? 'Complete operations'
+                                          : 'Verification essentials',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (plan.recommended)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [AppColors.primary, AppColors.pink],
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  AppVariant.usesMinimalCopy
+                                      ? 'PRO'
+                                      : 'BEST CHOICE',
+                                  style: AppTypography.microLabel(
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 280),
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(
+                                opacity: animation,
+                                child: ScaleTransition(
+                                  scale: Tween(
+                                    begin: .94,
+                                    end: 1.0,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                          child: price == null
+                              ? Column(
+                                  key: ValueKey('${plan.id}-${period.name}'),
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Tailored',
+                                      style: AppTypography.money(
+                                        size: 34,
+                                        color: accent,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Sized to your restaurant',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                  ],
+                                )
+                              : Column(
+                                  key: ValueKey('${plan.id}-${period.name}'),
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '$price ETB',
+                                      style: AppTypography.money(
+                                        size: 34,
+                                        color: accent,
+                                      ),
+                                    ),
+                                    Text(
+                                      period == BillingPeriod.monthly
+                                          ? 'per month'
+                                          : 'for 3 months',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                    if (savings != null && savings > 0) ...[
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        'Save $savings ETB',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: AppColors.success,
+                                            ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        for (final feature in features) ...[
+                          _FeatureLine(label: feature, accent: accent),
+                          const SizedBox(height: 10),
+                        ],
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: selected ? accent : Colors.transparent,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: accent, width: 2),
+                              ),
+                              child: selected
+                                  ? const Icon(
+                                      AppIcons.check,
+                                      color: Colors.white,
+                                      size: 15,
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: 9),
                             Text(
-                              plan.recommended
-                                  ? 'The complete CHEKMI experience'
-                                  : 'Reliable verification essentials',
-                              style: Theme.of(context).textTheme.bodySmall,
+                              selected
+                                  ? 'SELECTED'
+                                  : (AppVariant.usesMinimalCopy
+                                        ? 'SELECT'
+                                        : 'TAP TO SELECT'),
+                              style: AppTypography.microLabel(color: accent),
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 240),
-                    child: price == null
-                        ? Column(
-                            key: ValueKey('${plan.id}-${period.name}'),
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Custom',
-                                style: AppTypography.money(
-                                  size: 38,
-                                  color: accent,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Flexible pricing for your operation',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          )
-                        : Column(
-                            key: ValueKey('${plan.id}-${period.name}-$price'),
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Wrap(
-                                crossAxisAlignment: WrapCrossAlignment.end,
-                                spacing: 8,
-                                children: [
-                                  Text(
-                                    '$price ETB',
-                                    style: AppTypography.money(
-                                      size: 38,
-                                      color: accent,
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 7),
-                                    child: Text(
-                                      period == BillingPeriod.monthly
-                                          ? '/ month'
-                                          : '/ 3 months',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                period == BillingPeriod.monthly
-                                    ? 'Billed monthly'
-                                    : '1,000 ETB/month effective  •  Save $savings ETB',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: savings == null
-                                          ? null
-                                          : AppColors.success,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ],
-                          ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Text(
-                    plan.tagline,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(height: 1.45),
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  Divider(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.outline.withValues(alpha: .16),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    plan.recommended ? 'EVERYTHING IN BASIC, PLUS' : 'INCLUDED',
-                    style: AppTypography.microLabel(color: accent),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  for (final feature in features) ...[
-                    _FeatureLine(label: feature, accent: accent),
-                    const SizedBox(height: 11),
-                  ],
-                  const SizedBox(height: AppSpacing.md),
-                  if (plan.recommended)
-                    FilledButton.icon(
-                      onPressed: onSelected,
-                      icon: const Icon(Icons.auto_awesome_rounded),
-                      label: const Text('CHOOSE PRO'),
-                    )
-                  else
-                    OutlinedButton.icon(
-                      onPressed: onSelected,
-                      icon: const Icon(Icons.arrow_forward_rounded),
-                      label: const Text('CHOOSE BASIC'),
+                      ],
                     ),
-                ],
-              ),
-            ),
-            if (plan.recommended)
-              Positioned(
-                top: -13,
-                right: 24,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primary, AppColors.pink],
-                    ),
-                    borderRadius: BorderRadius.circular(999),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: .3),
-                        blurRadius: 18,
-                        offset: const Offset(0, 7),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    'BEST CHOICE',
-                    style: AppTypography.microLabel(color: Colors.white),
                   ),
                 ),
               ),
-          ],
+            ),
+          ),
         )
         .animate()
-        .fadeIn(delay: (plan.recommended ? 180 : 120).ms)
-        .slideY(begin: .05, end: 0);
+        .fadeIn(delay: (plan.recommended ? 340 : 280).ms)
+        .slideX(begin: plan.recommended ? .05 : -.05, end: 0);
   }
 }
 
@@ -695,104 +665,11 @@ class _FeatureLine extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Container(
-        width: 22,
-        height: 22,
-        decoration: BoxDecoration(
-          color: accent.withValues(alpha: .13),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(Icons.check_rounded, size: 15, color: accent),
-      ),
-      const SizedBox(width: 10),
+      Icon(AppIcons.success, size: 18, color: accent),
+      const SizedBox(width: 9),
       Expanded(
         child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
       ),
     ],
   );
-}
-
-class _ComparisonHeader extends StatelessWidget {
-  const _ComparisonHeader();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-    child: const Row(
-      children: [
-        Expanded(flex: 5, child: Text('FEATURE')),
-        Expanded(flex: 2, child: Center(child: Text('BASIC'))),
-        Expanded(flex: 2, child: Center(child: Text('PRO'))),
-      ],
-    ),
-  );
-}
-
-class _ComparisonRow extends StatelessWidget {
-  const _ComparisonRow({
-    required this.label,
-    required this.basic,
-    required this.pro,
-    required this.shaded,
-  });
-
-  final String label;
-  final String basic;
-  final String pro;
-  final bool shaded;
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Container(
-      color: shaded
-          ? Theme.of(context).colorScheme.onSurface.withValues(alpha: .035)
-          : Colors.transparent,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 5,
-            child: Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Center(
-              child: Text(
-                basic,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: basic == '—' ? muted.withValues(alpha: .45) : null,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Center(
-              child: pro == 'Included'
-                  ? const Icon(
-                      Icons.check_circle_rounded,
-                      color: AppColors.success,
-                      size: 20,
-                    )
-                  : Text(
-                      pro,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.primarySoft,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

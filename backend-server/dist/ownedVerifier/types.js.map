@@ -1,0 +1,1 @@
+{"version":3,"file":"types.js","sourceRoot":"","sources":["../../src/ownedVerifier/types.ts"],"names":[],"mappings":";;;AA0CA,wBAAgC,SAAQ,KAAK;IAC3C,YACE,OAAe,EACN,IAAI,GAAG,sBAAsB,EAC7B,MAAM,GAAG,GAAG,EACZ,SAAS,GAAG,IAAI;QAEzB,KAAK,CAAC,OAAO,CAAC,CAAC;oBAJN,IAAI;sBACJ,MAAM;yBACN,SAAS;QAGlB,IAAI,CAAC,IAAI,GAAG,oBAAoB,CAAC;IACnC,CAAC;CACF"}

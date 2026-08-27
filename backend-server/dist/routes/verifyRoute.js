@@ -1,34 +1,31 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyRouter = void 0;
+exports.ACTIVE_VERIFIER_MODE = exports.verifyRouter = void 0;
 const express_1 = require("express");
-const verifier_1 = require("@creofam/verifier");
+const ownedVerifier_1 = require("../ownedVerifier");
 const paymentSecurity_1 = require("../paymentSecurity");
 const supabaseRpc_1 = require("../supabaseRpc");
+const verificationFixtures_1 = require("../verificationFixtures");
 // Node 20.12+ can load local environment files without an extra dependency.
 // The development server previously ignored `.env`, leaving the upstream key
 // unset even though it was configured on disk.
-process.loadEnvFile?.();
+try {
+    process.loadEnvFile?.();
+}
+catch (error) {
+    if (error.code !== "ENOENT")
+        throw error;
+}
 exports.verifyRouter = (0, express_1.Router)();
 // ---------------------------------------------------------------------------
-// Configuration (read from env, with sensible defaults for local dev).
-//   VERIFIER_BASE_URL     – upstream verifier API base URL
-//   VERIFIER_UPSTREAM_KEY – optional API key forwarded to the upstream
-//   VERIFIER_TIMEOUT_MS   – upstream request timeout (default 20000)
-//   VERIFY_API_KEY        – if set, clients must send a matching x-api-key
+// The public legacy route can have an optional API-key gate. The authenticated
+// verify-and-create route is protected by the opaque staff session instead.
 // ---------------------------------------------------------------------------
-const UPSTREAM_BASE_URL = process.env.VERIFIER_BASE_URL || "https://verifyapi.leulzenebe.pro";
-const UPSTREAM_API_KEY = process.env.VERIFIER_UPSTREAM_KEY || undefined;
-const UPSTREAM_TIMEOUT_MS = Number(process.env.VERIFIER_TIMEOUT_MS) || 20000;
 const SERVER_API_KEY = process.env.VERIFY_API_KEY || undefined;
+exports.ACTIVE_VERIFIER_MODE = (0, verificationFixtures_1.resolveVerifierMode)();
 const TRANSACTION_MAX_AGE_MINUTES = Number(process.env.TRANSACTION_MAX_AGE_MINUTES) > 0
     ? Number(process.env.TRANSACTION_MAX_AGE_MINUTES)
     : 24 * 60;
-const verifier = new verifier_1.VerifierClient({
-    baseUrl: UPSTREAM_BASE_URL,
-    apiKey: UPSTREAM_API_KEY,
-    timeoutMs: UPSTREAM_TIMEOUT_MS,
-});
 // ---------------------------------------------------------------------------
 // Types & helpers
 // ---------------------------------------------------------------------------
@@ -101,43 +98,46 @@ exports.verifyRouter.use((req, res, next) => {
     next();
 });
 // ---------------------------------------------------------------------------
-// Dispatch to the correct per-provider SDK method.
+// Dispatch through CHEKMI's owned provider fetch/parsing implementation.
 // ---------------------------------------------------------------------------
 async function dispatch(provider, body) {
     const reference = (body.reference ?? "").trim();
     switch (provider) {
         case "telebirr":
-            return (await verifier.verifyTelebirr({ reference }));
+            break;
         case "cbe": {
             const suffix = (body.suffix ?? "").trim();
-            if (!/^\d{8}$/.test(suffix))
+            const isNewReceipt = (0, ownedVerifier_1.extractNewCbeToken)(reference) !== null;
+            const hasEmbeddedSuffix = (0, ownedVerifier_1.extractLegacyCbeUrlData)(reference) !== null;
+            if (!isNewReceipt && !hasEmbeddedSuffix && !/^\d{8}$/.test(suffix))
                 throw new ClientError("CBE verification requires the last 8 account digits.", 400, "INVALID_SUFFIX");
-            return (await verifier.verifyCBE({ reference, accountSuffix: suffix }));
+            break;
         }
         case "cbebirr": {
             const phoneNumber = (body.phoneNumber ?? "").replace(/[\s()+-]/g, "").replace(/^0/, "251");
-            if (!/^2519\d{8}$/.test(phoneNumber))
+            if (!/^251[97]\d{8}$/.test(phoneNumber))
                 throw new ClientError("CBE Birr requires a valid Ethiopian phone number.", 400, "INVALID_PHONE");
-            return (await verifier.verifyUniversal({ reference, phoneNumber }));
+            break;
         }
         case "dashen":
-            return (await verifier.verifyDashen({ reference }));
+            break;
         case "abyssinia": {
             const suffix = (body.suffix ?? "").trim();
             if (!/^\d{5}$/.test(suffix))
                 throw new ClientError("Abyssinia verification requires a 5-digit suffix.", 400, "INVALID_SUFFIX");
-            return (await verifier.verifyAbyssinia({ reference, suffix }));
+            break;
         }
         case "mpesa": {
             const receipt = (body.receiptNumber ?? body.reference ?? "").trim();
             if (!receipt)
                 throw new ClientError("M-Pesa verification requires a 'receiptNumber'.", 400, "MISSING_RECEIPT");
-            return (await verifier.verifyMpesa({ receiptNumber: receipt }));
+            break;
         }
         default:
             // Exhaustiveness guard – should never be reached.
             throw new ClientError(`Unsupported provider: ${provider}`, 400, "INVALID_PROVIDER");
     }
+    return (0, ownedVerifier_1.verifyWithOwnedRoute)(provider, body);
 }
 // ---------------------------------------------------------------------------
 // Shared handler – used by both the canonical route and the per-provider alias.
@@ -147,8 +147,9 @@ async function handleVerify(req, res) {
     const pathProvider = typeof req.params.provider === "string" ? req.params.provider : undefined;
     const providerRaw = body.provider || pathProvider || "";
     try {
-        if (process.env.NODE_ENV === "production" &&
-            process.env.ALLOW_LEGACY_VERIFY !== "true") {
+        if (exports.ACTIVE_VERIFIER_MODE === "fixtures" ||
+            (process.env.NODE_ENV === "production" &&
+                process.env.ALLOW_LEGACY_VERIFY !== "true")) {
             res.status(410).json({
                 success: false,
                 error: "Use the authenticated verify-and-create workflow.",
@@ -235,25 +236,16 @@ async function handleVerify(req, res) {
             res.status(err.status).json({ success: false, error: err.message, code: err.code });
             return;
         }
-        if (err instanceof verifier_1.RateLimitError) {
-            res.status(429).json({ success: false, error: "Upstream rate limit exceeded. Try again shortly.", code: "RATE_LIMIT" });
-            return;
-        }
-        if (err instanceof verifier_1.VerifierError) {
-            const raw = err.message || "";
-            const upstreamUnavailable = raw.includes('cloudflare_error') || raw.includes('502') || raw.includes('Bad Gateway');
-            if (upstreamUnavailable) {
-                res.setHeader('Retry-After', '60');
-                res.status(503).json({
-                    success: false,
-                    error: 'The bank verification service is temporarily unavailable. Please retry in about 60 seconds.',
-                    code: 'VERIFIER_TEMPORARILY_UNAVAILABLE',
-                    retryable: true,
-                    retryAfterSeconds: 60,
-                });
-                return;
-            }
-            res.status(502).json({ success: false, error: "Verification failed: " + raw, code: "VERIFIER_ERROR" });
+        if (err instanceof ownedVerifier_1.OwnedVerifierError) {
+            if (err.retryable)
+                res.setHeader("Retry-After", "60");
+            res.status(err.status).json({
+                success: false,
+                error: err.message,
+                code: err.code,
+                retryable: err.retryable,
+                ...(err.retryable ? { retryAfterSeconds: 60 } : {}),
+            });
             return;
         }
         console.error("[verify] unexpected error:", err);
@@ -264,11 +256,12 @@ async function handleVerifyAndCreate(req, res) {
     const body = (req.body ?? {});
     const providerRaw = body.provider || "";
     const expected = (0, paymentSecurity_1.positiveAmount)(body.expectedAmount);
-    const reference = (body.reference ?? "").trim().toUpperCase();
+    const reference = (body.reference ?? "").trim();
     const tableNumber = (body.tableNumber ?? "").trim();
     const token = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
     let provider = null;
     let verificationContextLoaded = false;
+    let canonicalReference = reference;
     try {
         if (!token || token.length < 32) {
             throw new ClientError("Staff session is required.", 401, "SESSION_REQUIRED");
@@ -284,6 +277,11 @@ async function handleVerifyAndCreate(req, res) {
             throw new ClientError("Compressed receipt image exceeds 1.5 MB.", 413, "RECEIPT_TOO_LARGE");
         }
         provider = providerRaw;
+        const legacyCbeReference = provider === "cbe" ? (0, ownedVerifier_1.extractLegacyCbeUrlData)(reference)?.reference : null;
+        const lookupReference = legacyCbeReference ??
+            (provider === "cbe" && (0, ownedVerifier_1.extractNewCbeToken)(reference)
+                ? reference
+                : reference.toUpperCase());
         const context = await (0, supabaseRpc_1.callServiceRpc)("get_verification_context", { p_token: token, p_provider: provider });
         verificationContextLoaded = true;
         if (context.provider !== provider) {
@@ -291,7 +289,7 @@ async function handleVerifyAndCreate(req, res) {
         }
         // A response may have been committed even when the phone timed out. Check
         // before calling the provider again so a retry returns the original ticket.
-        const existing = await findCommittedPayment(token, provider, reference);
+        const existing = await findCommittedPayment(token, provider, lookupReference);
         if (existing) {
             res.status(200).json({
                 success: true,
@@ -300,8 +298,54 @@ async function handleVerifyAndCreate(req, res) {
             return;
         }
         let dispatchBody = body;
+        let destinationProof = null;
         let abyssiniaSuffix = null;
-        if (provider === "abyssinia") {
+        let legacyCbeDestinationProven = false;
+        if (provider === "cbe") {
+            const cbeSuffix = (0, paymentSecurity_1.authoritativeAccountSuffix)(context.receiving_account, 8);
+            if (!cbeSuffix) {
+                await rejectVerifiedPayment(res, {
+                    token,
+                    provider,
+                    reference,
+                    expectedAmount: expected,
+                    status: 422,
+                    code: "RECEIVING_ACCOUNT_INVALID",
+                    message: "The configured CBE account cannot provide the required eight-digit destination suffix.",
+                });
+                return;
+            }
+            dispatchBody = { ...body, suffix: cbeSuffix };
+            legacyCbeDestinationProven =
+                (0, ownedVerifier_1.isLegacyCbeReference)(reference) ||
+                    (0, ownedVerifier_1.extractLegacyCbeUrlData)(reference) !== null;
+            destinationProof = legacyCbeDestinationProven
+                ? {
+                    method: "server_configured_account_suffix",
+                    suffixLength: cbeSuffix.length,
+                }
+                : { method: "provider_returned_account" };
+        }
+        else if (provider === "cbebirr") {
+            const cbeBirrPhone = (0, paymentSecurity_1.authoritativeEthiopianPhone)(context.receiving_account);
+            if (!cbeBirrPhone) {
+                await rejectVerifiedPayment(res, {
+                    token,
+                    provider,
+                    reference,
+                    expectedAmount: expected,
+                    status: 422,
+                    code: "RECEIVING_ACCOUNT_INVALID",
+                    message: "The configured CBE Birr receiving account must be a valid Ethiopian mobile number.",
+                });
+                return;
+            }
+            dispatchBody = { ...body, phoneNumber: cbeBirrPhone };
+            destinationProof = {
+                method: "server_configured_wallet_number",
+            };
+        }
+        else if (provider === "abyssinia") {
             abyssiniaSuffix = (0, paymentSecurity_1.authoritativeAbyssiniaSuffix)(context.receiving_account);
             if (!abyssiniaSuffix) {
                 await rejectVerifiedPayment(res, {
@@ -318,8 +362,19 @@ async function handleVerifyAndCreate(req, res) {
             // Ignore any client suffix. The upstream verification must be anchored
             // to the receiving account selected from this authenticated tenant.
             dispatchBody = { ...body, suffix: abyssiniaSuffix };
+            destinationProof = {
+                method: "server_configured_account_suffix",
+                suffixLength: abyssiniaSuffix.length,
+            };
         }
-        const result = await dispatch(provider, dispatchBody);
+        const result = exports.ACTIVE_VERIFIER_MODE === "fixtures"
+            ? (0, verificationFixtures_1.fixtureVerification)({
+                provider,
+                reference,
+                expectedAmount: expected,
+                receivingAccount: context.receiving_account,
+            })
+            : await dispatch(provider, dispatchBody);
         if (!result.ok) {
             await rejectVerifiedPayment(res, {
                 token,
@@ -360,12 +415,14 @@ async function handleVerifyAndCreate(req, res) {
             return;
         }
         let receiverAccount = String(data.receiverAccount ?? data.receiver_account ?? "").trim();
-        if (provider === "abyssinia") {
+        if (provider === "abyssinia" || legacyCbeDestinationProven) {
             // Abyssinia proves the destination through the server-supplied query
             // suffix and omits receiverAccount from its normalized response.
             receiverAccount = context.receiving_account;
         }
-        else if (!(0, paymentSecurity_1.matchesReceivingAccount)(context.receiving_account, receiverAccount)) {
+        else if (!(provider === "cbe"
+            ? (0, paymentSecurity_1.matchesCbeReceivingAccount)(context.receiving_account, receiverAccount)
+            : (0, paymentSecurity_1.matchesReceivingAccount)(context.receiving_account, receiverAccount))) {
             await rejectVerifiedPayment(res, {
                 token,
                 provider,
@@ -398,19 +455,13 @@ async function handleVerifyAndCreate(req, res) {
         const providerPayload = {
             ...data,
             verificationRequest: { submittedReference: reference },
-            ...(provider === "abyssinia"
-                ? {
-                    destinationProof: {
-                        method: "server_configured_account_suffix",
-                        suffixLength: abyssiniaSuffix?.length,
-                    },
-                }
-                : {}),
+            ...(destinationProof ? { destinationProof } : {}),
         };
+        canonicalReference = String(data.reference ?? lookupReference).toUpperCase();
         const committed = await (0, supabaseRpc_1.callServiceRpc)("commit_verified_payment", {
             p_token: token,
             p_provider: provider,
-            p_transaction_ref: String(data.reference ?? reference).toUpperCase(),
+            p_transaction_ref: canonicalReference,
             p_table_number: tableNumber,
             p_expected_amount: expected,
             p_verified_amount: verifiedAmount,
@@ -445,7 +496,7 @@ async function handleVerifyAndCreate(req, res) {
             const unauthorized = err.code === "28000" || err.status === 401;
             if (duplicate && token && provider) {
                 try {
-                    const existing = await findCommittedPayment(token, provider, reference);
+                    const existing = await findCommittedPayment(token, provider, canonicalReference);
                     if (existing) {
                         res.status(200).json({
                             success: true,
@@ -465,32 +516,47 @@ async function handleVerifyAndCreate(req, res) {
             });
             return;
         }
-        if (err instanceof verifier_1.RateLimitError) {
+        if (err instanceof verificationFixtures_1.FixtureProviderUnavailableError) {
             if (token && provider && verificationContextLoaded) {
                 await recordFailedVerification({
                     token,
                     provider,
                     reference,
                     expectedAmount: expected,
-                    code: "RATE_LIMIT",
-                    message: "Verification rate limit reached.",
+                    code: "VERIFIER_TEMPORARILY_UNAVAILABLE",
+                    message: "The staging payment provider is temporarily unavailable.",
                 });
             }
-            res.status(429).json({ success: false, error: "Verification rate limit reached.", code: "RATE_LIMIT" });
+            res.setHeader("Retry-After", "60");
+            res.status(503).json({
+                success: false,
+                error: "The staging payment provider is temporarily unavailable.",
+                code: "VERIFIER_TEMPORARILY_UNAVAILABLE",
+                retryable: true,
+                retryAfterSeconds: 60,
+            });
             return;
         }
-        if (err instanceof verifier_1.VerifierError) {
+        if (err instanceof ownedVerifier_1.OwnedVerifierError) {
             if (token && provider && verificationContextLoaded) {
                 await recordFailedVerification({
                     token,
                     provider,
                     reference,
                     expectedAmount: expected,
-                    code: "VERIFIER_ERROR",
-                    message: "Payment provider is temporarily unavailable.",
+                    code: err.code,
+                    message: err.message,
                 });
             }
-            res.status(502).json({ success: false, error: "Payment provider is temporarily unavailable.", code: "VERIFIER_ERROR" });
+            if (err.retryable)
+                res.setHeader("Retry-After", "60");
+            res.status(err.status).json({
+                success: false,
+                error: err.message,
+                code: err.code,
+                retryable: err.retryable,
+                ...(err.retryable ? { retryAfterSeconds: 60 } : {}),
+            });
             return;
         }
         console.error("[verify-and-create] unexpected error:", err);
