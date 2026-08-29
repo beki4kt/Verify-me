@@ -15,13 +15,28 @@ void main() {
   test('retryable provider errors include the retry window', () {
     final result = VerificationResult(
       isSuccess: false,
-      errorCode: 'VERIFIER_TEMPORARILY_UNAVAILABLE',
-      errorMessage: 'The provider is temporarily unavailable.',
+      errorCode: 'PROVIDER_UNAVAILABLE',
+      errorMessage: 'Telebirr receipt service is unavailable.',
       retryable: true,
       retryAfterSeconds: 60,
     );
 
+    expect(result.displayErrorMessage, isNot(contains('Telebirr receipt')));
     expect(result.displayErrorMessage, contains('about 60 seconds'));
+  });
+
+  test('connection errors never expose technical exception details', () {
+    final result = VerificationResult(
+      isSuccess: false,
+      errorCode: 'CONNECTION_FAILED',
+      errorMessage: 'SocketException: errno = 110',
+      retryable: true,
+    );
+
+    expect(
+      result.displayErrorMessage,
+      'Cannot reach CHEKMI. Check your connection and try again.',
+    );
   });
 
   test('session errors direct staff back to sign in', () {

@@ -38,14 +38,19 @@ class VerificationResult {
         '$message Use a receipt inside the allowed verification window.',
       'DUPLICATE_PAYMENT' =>
         '$message Refresh the ticket list before attempting another verification.',
-      'RATE_LIMIT' || 'VERIFIER_TEMPORARILY_UNAVAILABLE' || 'VERIFIER_ERROR' =>
+      'RATE_LIMIT' || 'PROVIDER_RATE_LIMIT' =>
         retryAfterSeconds == null
-            ? '$message Try again shortly.'
-            : '$message Try again in about $retryAfterSeconds seconds.',
+            ? 'Too many attempts. Try again shortly.'
+            : 'Too many attempts. Retry in about $retryAfterSeconds seconds.',
+      'PROVIDER_UNAVAILABLE' ||
+      'VERIFIER_TEMPORARILY_UNAVAILABLE' ||
+      'VERIFIER_ERROR' =>
+        retryAfterSeconds == null
+            ? 'Payment service unavailable. Try again shortly.'
+            : 'Payment service unavailable. Retry in about $retryAfterSeconds seconds.',
       'CONNECTION_FAILED' =>
-        '$message Check the connection, then refresh the ticket list before retrying.',
-      'TIMEOUT' =>
-        '$message Refresh the ticket list before retrying because the first request may have completed.',
+        'Cannot reach CHEKMI. Check your connection and try again.',
+      'TIMEOUT' => 'Still checking. Refresh tickets before retrying.',
       _ => message,
     };
   }
@@ -345,7 +350,7 @@ class ApiService {
     } catch (error) {
       return VerificationResult(
         isSuccess: false,
-        errorMessage: 'Connection failed: $error',
+        errorMessage: 'Cannot reach CHEKMI.',
         errorCode: 'CONNECTION_FAILED',
         retryable: true,
       );
