@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import 'api_service.dart';
 import 'staff_login_screen.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_motion.dart';
 import 'core/theme/app_shapes.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_typography.dart';
@@ -21,6 +21,7 @@ import 'core/widgets/app_shell.dart';
 import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
+import 'iphone/iphone_dashboard_shell.dart';
 
 class CashierDashboard extends StatefulWidget {
   const CashierDashboard({super.key});
@@ -36,18 +37,23 @@ class _CashierDashboardState extends State<CashierDashboard> {
   @override
   void initState() {
     super.initState();
-    _refreshData();
+    _ticketsStream = ApiService.streamTodayTickets();
   }
 
   void _refreshData() {
-    setState(() {
-      _ticketsStream = ApiService.streamTodayTickets();
-    });
+    ApiService.refreshDashboardData();
   }
 
-  void _handleLogout() {
-    ApiService.logoutStaff();
+  Future<void> _handleLogout() async {
+    await ApiService.logoutStaff();
+    if (!mounted) return;
     goReplace(context, const StaffLoginScreen());
+  }
+
+  void _openHelpAndPrivacy() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const SupportPrivacyScreen()),
+    );
   }
 
   // ── Settlement sheet ─────────────────────────────────────────────────────
@@ -145,57 +151,73 @@ class _CashierDashboardState extends State<CashierDashboard> {
                 ),
                 const SizedBox(height: 16),
                 if (hasInput && !isShortfall)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: ShapeDecoration(
-                      color: AppColors.success.withValues(alpha: 0.1),
-                      shape: AppShapes.cardSm,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          AppVariant.usesMinimalCopy ? 'TIP' : 'CALCULATED TIP',
-                          style: AppTypography.microLabel(
-                            color: AppColors.success,
-                          ),
-                        ),
-                        Text(
-                          '${tip.toStringAsFixed(2)} ETB',
-                          style: AppTypography.money(
-                            size: 16,
-                            color: AppColors.success,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ).animate().fadeIn(),
-                if (isShortfall)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: ShapeDecoration(
-                      color: AppColors.danger.withValues(alpha: 0.1),
-                      shape: AppShapes.cardSm,
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          AppIcons.warning,
-                          color: AppColors.danger,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            AppVariant.usesMinimalCopy ? 'AMOUNT BELOW BILL' : 'SHORTFALL. Amount is less than the bill. Settlement blocked.',
+                  // The tip reveal grows in place, so the number reads as the
+                  // result of the amount above it.
+                  AnimatedSize(
+                    duration: AppMotion.slow,
+                    curve: AppMotion.easeOutCustom,
+                    alignment: Alignment.topCenter,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: ShapeDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        shape: AppShapes.cardSm,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            AppVariant.usesMinimalCopy
+                                ? 'TIP'
+                                : 'CALCULATED TIP',
                             style: AppTypography.microLabel(
-                              color: AppColors.danger,
-                            ).copyWith(fontSize: 12),
+                              color: AppColors.success,
+                            ),
                           ),
-                        ),
-                      ],
+                          Text(
+                            '${tip.toStringAsFixed(2)} ETB',
+                            style: AppTypography.money(
+                              size: 16,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ).animate().fadeIn(),
+                  ),
+                if (isShortfall)
+                  AnimatedSize(
+                    duration: AppMotion.slow,
+                    curve: AppMotion.easeOutCustom,
+                    alignment: Alignment.topCenter,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: ShapeDecoration(
+                        color: AppColors.danger.withValues(alpha: 0.1),
+                        shape: AppShapes.cardSm,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            AppIcons.warning,
+                            color: AppColors.danger,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              AppVariant.usesMinimalCopy ? 'AMOUNT BELOW BILL' : 'SHORTFALL. Amount is less than the bill. Settlement blocked.',
+                              style: AppTypography.microLabel(
+                                color: AppColors.danger,
+                              ).copyWith(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 24),
                 if (errorText != null) ...[ErrorBanner(message: errorText!)],
                 if (isShortfall)
@@ -341,61 +363,67 @@ class _CashierDashboardState extends State<CashierDashboard> {
             final t = pending[index];
             final bank = (t['bank'] ?? '').toString();
             final amount = (t['bill_amount'] as num?)?.toDouble() ?? 0.0;
-            return GestureDetector(
-              onTap: () => _showSettlementSheet(t),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: ShapeDecoration(
-                  color: Theme.of(context).colorScheme.surface
-                      .withValues(alpha: .64),
-                  shape: AppShapes.cardSm,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
+            return FadeSlideIn(
+              index: index.clamp(0, 6),
+              child: Pressable(
+                onTap: () => _showSettlementSheet(t),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
+                  decoration: ShapeDecoration(
+                    color: Theme.of(context).colorScheme.surface
+                        .withValues(alpha: .64),
+                    shape: AppShapes.cardSm,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          AppIcons.alertNotification,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                       ),
-                      child: const Icon(
-                        AppIcons.alertNotification,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${amount.toStringAsFixed(2)} ETB',
-                            style: AppTypography.money(size: 18),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              BankChip(bank: bank, color: AppColors.bank(bank)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'REF: ${t['transaction_ref']}',
-                                  style: AppTypography.microLabel(),
-                                  overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${amount.toStringAsFixed(2)} ETB',
+                              style: AppTypography.money(size: 18),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                BankChip(
+                                  bank: bank,
+                                  color: AppColors.bank(bank),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'REF: ${t['transaction_ref']}',
+                                    style: AppTypography.microLabel(),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const Icon(
-                      AppIcons.chevronRight,
-                      color: AppColors.textFaint,
-                    ),
-                  ],
+                      const Icon(
+                        AppIcons.chevronRight,
+                        color: AppColors.textFaint,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -439,61 +467,71 @@ class _CashierDashboardState extends State<CashierDashboard> {
             final statusColor = isSettled
                 ? AppColors.success
                 : AppColors.danger;
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: ShapeDecoration(
-                color: Theme.of(context).colorScheme.surface
-                    .withValues(alpha: .64),
-                shape: AppShapes.cardSm,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      StatusDot(
-                        label: status,
-                        color: statusColor,
-                        icon: isSettled ? AppIcons.success : AppIcons.cancel,
-                      ),
-                      const Spacer(),
-                      BankChip(bank: bank, color: AppColors.bank(bank)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    isSettled ? '${billAmount.toStringAsFixed(2)} ETB' : '—',
-                    style: AppTypography.money(size: 20),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'REF: ${t['transaction_ref']}  •  Waiter: ${t['waiter_id']}',
-                    style: AppTypography.microLabel(),
-                  ),
-                  if (isSettled && tip > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
+            return FadeSlideIn(
+              index: index.clamp(0, 6),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: ShapeDecoration(
+                  color: Theme.of(context).colorScheme.surface
+                      .withValues(alpha: .64),
+                  shape: AppShapes.cardSm,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        StatusDot(
+                          label: status,
+                          color: statusColor,
+                          icon: isSettled ? AppIcons.success : AppIcons.cancel,
                         ),
-                        decoration: ShapeDecoration(
-                          color: AppColors.success.withValues(alpha: 0.1),
-                          shape: const ContinuousRectangleBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                        const Spacer(),
+                        BankChip(bank: bank, color: AppColors.bank(bank)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      isSettled ? '${billAmount.toStringAsFixed(2)} ETB' : '—',
+                      style: AppTypography.money(size: 20),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'REF: ${t['transaction_ref']}  •  Waiter: ${t['waiter_id']}',
+                      style: AppTypography.microLabel(),
+                    ),
+                    if (isSettled && tip > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: AnimatedSize(
+                          duration: AppMotion.slow,
+                          curve: AppMotion.easeOutCustom,
+                          alignment: Alignment.topCenter,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: ShapeDecoration(
+                              color: AppColors.success.withValues(alpha: 0.1),
+                              shape: const ContinuousRectangleBorder(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(8),
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              'Includes ${tip.toStringAsFixed(2)} ETB tip (total ${actual.toStringAsFixed(2)})',
+                              style: AppTypography.microLabel(
+                                color: AppColors.success,
+                              ).copyWith(fontSize: 10),
+                            ),
                           ),
                         ),
-                        child: Text(
-                          'Includes ${tip.toStringAsFixed(2)} ETB tip (total ${actual.toStringAsFixed(2)})',
-                          style: AppTypography.microLabel(
-                            color: AppColors.success,
-                          ).copyWith(fontSize: 10),
-                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -514,32 +552,37 @@ class _CashierDashboardState extends State<CashierDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        elevation: 0,
-        leading: IconButton(
-          tooltip: 'Sign out',
-          icon: const Icon(AppIcons.logout, color: AppColors.danger),
-          onPressed: _handleLogout,
-        ),
-        actions: [
-          const GlassLanguageToggleButton(),
-          const GlassThemeToggleButton(),
-          IconButton(
-            tooltip: 'Help and privacy',
-            icon: const Icon(AppIcons.support),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SupportPrivacyScreen()),
+      appBar: AppVariant.usesIPhoneUi
+          ? IPhoneDashboardNavigationBar(
+              title: Text(context.tr('Cashier')),
+              onSignOut: _handleLogout,
+              onHelp: _openHelpAndPrivacy,
+              onRefresh: _refreshData,
+            )
+          : AppBar(
+              elevation: 0,
+              leading: IconButton(
+                tooltip: 'Sign out',
+                icon: const Icon(AppIcons.logout, color: AppColors.danger),
+                onPressed: _handleLogout,
+              ),
+              actions: [
+                const GlassLanguageToggleButton(),
+                const GlassThemeToggleButton(),
+                IconButton(
+                  tooltip: 'Help and privacy',
+                  icon: const Icon(AppIcons.support),
+                  onPressed: _openHelpAndPrivacy,
+                ),
+                IconButton(
+                  tooltip: 'Refresh tickets',
+                  icon: const Icon(AppIcons.refresh),
+                  onPressed: _refreshData,
+                ),
+              ],
+              title: Text(context.tr('Cashier terminal')),
+              titleTextStyle: AppTypography.appBarTitle(),
             ),
-          ),
-          IconButton(
-            tooltip: 'Refresh tickets',
-            icon: const Icon(AppIcons.refresh),
-            onPressed: _refreshData,
-          ),
-        ],
-        title: Text(context.tr('Cashier terminal')),
-        titleTextStyle: AppTypography.appBarTitle(),
-      ),
       body: AppBackdrop(
         child: Column(
           children: [
@@ -557,9 +600,16 @@ class _CashierDashboardState extends State<CashierDashboard> {
               ),
             ),
             Expanded(
-              child: IndexedStack(
-                index: _tabIndex,
-                children: [_buildPendingQueue(), _buildSettledLedger()],
+              // Fade-through keeps the segmented control and its pill feeling
+              // connected to the body: the outgoing list leaves before the
+              // next arrives.
+              child: FadeThroughSwitcher(
+                child: KeyedSubtree(
+                  key: ValueKey(_tabIndex),
+                  child: _tabIndex == 0
+                      ? _buildPendingQueue()
+                      : _buildSettledLedger(),
+                ),
               ),
             ),
           ],

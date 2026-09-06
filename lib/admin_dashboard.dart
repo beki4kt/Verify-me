@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_motion.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_typography.dart';
 import 'core/widgets/app_shell.dart';
@@ -21,6 +23,7 @@ import 'plan_catalog.dart';
 import 'pricing_screen.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
+import 'iphone/iphone_dashboard_shell.dart';
 
 class _PaymentAccountProvider {
   const _PaymentAccountProvider({
@@ -114,6 +117,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   StreamSubscription<List<Map<String, dynamic>>>? _staffCacheSubscription;
   StreamSubscription<Map<String, dynamic>>? _businessPlanSubscription;
   final Map<String, String> _staffLabels = {};
+  final Set<String> _staffStatusUpdates = <String>{};
+  final Set<String> _withdrawalUpdates = <String>{};
+  List<Map<String, dynamic>> _staffRoster = const [];
+  Object? _staffRosterError;
+  bool _staffRosterLoaded = false;
   PlanDefinition _activePlan = PlanCatalog.basic;
   TransactionPeriod _ledgerPeriod = TransactionPeriod.daily;
   DateTimeRange? _ledgerCustomRange;
@@ -124,21 +132,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void initState() {
     super.initState();
     _setDataStreams();
-    _staffCacheSubscription = _staffStream.listen((staff) {
-      if (!mounted) return;
-      setState(() {
-        _staffLabels
-          ..clear()
-          ..addEntries(
-            staff.map(
-              (member) => MapEntry(
-                member['staff_number'].toString(),
-                member['name']?.toString() ?? 'Staff ${member['staff_number']}',
-              ),
-            ),
+    _staffCacheSubscription = _staffStream.listen(
+      (staff) {
+        if (!mounted) return;
+        setState(() {
+          _staffRoster = List<Map<String, dynamic>>.unmodifiable(
+            staff.map((member) => Map<String, dynamic>.from(member)),
           );
-      });
-    });
+          _staffRosterLoaded = true;
+          _staffRosterError = null;
+          _staffLabels
+            ..clear()
+            ..addEntries(
+              staff.map(
+                (member) => MapEntry(
+                  member['staff_number'].toString(),
+                  member['name']?.toString() ??
+                      'Staff ${member['staff_number']}',
+                ),
+              ),
+            );
+        });
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _staffRosterLoaded = true;
+          _staffRosterError = error;
+        });
+      },
+      onDone: () {
+        if (!mounted || _staffRosterLoaded) return;
+        setState(() => _staffRosterLoaded = true);
+      },
+    );
     _businessPlanSubscription = _businessStream.listen((business) {
       if (!mounted) return;
       final plan = PlanCatalog.fromTier(
@@ -248,6 +275,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _refreshData() {
+    ApiService.refreshDashboardData();
     setState(() => _ticketsStream = _serverTicketReport());
   }
 
@@ -1196,6 +1224,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final passwordController = TextEditingController();
     String selectedRole = 'waiter';
     bool isSubmitting = false;
+    bool submissionSucceeded = false;
     String? errorText;
 
     showModalBottomSheet(
@@ -1360,16 +1389,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   password: passwordController.text.trim(),
                                   role: selectedRole,
                                 );
+                                submissionSucceeded = true;
                                 if (context.mounted) Navigator.pop(context);
                               } catch (e) {
-                                setSheetState(
-                                  () => errorText = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
-                                  ),
-                                );
+                                if (context.mounted) {
+                                  setSheetState(
+                                    () => errorText = e.toString().replaceAll(
+                                      'Exception: ',
+                                      '',
+                                    ),
+                                  );
+                                }
                               } finally {
-                                setSheetState(() => isSubmitting = false);
+                                if (!submissionSucceeded && context.mounted) {
+                                  setSheetState(() => isSubmitting = false);
+                                }
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -1418,6 +1452,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       selectedRole = 'waiter';
     }
     bool isSubmitting = false;
+    bool submissionSucceeded = false;
     String? errorText;
 
     showModalBottomSheet(
@@ -1556,16 +1591,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   passwordController.text.trim(),
                                   selectedRole,
                                 );
+                                submissionSucceeded = true;
                                 if (context.mounted) Navigator.pop(context);
                               } catch (e) {
-                                setSheetState(
-                                  () => errorText = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
-                                  ),
-                                );
+                                if (context.mounted) {
+                                  setSheetState(
+                                    () => errorText = e.toString().replaceAll(
+                                      'Exception: ',
+                                      '',
+                                    ),
+                                  );
+                                }
                               } finally {
-                                setSheetState(() => isSubmitting = false);
+                                if (!submissionSucceeded && context.mounted) {
+                                  setSheetState(() => isSubmitting = false);
+                                }
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -1634,127 +1674,201 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // PHASE 3: THE STAFF ROSTER TAB WIDGET
+  Future<void> _updateStaffStatus(
+    Map<String, dynamic> staff,
+    bool isActive,
+  ) async {
+    final staffNumber = staff['staff_number']?.toString() ?? '';
+    if (staffNumber.isEmpty || _staffStatusUpdates.contains(staffNumber)) {
+      return;
+    }
+
+    setState(() => _staffStatusUpdates.add(staffNumber));
+    try {
+      await ApiService.toggleStaffStatus(staffNumber, isActive);
+      if (!mounted) return;
+      setState(() {
+        _staffRoster = _staffRoster
+            .map(
+              (member) => member['staff_number']?.toString() == staffNumber
+                  ? <String, dynamic>{...member, 'is_active': isActive}
+                  : member,
+            )
+            .toList(growable: false);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isActive
+                ? '${staff['name']} can sign in again.'
+                : '${staff['name']} has been paused.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update ${staff['name']}: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _staffStatusUpdates.remove(staffNumber));
+      }
+    }
+  }
+
+  // Uses the route's single roster subscription so returning to this tab never
+  // replaces useful content with a new full-screen loading state.
   Widget _buildStaffRosterTab() {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _staffStream,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return ErrorBanner(message: _friendlyStreamError(snapshot.error));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          );
-        }
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(
-            child: Text(
-              'No staff members found.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          );
-        }
+    if (!_staffRosterLoaded) {
+      return const LoadingView(message: 'Loading team');
+    }
 
-        // Filter out Admins to ensure only single admin view applies
-        final staffList = snapshot.data!
-            .where((s) => s['role'] != 'admin')
-            .toList();
+    final staffList = _staffRoster
+        .where((staff) => staff['role'] != 'admin')
+        .toList(growable: false);
 
-        if (staffList.isEmpty) {
-          return Center(
-            child: Text(
-              'No active floor staff.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: staffList.length,
-          itemBuilder: (context, index) {
-            final staff = staffList[index];
-            final isActive = staff['is_active'] as bool? ?? true;
-            final roleName =
-                staff['role']?.toString().toUpperCase() ?? 'UNKNOWN';
-            final roleColor = roleName == 'CASHIER'
-                ? const Color(0xFFF59E0B)
-                : const Color(0xFF10B981);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface
-                    .withValues(alpha: .68),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-              child: Row(
+    return ListView(
+      key: const PageStorageKey<String>('admin-team-list'),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    backgroundColor: roleColor.withValues(alpha: 0.1),
-                    child: Icon(
-                      roleName == 'CASHIER'
-                          ? AppIcons.pointOfSale
-                          : AppIcons.menu,
-                      color: roleColor,
-                      size: 18,
-                    ),
+                  Text(
+                    'Team',
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          staff['name'] ?? 'Unknown',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'ID: ${staff['staff_number']}  •  $roleName',
-                          style: const TextStyle(
-                            color: AppColors.textFaint,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      AppIcons.edit,
-                      color: AppColors.textFaint,
-                      size: 20,
-                    ),
-                    onPressed: () => _showEditStaffSheet(staff),
-                  ),
-                  Switch.adaptive(
-                    value: isActive,
-                    activeTrackColor: const Color(0xFF10B981),
-                    onChanged: (val) async {
-                      await ApiService.toggleStaffStatus(
-                        staff['staff_number'],
-                        val,
-                      );
-                    },
+                  const SizedBox(height: 3),
+                  Text(
+                    '${staffList.length} floor ${staffList.length == 1 ? 'member' : 'members'}',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
+            ),
+            FilledButton.icon(
+              onPressed: _showAddStaffSheet,
+              icon: const Icon(AppIcons.addUser, size: 18),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        if (_staffRosterError != null)
+          ErrorBanner(message: _friendlyStreamError(_staffRosterError)),
+        if (staffList.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 72),
+            child: EmptyView(
+              message: 'No floor staff yet. Add the first team member.',
+              icon: AppIcons.team,
+            ),
+          )
+        else
+          for (final staff in staffList) _buildStaffMemberCard(staff),
+      ],
+    );
+  }
+
+  Widget _buildStaffMemberCard(Map<String, dynamic> staff) {
+    final staffNumber = staff['staff_number']?.toString() ?? '';
+    final isActive = staff['is_active'] as bool? ?? true;
+    final isUpdating = _staffStatusUpdates.contains(staffNumber);
+    final roleName = staff['role']?.toString().toUpperCase() ?? 'UNKNOWN';
+    final roleDisplay = roleName.isEmpty
+        ? roleName
+        : '${roleName[0]}${roleName.substring(1).toLowerCase()}';
+    final roleColor = roleName == 'CASHIER'
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFF10B981);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppVariant.usesIPhoneUi
+            ? Theme.of(context).colorScheme.surfaceContainerHigh
+            : Theme.of(context).colorScheme.surface.withValues(alpha: .82),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            AppVariant.usesIPhoneUi ? 20 : 16,
+          ),
+          side: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant
+                .withValues(alpha: AppVariant.usesIPhoneUi ? .42 : 1),
+            width: AppVariant.usesIPhoneUi ? .6 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: isUpdating ? null : () => _showEditStaffSheet(staff),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: roleColor.withValues(alpha: .12),
+                  child: Icon(
+                    roleName == 'CASHIER'
+                        ? AppIcons.pointOfSale
+                        : AppIcons.serviceBell,
+                    color: roleColor,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        staff['name']?.toString() ?? 'Unknown',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '$staffNumber  •  $roleDisplay  •  ${isActive ? 'Active' : 'Paused'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: isActive
+                              ? roleColor
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isUpdating)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 15),
+                    child: SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  Switch.adaptive(
+                    value: isActive,
+                    activeTrackColor: AppColors.success,
+                    onChanged: (value) => _updateStaffStatus(staff, value),
+                  ),
+                const Icon(AppIcons.chevronRight, size: 17),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1809,6 +1923,37 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  Future<void> _resolveWithdrawal(
+    Map<String, dynamic> request,
+    String status,
+  ) async {
+    final requestId = request['request_id']?.toString() ?? '';
+    if (requestId.isEmpty || _withdrawalUpdates.contains(requestId)) return;
+
+    setState(() => _withdrawalUpdates.add(requestId));
+    try {
+      await ApiService.resolveTipWithdrawal(requestId, status);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Withdrawal marked ${status.toLowerCase()}.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update withdrawal: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _withdrawalUpdates.remove(requestId));
+      }
+    }
+  }
+
   void _showWithdrawalRequests() {
     showModalBottomSheet<void>(
       context: context,
@@ -1847,6 +1992,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             final request = requests[index];
                             final pending = request['status'] == 'pending';
                             final approved = request['status'] == 'approved';
+                            final requestId = request['request_id']?.toString();
+                            final isUpdating =
+                                requestId != null &&
+                                _withdrawalUpdates.contains(requestId);
                             final amount =
                                 (request['amount'] as num?)?.toDouble() ?? 0;
                             return GlassPanel(
@@ -1878,33 +2027,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       ],
                                     ),
                                   ),
-                                  if (pending) ...[
+                                  if (isUpdating)
+                                    const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: SizedBox.square(
+                                        dimension: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    )
+                                  else if (pending) ...[
                                     IconButton.filledTonal(
                                       tooltip: 'Reject',
-                                      onPressed: () =>
-                                          ApiService.resolveTipWithdrawal(
-                                            request['request_id'].toString(),
-                                            'rejected',
-                                          ),
+                                      onPressed: () => _resolveWithdrawal(
+                                        request,
+                                        'rejected',
+                                      ),
                                       icon: const Icon(AppIcons.close),
                                     ),
                                     const SizedBox(width: 6),
                                     IconButton.filled(
                                       tooltip: 'Approve',
-                                      onPressed: () =>
-                                          ApiService.resolveTipWithdrawal(
-                                            request['request_id'].toString(),
-                                            'approved',
-                                          ),
+                                      onPressed: () => _resolveWithdrawal(
+                                        request,
+                                        'approved',
+                                      ),
                                       icon: const Icon(AppIcons.check),
                                     ),
                                   ] else if (approved) ...[
                                     FilledButton.icon(
                                       onPressed: () =>
-                                          ApiService.resolveTipWithdrawal(
-                                            request['request_id'].toString(),
-                                            'paid',
-                                          ),
+                                          _resolveWithdrawal(request, 'paid'),
                                       icon: const Icon(AppIcons.money),
                                       label: const Text('Mark paid'),
                                     ),
@@ -1944,7 +2098,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     .where((request) => request['status'] == 'pending')
                     .length;
             return ListView(
-              padding: const EdgeInsets.all(AppSpacing.xl),
+              padding: EdgeInsets.all(
+                AppVariant.usesIPhoneUi ? 16 : AppSpacing.xl,
+              ),
               children: [
                 Row(
                   children: [
@@ -1964,7 +2120,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: Text(
-                        'Admin tools',
+                        AppVariant.usesIPhoneUi
+                            ? context.tr('Manage')
+                            : 'Admin tools',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
@@ -1988,6 +2146,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           title: 'Add staff',
                           detail: 'Create account',
                           onTap: _showAddStaffSheet,
+                          index: 0,
                         ),
                         _adminToolCard(
                           width: width,
@@ -1999,6 +2158,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           detail:
                               '$configuredAccounts / ${_paymentAccountProviders.length} set',
                           onTap: () => _showBankConfigSheet(accounts),
+                          index: 1,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2011,6 +2171,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               ? '$pendingWithdrawals pending'
                               : 'All clear',
                           onTap: _showWithdrawalRequests,
+                          index: 2,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2019,6 +2180,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           title: 'Password',
                           detail: 'Change password',
                           onTap: _showChangePasswordSheet,
+                          index: 3,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2033,6 +2195,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               ),
                             ),
                           ),
+                          index: 4,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2041,6 +2204,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           title: 'Refresh',
                           detail: 'Reload transactions',
                           onTap: _refreshData,
+                          index: 5,
                         ),
                       ],
                     );
@@ -2061,50 +2225,75 @@ class _AdminDashboardState extends State<AdminDashboard> {
     required String title,
     required String detail,
     required VoidCallback onTap,
+    int index = 0,
   }) {
-    return SizedBox(
-      width: width,
-      child: Semantics(
-        button: true,
-        label: title,
-        child: HoverSurface(
-          onTap: onTap,
-          accent: color,
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: .13),
-                  borderRadius: BorderRadius.circular(18),
+    return FadeSlideIn(
+      index: index.clamp(0, 5),
+      child: SizedBox(
+        width: width,
+        child: Semantics(
+          button: true,
+          label: title,
+          child: HoverSurface(
+            onTap: onTap,
+            accent: color,
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Row(
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .13),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(icon, color: color, size: 27),
                 ),
-                child: Icon(icon, color: color, size: 27),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(detail, style: Theme.of(context).textTheme.bodySmall),
-                  ],
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        detail,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Icon(AppIcons.chevronRight, color: color),
-            ],
+                const SizedBox(width: AppSpacing.sm),
+                Icon(AppIcons.chevronRight, color: color),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _signOut() async {
+    await ApiService.logoutStaff();
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      CupertinoPageRoute<void>(builder: (_) => const StaffLoginScreen()),
+    );
+  }
+
+  void _openHelpAndPrivacy() {
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(builder: (_) => const SupportPrivacyScreen()),
+    );
+  }
+
+  Widget _buildIPhoneBusinessTitle() {
+    return Text(context.tr('Admin'));
   }
 
   @override
@@ -2112,68 +2301,80 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
-          title: StreamBuilder<Map<String, dynamic>>(
-            stream: _businessStream,
-            builder: (context, snapshot) {
-              final business = snapshot.data;
-              final name = business?['name']?.toString() ?? 'Business';
-              final type =
-                  business?['business_type']?.toString() ??
-                  business?['subscription_tier']?.toString() ??
-                  'Restaurant';
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (!AppVariant.usesMinimalCopy)
-                    Text(
-                      type,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+        appBar: AppVariant.usesIPhoneUi
+            ? IPhoneDashboardNavigationBar(
+                title: _buildIPhoneBusinessTitle(),
+                onSignOut: _signOut,
+                onHelp: _openHelpAndPrivacy,
+                onRefresh: _refreshData,
+              )
+            : AppBar(
+                title: StreamBuilder<Map<String, dynamic>>(
+                  stream: _businessStream,
+                  builder: (context, snapshot) {
+                    final business = snapshot.data;
+                    final name = business?['name']?.toString() ?? 'Business';
+                    final type =
+                        business?['business_type']?.toString() ??
+                        business?['subscription_tier']?.toString() ??
+                        'Restaurant';
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (!AppVariant.usesMinimalCopy)
+                          Text(
+                            type,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                titleTextStyle: AppTypography.appBarTitle(),
+                leading: IconButton(
+                  tooltip: 'Sign out',
+                  icon: const Icon(AppIcons.logout, color: AppColors.danger),
+                  onPressed: _signOut,
+                ),
+                actions: [
+                  const GlassLanguageToggleButton(),
+                  const GlassThemeToggleButton(),
                 ],
-              );
-            },
-          ),
-          titleTextStyle: AppTypography.appBarTitle(),
-          leading: IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(AppIcons.logout, color: AppColors.danger),
-            onPressed: () {
-              ApiService.logoutStaff();
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const StaffLoginScreen()),
-              );
-            },
-          ),
-          actions: [
-            const GlassLanguageToggleButton(),
-            const GlassThemeToggleButton(),
-          ],
-          bottom: TabBar(
-            dividerHeight: 0,
-            tabs: [
-              Tab(
-                icon: const Icon(AppIcons.analytics, size: 18),
-                text: context.tr('Overview'),
+                bottom: TabBar(
+                  dividerHeight: 0,
+                  tabs: [
+                    Tab(
+                      icon: const Icon(AppIcons.analytics, size: 18),
+                      text: context.tr('Overview'),
+                    ),
+                    Tab(
+                      icon: const Icon(AppIcons.team, size: 18),
+                      text: context.tr('Team'),
+                    ),
+                    const Tab(
+                      icon: Icon(AppIcons.settings, size: 18),
+                      text: 'Manage',
+                    ),
+                  ],
+                ),
               ),
-              Tab(
-                icon: const Icon(AppIcons.team, size: 18),
-                text: context.tr('Team'),
-              ),
-              const Tab(
-                icon: Icon(AppIcons.settings, size: 18),
-                text: 'Manage',
-              ),
-            ],
-          ),
-        ),
         body: AppBackdrop(
-          child: TabBarView(
+          child: DashboardTabView(
+            preserveState: AppVariant.usesIPhoneUi,
+            physics: AppVariant.usesIPhoneUi
+                ? const NeverScrollableScrollPhysics()
+                : null,
             children: [
               // TAB 1: FINANCIALS AND LEDGER
               CustomScrollView(
@@ -2251,13 +2452,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               ),
                               const SizedBox(height: 24),
                               Text(
-                                context.tr('BANK DEPOSIT BREAKDOWN'),
-                                style: const TextStyle(
-                                  color: AppColors.textFaint,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 11,
-                                  letterSpacing: 1.5,
-                                ),
+                                AppVariant.usesIPhoneUi
+                                    ? _modernSectionLabel('PAYMENT METHODS')
+                                    : context.tr('BANK DEPOSIT BREAKDOWN'),
+                                style: AppVariant.usesIPhoneUi
+                                    ? Theme.of(context).textTheme.titleMedium
+                                          ?.copyWith(
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: -.25,
+                                          )
+                                    : const TextStyle(
+                                        color: AppColors.textFaint,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                        letterSpacing: 1.5,
+                                      ),
                               ),
                               const SizedBox(height: 16),
                               if (bankTotals.isEmpty)
@@ -2353,13 +2563,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         vertical: 8.0,
                       ),
                       child: Text(
-                        context.tr('MASTER TRANSACTION LEDGER'),
-                        style: const TextStyle(
-                          color: AppColors.textFaint,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 11,
-                          letterSpacing: 1.5,
-                        ),
+                        AppVariant.usesIPhoneUi
+                            ? _modernSectionLabel('TRANSACTIONS')
+                            : context.tr('MASTER TRANSACTION LEDGER'),
+                        style: AppVariant.usesIPhoneUi
+                            ? Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -.25,
+                              )
+                            : const TextStyle(
+                                color: AppColors.textFaint,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                                letterSpacing: 1.5,
+                              ),
                       ),
                     ),
                   ),
@@ -2424,7 +2642,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               vertical: 6,
                             ),
                             padding: const EdgeInsets.all(16),
-                            borderRadius: 16,
+                            borderRadius: AppVariant.usesIPhoneUi ? 20 : 16,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -2438,7 +2656,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                           Icon(
                                             AppIcons.receipt,
                                             color: statusColor,
-                                            size: 16,
+                                            size: AppVariant.usesIPhoneUi
+                                                ? 18
+                                                : 16,
                                           ),
                                           const SizedBox(width: 8),
                                           Text(
@@ -2448,7 +2668,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                                 .bodyLarge
                                                 ?.copyWith(
                                                   fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
+                                                  fontSize:
+                                                      AppVariant.usesIPhoneUi
+                                                      ? 18
+                                                      : 16,
                                                 ),
                                           ),
                                         ],
@@ -2463,16 +2686,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                             logoSize: 22,
                                             style: TextStyle(
                                               color: bankColor,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w900,
+                                              fontSize: AppVariant.usesIPhoneUi
+                                                  ? 12
+                                                  : 10,
+                                              fontWeight:
+                                                  AppVariant.usesIPhoneUi
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w900,
                                             ),
                                           ),
                                           const SizedBox(width: 8),
                                           Text(
                                             'REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0, 8)}',
-                                            style: const TextStyle(
-                                              color: AppColors.textFaint,
-                                              fontSize: 10,
+                                            style: TextStyle(
+                                              color: AppVariant.usesIPhoneUi
+                                                  ? Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant
+                                                  : AppColors.textFaint,
+                                              fontSize: AppVariant.usesIPhoneUi
+                                                  ? 12
+                                                  : 10,
+                                              fontWeight: FontWeight.w500,
                                             ),
                                           ),
                                         ],
@@ -2480,10 +2715,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       const SizedBox(height: 4),
                                       Text(
                                         'Staff ${ticket['waiter_id']} • Table ${ticket['table_number'] ?? '—'} • ${_formatLedgerDate(ticket['created_at'])}',
-                                        style: const TextStyle(
-                                          color: AppColors.textDisabled,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
+                                        style: TextStyle(
+                                          color: AppVariant.usesIPhoneUi
+                                              ? Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant
+                                                    .withValues(alpha: .72)
+                                              : AppColors.textDisabled,
+                                          fontSize: AppVariant.usesIPhoneUi
+                                              ? 11
+                                              : 10,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                     ],
@@ -2519,6 +2761,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ],
           ),
         ),
+        bottomNavigationBar: AppVariant.usesIPhoneUi
+            ? IPhoneBottomTabBar(
+                items: [
+                  IPhoneTabItem(
+                    label: context.tr('Overview'),
+                    icon: AppIcons.analytics,
+                  ),
+                  IPhoneTabItem(label: context.tr('Team'), icon: AppIcons.team),
+                  IPhoneTabItem(
+                    label: context.tr('Manage'),
+                    icon: AppIcons.settings,
+                  ),
+                ],
+              )
+            : null,
       ),
     );
   }
@@ -2532,5 +2789,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
         error?.toString().replaceFirst('Exception: ', '') ??
         'Unable to load dashboard data.';
     return 'Dashboard data could not be loaded. $message';
+  }
+
+  String _modernSectionLabel(String value) {
+    final translated = context.tr(value);
+    if (translated.isEmpty || translated != translated.toUpperCase()) {
+      return translated;
+    }
+    final lower = translated.toLowerCase();
+    return '${lower[0].toUpperCase()}${lower.substring(1)}';
   }
 }

@@ -33,7 +33,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
   void initState() {
     super.initState();
     _session = SessionController();
-    _startup = _initialize();
+    _startup = AppVariant.isUiPreview ? Future<void>.value() : _initialize();
   }
 
   Future<void> _initialize() async {
@@ -60,7 +60,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
         final configurationError = snapshot.error is AppConfigurationException;
         return MaterialApp(
           title: AppVariant.isTest2 ? 'CHEKMI Test 2' : 'CHEKMI',
-          theme: AppTheme.dark(),
+          theme: AppTheme.dark(iPhone: AppVariant.usesIPhoneUi),
           home: Scaffold(
             body: Center(
               child: Padding(
@@ -109,7 +109,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
       if (snapshot.connectionState != ConnectionState.done) {
         return MaterialApp(
           title: AppVariant.isTest2 ? 'CHEKMI Test 2' : 'CHEKMI',
-          theme: AppTheme.dark(),
+          theme: AppTheme.dark(iPhone: AppVariant.usesIPhoneUi),
           home: const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           ),
@@ -145,11 +145,15 @@ class VerifyMeApp extends StatelessWidget {
       title: AppVariant.isTest2 ? 'CHEKMI Test 2' : 'CHEKMI',
       debugShowCheckedModeBanner: false,
       locale: localization.locale,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.light(iPhone: AppVariant.usesIPhoneUi),
+      darkTheme: AppTheme.dark(iPhone: AppVariant.usesIPhoneUi),
       themeMode: theme.mode,
-      themeAnimationDuration: const Duration(milliseconds: 650),
-      themeAnimationCurve: Curves.easeInOutCubicEmphasized,
+      themeAnimationDuration: Duration(
+        milliseconds: AppVariant.usesIPhoneUi ? 220 : 650,
+      ),
+      themeAnimationCurve: AppVariant.usesIPhoneUi
+          ? Curves.easeOutCubic
+          : Curves.easeInOutCubicEmphasized,
       builder: (context, child) =>
           AppEnvironment.environmentName.trim().toLowerCase() == 'staging'
           ? Banner(

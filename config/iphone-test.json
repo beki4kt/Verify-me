@@ -1,0 +1,6 @@
+{
+    "CHEKMI_ENV":  "staging",
+    "VERIFY_ME_API_URL":  "https://chekmi.app.aletcloud.com/api",
+    "CHEKMI_SUPABASE_URL":  "https://lpbdxtzyzlaioggefscc.supabase.co",
+    "CHEKMI_SUPABASE_PUBLISHABLE_KEY":  "sb_publishable_lZnYFdNRt3Z9oqzYTtrx_A_ATUvci-p"
+}

@@ -83,6 +83,31 @@ class ApiService {
   static Stream<List<Map<String, dynamic>>>? _withdrawalRequestsStream;
   static Stream<List<Map<String, dynamic>>>? _staffRosterStream;
   static Stream<Map<String, dynamic>>? _businessStream;
+  static final StreamController<void> _dashboardRefreshes =
+      StreamController<void>.broadcast(sync: true);
+
+  /// Wakes every active dashboard poll immediately without creating duplicate
+  /// polling streams or resetting the user's current tab.
+  static void refreshDashboardData() {
+    if (_staffSessionToken != null) _dashboardRefreshes.add(null);
+  }
+
+  static Future<void> _waitForRefresh(Duration duration) {
+    final completer = Completer<void>();
+    late final Timer timer;
+    late final StreamSubscription<void> subscription;
+
+    void complete() {
+      if (completer.isCompleted) return;
+      timer.cancel();
+      unawaited(subscription.cancel());
+      completer.complete();
+    }
+
+    subscription = _dashboardRefreshes.stream.listen((_) => complete());
+    timer = Timer(duration, complete);
+    return completer.future;
+  }
 
   // --- 1. AUTHENTICATION & BUSINESS LAYER ---
 
@@ -443,7 +468,7 @@ class ApiService {
         previousPayload = payload;
         yield business;
       }
-      await Future<void>.delayed(const Duration(seconds: 5));
+      await _waitForRefresh(const Duration(seconds: 5));
     }
   }
 
@@ -514,7 +539,7 @@ class ApiService {
         previousPayload = payload;
         yield rows;
       }
-      await Future<void>.delayed(const Duration(seconds: 5));
+      await _waitForRefresh(const Duration(seconds: 5));
     }
   }
 
@@ -561,7 +586,7 @@ class ApiService {
         previousPayload = payload;
         yield rows;
       }
-      await Future<void>.delayed(const Duration(seconds: 5));
+      await _waitForRefresh(const Duration(seconds: 5));
     }
   }
 
@@ -616,7 +641,7 @@ class ApiService {
         previousPayload = payload;
         yield rows;
       }
-      await Future<void>.delayed(const Duration(seconds: 5));
+      await _waitForRefresh(const Duration(seconds: 5));
     }
   }
 
@@ -707,7 +732,7 @@ class ApiService {
         previousPayload = payload;
         yield rows;
       }
-      await Future<void>.delayed(const Duration(seconds: 3));
+      await _waitForRefresh(const Duration(seconds: 3));
     }
   }
 
@@ -730,7 +755,7 @@ class ApiService {
         previousPayload = payload;
         yield rows;
       }
-      await Future<void>.delayed(const Duration(seconds: 5));
+      await _waitForRefresh(const Duration(seconds: 5));
     }
   }
 

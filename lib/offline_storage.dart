@@ -112,8 +112,10 @@ class DeviceStorage {
   }
 
   static Map<String, String?> getLockedBusiness() {
+    if (!Hive.isBoxOpen(_boxName)) {
+      return {'id': null, 'name': null, 'code': null};
+    }
     final box = Hive.box(_boxName);
-    if (!box.isOpen) return {'id': null, 'name': null, 'code': null};
     return {
       'id': box.get('locked_business_id'),
       'name': box.get('locked_business_name'),
@@ -128,6 +130,10 @@ class DeviceStorage {
   }
 
   static Future<void> saveThemeMode(ThemeMode mode) async {
+    // The read-side guards against a closed box; the write-side must too, or
+    // UI-preview builds (which skip Hive initialization) throw uncaught
+    // async errors whenever the theme is toggled.
+    if (!Hive.isBoxOpen(_boxName)) return;
     final box = Hive.box(_boxName);
     await box.put('theme_mode', mode == ThemeMode.light ? 'light' : 'dark');
   }
@@ -139,6 +145,7 @@ class DeviceStorage {
   }
 
   static Future<void> saveLanguageCode(String languageCode) async {
+    if (!Hive.isBoxOpen(_boxName)) return;
     final box = Hive.box(_boxName);
     await box.put('language_code', languageCode == 'am' ? 'am' : 'en');
   }
@@ -150,6 +157,7 @@ class DeviceStorage {
   }
 
   static Future<void> saveHideTipBalance(bool hidden) async {
+    if (!Hive.isBoxOpen(_boxName)) return;
     await Hive.box(_boxName).put('hide_tip_balance', hidden);
   }
 }
