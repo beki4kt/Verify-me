@@ -10,10 +10,12 @@ permissions:
 
 jobs:
   ipa:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Show Apple toolchain
+        run: xcodebuild -version
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.0'
