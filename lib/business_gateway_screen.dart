@@ -190,7 +190,7 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
           GradientText(
             AppVariant.usesMinimalCopy
                 ? 'Every payment.\nVerified.'
-                : 'Every restaurant payment.\nVerified in real time.',
+                : 'Every business payment.\nVerified in real time.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.displayLarge?.copyWith(
               fontSize: compact ? 42 : 64,
@@ -204,7 +204,7 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 690),
               child: Text(
-                'Turn every transfer into a trusted, auditable signal before service slows down. CHEKMI gives your entire restaurant one calm source of truth.',
+                'Turn every transfer into a trusted, auditable signal before service slows down. CHEKMI gives your entire business one calm source of truth.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -282,7 +282,7 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
               const SizedBox(height: AppSpacing.md),
               Text(
                 context.tr(
-                  'Enter your restaurant workspace code. You only need to do this once on this device.',
+                  'Enter your business workspace code. You only need to do this once on this device.',
                 ),
                 textAlign: wide ? TextAlign.start : TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium
@@ -521,7 +521,7 @@ class _ProductBento extends StatelessWidget {
                 icon: AppIcons.team,
                 value: '3',
                 label: 'role-aware workspaces',
-                copy: 'Waiter, cashier, and owner views stay in perfect sync.',
+                copy: 'Staff, cashier, and owner views stay in perfect sync.',
                 accent: AppColors.primary,
               ),
             ),
@@ -554,7 +554,7 @@ class _ProductBento extends StatelessWidget {
                       icon: AppIcons.team,
                       value: '3',
                       label: 'role-aware workspaces',
-                      copy: 'Waiter, cashier, and owner views stay in perfect sync.',
+                      copy: 'Staff, cashier, and owner views stay in perfect sync.',
                       accent: AppColors.primary,
                     ),
                   ),
@@ -706,7 +706,7 @@ class _VerificationPreview extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Table 08',
+                      'Invoice INV-1042',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     Text(

@@ -145,7 +145,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
     final separator = CupertinoColors.separator.resolveFrom(context);
     final fieldFill = CupertinoColors.tertiarySystemFill.resolveFrom(context);
-    final businessName = _lockedBusiness['name'] ?? 'Restaurant';
+    final businessName = _lockedBusiness['name'] ?? 'Business';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -241,7 +241,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                       child: VerticalDivider(color: separator),
                     ),
                     _iphoneDemoButton(
-                      label: context.tr('Waiter'),
+                      label: context.tr('Staff'),
                       phone: '11000003',
                       password: 'WaiterTest!2026',
                     ),
@@ -410,7 +410,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         builder: (dialogContext) => CupertinoAlertDialog(
           title: const Text('Change workspace?'),
           content: const Text(
-            'This removes the restaurant connection from this iPhone.',
+            'This removes the business connection from this iPhone.',
           ),
           actions: [
             CupertinoDialogAction(
@@ -435,7 +435,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
           AppVariant.usesMinimalCopy ? 'Change workspace?' : 'Unbind Terminal?',
         ),
         content: Text(
-          AppVariant.usesMinimalCopy ? 'Remove this workspace?' : 'This will remove the current restaurant connection from this device.',
+          AppVariant.usesMinimalCopy ? 'Remove this workspace?' : 'This will remove the current business connection from this device.',
         ),
         actions: [
           TextButton(
@@ -546,7 +546,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          _lockedBusiness['name'] ?? 'Restaurant',
+                          _lockedBusiness['name'] ?? 'Business',
                           style: AppTypography.microLabel(
                             color: AppColors.success,
                           ),
@@ -594,11 +594,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                     ),
                             ),
                             ActionChip(
-                              avatar: const Icon(
-                                AppIcons.serviceBell,
-                                size: 17,
-                              ),
-                              label: const Text('Waiter'),
+                              avatar: const Icon(AppIcons.staffBadge, size: 17),
+                              label: const Text('Staff'),
                               onPressed: _isLoading
                                   ? null
                                   : () => _useDemoAccount(
@@ -706,7 +703,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                 TextButton(
                   onPressed: _confirmUnbindDevice,
                   child: Text(
-                    context.tr('This is not your restaurant? Change workspace'),
+                    context.tr('This is not your business? Change workspace'),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),

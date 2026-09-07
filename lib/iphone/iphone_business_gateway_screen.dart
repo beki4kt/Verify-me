@@ -155,7 +155,7 @@ class _IPhoneBusinessGatewayScreenState
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: Text(
-                            'Enter the restaurant code for this iPhone.',
+                            'Enter the business code for this iPhone.',
                             style: CupertinoTheme.of(context)
                                 .textTheme
                                 .textStyle
@@ -215,7 +215,7 @@ class _IPhoneBusinessGatewayScreenState
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Secure restaurant access',
+                              'Secure business access',
                               style: CupertinoTheme.of(context)
                                   .textTheme
                                   .textStyle
@@ -298,7 +298,7 @@ class _HeroCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Fast, clear payment confirmation for restaurant teams.',
+            'Verify payment receipts for your shop, service, or business. Keep every invoice and order connected.',
             style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
               color: CupertinoColors.secondaryLabel.resolveFrom(context),
               fontSize: 15,
@@ -362,7 +362,7 @@ class _WorkspaceCard extends StatelessWidget {
               FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9-]')),
               LengthLimitingTextInputFormatter(32),
             ],
-            placeholder: 'Restaurant code',
+            placeholder: 'Business code',
             prefix: const Padding(
               padding: EdgeInsets.only(left: 13),
               child: Icon(CupertinoIcons.building_2_fill, size: 19),

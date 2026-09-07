@@ -27,6 +27,7 @@ import 'core/widgets/transaction_filter_bar.dart';
 import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
+import 'core/config/payment_context.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
 class WaiterDashboard extends StatefulWidget {
@@ -297,12 +298,12 @@ class _WaiterDashboardState extends State<WaiterDashboard>
           return EmptyView(
             icon: AppIcons.receipt,
             title: AppVariant.usesMinimalCopy
-                ? 'No tickets'
-                : context.tr('No open tickets'),
+                ? 'No payments'
+                : context.tr('No open payments'),
             message: AppVariant.usesMinimalCopy
                 ? 'Scan to add one'
                 : context.tr(
-                    'Scan a receipt to verify a payment and open a ticket.',
+                    'Scan a receipt to verify a payment and record a payment.',
                   ),
             actionLabel: context.tr('Scan a receipt'),
             onAction: () => DefaultTabController.maybeOf(context)?.animateTo(1),
@@ -352,6 +353,13 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                             Text(
                               'REF: ${ticket['transaction_ref']}',
                               style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              PaymentContext.display(ticket['table_number']),
+                              style: Theme.of(context).textTheme.bodySmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
@@ -638,7 +646,12 @@ class _WaiterDashboardState extends State<WaiterDashboard>
         );
         final totalChecked = historyChecks.fold<double>(
           0,
-          (sum, t) => sum + ((t['bill_amount'] as num?)?.toDouble() ?? 0),
+          (sum, t) =>
+              sum +
+              ((t['verified_amount'] as num?)?.toDouble() ??
+                  (t['actual_amount'] as num?)?.toDouble() ??
+                  (t['bill_amount'] as num?)?.toDouble() ??
+                  0),
         );
         final dark = Theme.of(context).brightness == Brightness.dark;
         final walletText = dark ? Colors.white : const Color(0xFF312E81);
@@ -666,7 +679,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Waiter ${ApiService.currentStaffNumber ?? ''}',
+                        'Staff ${ApiService.currentStaffNumber ?? ''}',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       if (!AppVariant.usesMinimalCopy &&
@@ -717,13 +730,14 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                   children: [
                     Row(
                       children: [
-                        Icon(AppIcons.wallet, color: walletMuted),
+                        Icon(AppIcons.receipt, color: walletMuted),
                         const SizedBox(width: 10),
-                        Text(
-                          context.tr('AVAILABLE TIPS'),
-                          style: AppTypography.microLabel(color: walletMuted),
+                        Expanded(
+                          child: Text(
+                            context.tr('VERIFIED PAYMENTS'),
+                            style: AppTypography.microLabel(color: walletMuted),
+                          ),
                         ),
-                        const Spacer(),
                         IconButton(
                           tooltip: _hideTipBalance
                               ? 'Show balance'
@@ -747,14 +761,12 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                     Text(
                       _hideTipBalance
                           ? '••••••'
-                          : '${availableTips.toStringAsFixed(2)} ETB',
+                          : '${totalChecked.toStringAsFixed(2)} ETB',
                       style: AppTypography.money(size: 32, color: walletText),
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      pendingTips > 0
-                          ? '${pendingTips.toStringAsFixed(2)} ETB pending settlement'
-                          : context.tr('All recorded tips are settled'),
+                      '${_historyPeriod.label} · ${historyChecks.length} payments · ${historySettled.length} settled',
                       style: TextStyle(
                         color: walletMuted,
                         fontWeight: FontWeight.w600,
@@ -788,36 +800,44 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                     .length;
                 return GlassPanel(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: ExpansionTile(
+                    key: const Key('optional-staff-tips'),
+                    tilePadding: EdgeInsets.zero,
+                    title: Text(context.tr('Staff tips')),
+                    subtitle: Text(context.tr('For teams that accept tips')),
                     children: [
-                      const Icon(AppIcons.outbox, color: AppColors.success),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              AppVariant.usesMinimalCopy
-                                  ? 'Withdraw'
-                                  : 'Tip withdrawal',
-                              style: TextStyle(fontWeight: FontWeight.w800),
+                      Row(
+                        children: [
+                          const Icon(AppIcons.outbox, color: AppColors.success),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  AppVariant.usesMinimalCopy
+                                      ? 'Withdraw'
+                                      : 'Tip withdrawal',
+                                  style: TextStyle(fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  pendingRequests > 0
+                                      ? '$pendingRequests request pending'
+                                      : '${withdrawable.toStringAsFixed(2)} ETB available · ${pendingTips.toStringAsFixed(2)} pending',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              pendingRequests > 0
-                                  ? '$pendingRequests request pending'
-                                  : '${withdrawable.toStringAsFixed(2)} ETB available',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: withdrawable > 0
-                            ? () => _showWithdrawalRequest(withdrawable)
-                            : null,
-                        icon: const Icon(AppIcons.send, size: 18),
-                        label: const Text('Request'),
+                          ),
+                          FilledButton.tonalIcon(
+                            onPressed: withdrawable > 0
+                                ? () => _showWithdrawalRequest(withdrawable)
+                                : null,
+                            icon: const Icon(AppIcons.send, size: 18),
+                            label: const Text('Request'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1028,10 +1048,10 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                   _profileRow(
                     AppIcons.storefront,
                     'Workspace',
-                    'Current restaurant',
+                    'Current business',
                   ),
                   const Divider(height: 28),
-                  _profileRow(AppIcons.shield, 'Access', 'Waiter'),
+                  _profileRow(AppIcons.shield, 'Access', 'Staff'),
                 ],
               ),
             ),
@@ -1148,7 +1168,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      'REF ${t['transaction_ref'] ?? '—'} • Table ${t['table_number'] ?? '—'}',
+                                      'REF ${t['transaction_ref'] ?? '—'} • ${PaymentContext.display(t['table_number'])}',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: AppTypography.microLabel(),
@@ -1362,6 +1382,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
     );
     final billController = TextEditingController();
     final tableController = TextEditingController();
+    PaymentContextKind contextKind = PaymentContextKind.invoice;
     String selectedBank = initialProvider ?? _selectedBank ?? 'Telebirr';
     bool isSubmitting = false;
     bool submissionSucceeded = false;
@@ -1392,8 +1413,8 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                   children: [
                     Text(
                       AppVariant.usesMinimalCopy
-                          ? 'NEW TICKET'
-                          : 'SUBMIT TICKET',
+                          ? 'NEW PAYMENT'
+                          : 'VERIFY PAYMENT',
                       style: TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w900,
@@ -1447,15 +1468,52 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                       },
                     ),
                     const SizedBox(height: 16),
+                    DropdownButtonFormField<PaymentContextKind>(
+                      key: const Key('payment-context-kind'),
+                      initialValue: contextKind,
+                      isExpanded: true,
+                      decoration: _buildInputDecoration(
+                        context.tr('LINK PAYMENT TO'),
+                        AppIcons.receipt,
+                      ),
+                      items: PaymentContextKind.values
+                          .map(
+                            (kind) => DropdownMenuItem(
+                              value: kind,
+                              child: Text(context.tr(kind.label)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: isSubmitting
+                          ? null
+                          : (kind) {
+                              if (kind != null) {
+                                setSheetState(() => contextKind = kind);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
+                      key: const Key('payment-context-value'),
                       controller: tableController,
+                      enabled: !isSubmitting,
+                      maxLength: 80,
                       textCapitalization: TextCapitalization.characters,
                       style: Theme.of(context).textTheme.bodyLarge
                           ?.copyWith(fontWeight: FontWeight.bold),
-                      decoration: _buildInputDecoration(
-                        AppVariant.usesMinimalCopy ? 'TABLE' : 'TABLE NUMBER',
-                        AppIcons.table,
-                      ),
+                      decoration:
+                          _buildInputDecoration(
+                            '${context.tr(contextKind.fieldLabel)} (${context.tr('optional')})',
+                            contextKind == PaymentContextKind.table
+                                ? AppIcons.table
+                                : AppIcons.receipt,
+                          ).copyWith(
+                            hintText: contextKind.hint,
+                            helperText: context.tr(
+                              'Leave blank to use the bank reference.',
+                            ),
+                            helperMaxLines: 2,
+                          ),
                     ),
                     const SizedBox(height: 16),
 
@@ -1494,7 +1552,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                           _buildInputDecoration(
                             AppVariant.usesMinimalCopy
                                 ? 'AMOUNT (ETB)'
-                                : 'EXPECTED BILL AMOUNT (ETB)',
+                                : 'AMOUNT DUE (ETB)',
                             AppIcons.money,
                           ).copyWith(
                             filled: true,
@@ -1505,7 +1563,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                     if (!AppVariant.usesMinimalCopy) ...[
                       const SizedBox(height: 8),
                       const Text(
-                        'Any transferred amount exceeding this expected bill will be classified as a tip by the cashier.',
+                        'Enter the full amount due. Any excess payment is currently recorded as a staff tip.',
                         style: TextStyle(
                           color: AppColors.textFaint,
                           fontSize: 10,
@@ -1536,11 +1594,10 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                       onPressed: isSubmitting
                           ? null
                           : () async {
-                              if (tableController.text.trim().isEmpty ||
-                                  refController.text.isEmpty ||
+                              if (refController.text.trim().isEmpty ||
                                   billController.text.isEmpty) {
                                 setSheetState(
-                                  () => errorText = 'Please provide the table number, transaction ref, and bill amount.',
+                                  () => errorText = 'Enter the bank transaction reference and amount due.',
                                 );
                                 return;
                               }
@@ -1562,7 +1619,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                     !enteredAmount.isFinite ||
                                     enteredAmount <= 0) {
                                   throw Exception(
-                                    'Enter a valid positive bill amount.',
+                                    'Enter a valid positive amount due.',
                                   );
                                 }
 
@@ -1571,7 +1628,11 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                       transactionId: transactionId,
                                       provider: selectedBank,
                                       expectedAmount: enteredAmount,
-                                      tableNumber: tableController.text.trim(),
+                                      tableNumber: PaymentContext.encode(
+                                        contextKind,
+                                        tableController.text,
+                                        transactionId,
+                                      ),
                                       receiptImageBytes: receiptImageBytes,
                                     );
 
@@ -1627,7 +1688,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                           : Text(
                               AppVariant.usesMinimalCopy
                                   ? 'SUBMIT'
-                                  : 'SUBMIT TICKET',
+                                  : 'VERIFY PAYMENT',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
@@ -1674,7 +1735,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
       child: Scaffold(
         appBar: AppVariant.usesIPhoneUi
             ? IPhoneDashboardNavigationBar(
-                title: Text(context.tr(widget.trialMode ? 'Demo' : 'Waiter')),
+                title: Text(context.tr(widget.trialMode ? 'Demo' : 'Staff')),
                 onSignOut: _signOutOrExit,
                 onHelp: _openHelpAndPrivacy,
                 onRefresh: _refreshData,
@@ -1708,15 +1769,15 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                   tabs: [
                     Tab(
                       icon: const Icon(AppIcons.receipt, size: 18),
-                      text: context.tr('Tickets'),
+                      text: context.tr('Payments'),
                     ),
                     Tab(
                       icon: const Icon(AppIcons.scanReceipt, size: 18),
                       text: context.tr('Scan receipt'),
                     ),
                     Tab(
-                      icon: const Icon(AppIcons.wallet, size: 18),
-                      text: context.tr('Wallet'),
+                      icon: const Icon(AppIcons.history, size: 18),
+                      text: context.tr('Activity'),
                     ),
                   ],
                 ),
@@ -1736,7 +1797,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
             ? IPhoneBottomTabBar(
                 items: [
                   IPhoneTabItem(
-                    label: context.tr('Tickets'),
+                    label: context.tr('Payments'),
                     icon: AppIcons.receipt,
                   ),
                   IPhoneTabItem(
@@ -1744,8 +1805,8 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                     icon: AppIcons.scanReceipt,
                   ),
                   IPhoneTabItem(
-                    label: context.tr('Wallet'),
-                    icon: AppIcons.wallet,
+                    label: context.tr('Activity'),
+                    icon: AppIcons.history,
                   ),
                 ],
               )

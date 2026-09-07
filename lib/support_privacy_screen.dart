@@ -133,7 +133,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Everything you send here is tied to your secure restaurant session and visible to the CHEKMI owner team.',
+                'Everything you send here is tied to your secure business session and visible to the CHEKMI owner team.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -395,7 +395,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         accent: AppColors.aqua,
         accepted: _acceptedPolicies.contains('privacy'),
         points: const [
-          'CHEKMI processes staff identity, restaurant configuration, payment references, verification evidence, and operational audit events.',
+          'CHEKMI processes staff identity, business configuration, payment references, verification evidence, and operational audit events.',
           'Access is tenant-scoped. Credentials and backend service keys are never included in support or crash logs.',
           'Receipt evidence is retained for 365 days by default; statutory financial records are retained for up to seven years.',
           'Access, correction, or deletion questions can be submitted through the support form on this screen.',
@@ -411,7 +411,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         accent: AppColors.primary,
         accepted: _acceptedPolicies.contains('terms'),
         points: const [
-          'CHEKMI assists with payment verification and restaurant workflow; the payment provider remains the source of settlement truth.',
+          'CHEKMI assists with payment verification and business workflow; the payment provider remains the source of settlement truth.',
           'Users must protect credentials, use assigned accounts, and report suspicious verification or access activity promptly.',
           'Plans control usage and features. Suspension may occur after expiry, abuse, or a material security risk.',
           'Financial disputes and refunds require documented review and remain subject to provider and applicable legal rules.',
@@ -462,13 +462,13 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Restaurant account deletion',
+                        'Business account deletion',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       Text(
                         widget.allowAccountDeletion
                             ? 'Requests enter a protected review and statutory-retention workflow.'
-                            : 'Only a restaurant administrator can submit this request.',
+                            : 'Only a business administrator can submit this request.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],

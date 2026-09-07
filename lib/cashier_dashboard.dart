@@ -21,6 +21,7 @@ import 'core/widgets/app_shell.dart';
 import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
+import 'core/config/payment_context.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
 class CashierDashboard extends StatefulWidget {
@@ -108,10 +109,15 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     children: [
                       _summaryRow('REF', ref),
                       const Divider(color: AppColors.hairline, height: 24),
-                      _summaryRow('WAITER', 'ID: $waiterId'),
+                      _summaryRow(
+                        'FOR',
+                        PaymentContext.display(ticket['table_number']),
+                      ),
+                      const Divider(color: AppColors.hairline, height: 24),
+                      _summaryRow('STAFF', 'ID: $waiterId'),
                       const Divider(color: AppColors.hairline, height: 24),
                       _summaryRow(
-                        AppVariant.usesMinimalCopy ? 'BILL' : 'EXPECTED BILL',
+                        AppVariant.usesMinimalCopy ? 'DUE' : 'AMOUNT DUE',
                         '${expectedAmount.toStringAsFixed(2)} ETB',
                         valueColor: AppColors.success,
                       ),
@@ -208,7 +214,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              AppVariant.usesMinimalCopy ? 'AMOUNT BELOW BILL' : 'SHORTFALL. Amount is less than the bill. Settlement blocked.',
+                              AppVariant.usesMinimalCopy ? 'AMOUNT BELOW DUE' : 'SHORTFALL. Amount is less than the amount due. Settlement blocked.',
                               style: AppTypography.microLabel(
                                 color: AppColors.danger,
                               ).copyWith(fontSize: 12),
@@ -241,7 +247,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                               Navigator.pop(context);
                               messenger.showSnackBar(
                                 const SnackBar(
-                                  content: Text('Ticket rejected.'),
+                                  content: Text('Payment rejected.'),
                                   backgroundColor: AppColors.danger,
                                 ),
                               );
@@ -265,7 +271,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         : Text(
                             AppVariant.usesMinimalCopy
                                 ? 'REJECT'
-                                : 'REJECT TICKET',
+                                : 'REJECT PAYMENT',
                           ),
                   )
                 else
@@ -308,7 +314,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         : Text(
                             AppVariant.usesMinimalCopy
                                 ? 'SETTLE'
-                                : 'SETTLE TICKET',
+                                : 'SETTLE PAYMENT',
                           ),
                   ),
               ],
@@ -398,6 +404,13 @@ class _CashierDashboardState extends State<CashierDashboard> {
                               '${amount.toStringAsFixed(2)} ETB',
                               style: AppTypography.money(size: 18),
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              PaymentContext.display(t['table_number']),
+                              style: Theme.of(context).textTheme.bodySmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                             const SizedBox(height: 6),
                             Row(
                               children: [
@@ -449,7 +462,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
             .toList();
         if (past.isEmpty) {
           return EmptyView(
-            message: context.tr('No settled tickets yet.'),
+            message: context.tr('No settled payments yet.'),
             icon: AppIcons.receipt,
           );
         }
@@ -498,8 +511,13 @@ class _CashierDashboardState extends State<CashierDashboard> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'REF: ${t['transaction_ref']}  •  Waiter: ${t['waiter_id']}',
+                      'REF: ${t['transaction_ref']}  •  Staff: ${t['waiter_id']}',
                       style: AppTypography.microLabel(),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      PaymentContext.display(t['table_number']),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     if (isSettled && tip > 0)
                       Padding(
@@ -575,7 +593,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   onPressed: _openHelpAndPrivacy,
                 ),
                 IconButton(
-                  tooltip: 'Refresh tickets',
+                  tooltip: 'Refresh payments',
                   icon: const Icon(AppIcons.refresh),
                   onPressed: _refreshData,
                 ),

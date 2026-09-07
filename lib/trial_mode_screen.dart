@@ -156,7 +156,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
           avatar: const Icon(AppIcons.shield, size: 16),
           label: Text(
             _role == TrialRole.waiter
-                ? (AppVariant.usesMinimalCopy ? 'LIVE' : 'LIVE WAITER FLOW')
+                ? (AppVariant.usesMinimalCopy ? 'LIVE' : 'LIVE PAYMENT FLOW')
                 : (AppVariant.usesMinimalCopy ? 'DEMO' : 'GUIDED DEMO'),
           ),
         ),
@@ -182,8 +182,8 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
           segments: [
             ButtonSegment(
               value: TrialRole.waiter,
-              icon: const Icon(AppIcons.serviceBell),
-              label: Text(context.tr('Waiter')),
+              icon: const Icon(AppIcons.receipt),
+              label: Text(context.tr('Staff')),
             ),
             ButtonSegment(
               value: TrialRole.cashier,
@@ -210,13 +210,13 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
   Widget _rolePreview() {
     final data = switch (_role) {
       TrialRole.waiter => (
-        title: context.tr('Waiter workspace'),
-        icon: AppIcons.serviceBell,
+        title: context.tr('Payment workspace'),
+        icon: AppIcons.receipt,
         color: AppColors.telebirr,
         metrics: [
-          (context.tr('Available tips'), '420 ETB'),
-          (context.tr('Open tickets'), '3'),
-          (context.tr('Today'), '12 served'),
+          (context.tr('Verified payments'), '24,850 ETB'),
+          (context.tr('Open payments'), '3'),
+          (context.tr('Today'), '12 verified'),
         ],
       ),
       TrialRole.cashier => (
@@ -230,12 +230,12 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
         ],
       ),
       TrialRole.admin => (
-        title: context.tr('Restaurant overview'),
+        title: context.tr('Business overview'),
         icon: AppIcons.analytics,
         color: AppColors.success,
         metrics: [
           (context.tr('TOTAL REVENUE'), '24,850 ETB'),
-          (context.tr('Open tickets'), '5'),
+          (context.tr('Open payments'), '5'),
           (context.tr('Staff online'), '7'),
         ],
       ),
@@ -329,7 +329,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 4),
-                const Text('TXN8K2M4  •  Table 08'),
+                const Text('TXN8K2M4  •  Invoice INV-1042'),
               ],
             ),
           ),
@@ -356,14 +356,14 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
         const Icon(AppIcons.scanReceipt, color: AppColors.telebirr, size: 52),
         const SizedBox(height: AppSpacing.lg),
         Text(
-          context.tr('Waiter workspace'),
+          context.tr('Payment workspace'),
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleLarge,
         ),
         if (!AppVariant.usesMinimalCopy) ...[
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Open the real waiter scanner, ticket, and wallet workflow.',
+            'Scan a payment receipt and link it to an invoice, order, or customer.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
@@ -384,7 +384,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
                   ),
                 )
               : const Icon(AppIcons.forward),
-          label: Text(_openingWaiter ? 'OPENING' : 'OPEN WAITER'),
+          label: Text(_openingWaiter ? 'OPENING' : 'OPEN PAYMENTS'),
         ),
       ],
     ),
@@ -448,7 +448,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
         '+251911000003',
         'WaiterTest!2026',
       );
-      if (role != 'waiter') throw Exception('Demo waiter unavailable.');
+      if (role != 'waiter') throw Exception('Demo staff account unavailable.');
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -547,7 +547,7 @@ class _TrialModeScreenState extends State<TrialModeScreen> {
                 const SizedBox(height: 6),
                 Text(
                   context.tr(
-                    'Compare Basic and Pro, then choose the right next step for your restaurant.',
+                    'Compare Basic and Pro, then choose the right next step for your business.',
                   ),
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),

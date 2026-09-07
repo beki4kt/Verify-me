@@ -1,5 +1,5 @@
 name: verify_me
-description: "CHEKMI restaurant payment management and verification."
+description: "CHEKMI payment receipt verification for every business."
 publish_to: 'none'
 version: 1.0.0+1
 

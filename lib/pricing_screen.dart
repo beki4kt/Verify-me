@@ -158,7 +158,7 @@ class _PricingScreenState extends State<PricingScreen> {
       if (!AppVariant.usesMinimalCopy) ...[
         const SizedBox(height: 8),
         Text(
-          'Start small with Basic, or choose Pro for the complete restaurant command center.',
+          'Start small with Basic, or choose Pro for the complete business command center.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge,
         ).animate().fadeIn(delay: 180.ms),
@@ -242,7 +242,7 @@ class _PricingScreenState extends State<PricingScreen> {
                   Text(
                     signedIn
                         ? 'Send the owner team a billing request. Your current service stays active during review.'
-                        : 'Connect your restaurant workspace and the CHEKMI team will activate your selection.',
+                        : 'Connect your business workspace and the CHEKMI team will activate your selection.',
                     textAlign: compact ? TextAlign.center : TextAlign.start,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -337,7 +337,7 @@ class _PricingScreenState extends State<PricingScreen> {
         category: 'billing',
         subject: '${_selectedPlan.name} plan request',
         description:
-            'Please review and activate the ${_selectedPlan.name} plan on the $billingLabel billing cycle for this restaurant.',
+            'Please review and activate the ${_selectedPlan.name} plan on the $billingLabel billing cycle for this business.',
         priority: 'normal',
       );
       if (!mounted) return;
@@ -379,7 +379,7 @@ class _PlanChoice extends StatelessWidget {
   static const _basicFeatures = [
     '2,500 verifications each month',
     '1 staff seat and all 6 providers',
-    'Receipt scanning and live tickets',
+    'Receipt scanning and payment tracking',
     'Recent transaction history',
   ];
 
@@ -393,7 +393,7 @@ class _PlanChoice extends StatelessWidget {
   static const _minimalBasicFeatures = [
     '2,500 checks / month',
     '1 staff · 6 providers',
-    'Scan · tickets · history',
+    'Scan · payments · history',
   ];
 
   static const _minimalProFeatures = [
@@ -576,7 +576,7 @@ class _PlanChoice extends StatelessWidget {
                                       ),
                                     ),
                                     Text(
-                                      'Sized to your restaurant',
+                                      'Sized to your business',
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall,

@@ -45,7 +45,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
     if (lockedBusiness['id'] != null) {
       _session.bindBusiness(
         businessId: lockedBusiness['id']!,
-        businessName: lockedBusiness['name'] ?? 'Restaurant',
+        businessName: lockedBusiness['name'] ?? 'Business',
       );
       ApiService.currentBusinessId = lockedBusiness['id'];
     }

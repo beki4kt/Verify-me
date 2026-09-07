@@ -23,6 +23,7 @@ import 'plan_catalog.dart';
 import 'pricing_screen.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
+import 'core/config/payment_context.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
 class _PaymentAccountProvider {
@@ -57,7 +58,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
   ),
   _PaymentAccountProvider(
     name: 'Commercial Bank of Ethiopia',
-    description: 'Official CBE account used for restaurant transfers.',
+    description: 'Official CBE account used for business transfers.',
     numberLabel: 'CBE account number',
     numberKey: 'cbe_number',
     nameKey: 'cbe_name',
@@ -66,7 +67,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
   ),
   _PaymentAccountProvider(
     name: 'CBE Birr',
-    description: 'Wallet or phone number registered to the restaurant.',
+    description: 'Wallet or phone number registered to the business.',
     numberLabel: 'CBE Birr wallet number',
     numberKey: 'cbebirr_number',
     nameKey: 'cbebirr_name',
@@ -93,7 +94,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
   ),
   _PaymentAccountProvider(
     name: 'M-Pesa',
-    description: 'Restaurant mobile wallet, paybill, or till number.',
+    description: 'Business mobile wallet, paybill, or till number.',
     numberLabel: 'M-Pesa number / till',
     numberKey: 'mpesa_number',
     nameKey: 'mpesa_name',
@@ -386,7 +387,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   List<DropdownMenuItem<String>> _getAvailableRoles() {
     List<DropdownMenuItem<String>> roles = [
-      const DropdownMenuItem(value: 'waiter', child: Text('Waiter')),
+      const DropdownMenuItem(value: 'waiter', child: Text('Staff')),
     ];
     if (ApiService.currentBusinessHasCashier == true) {
       roles.insert(
@@ -501,7 +502,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                         if (!AppVariant.usesMinimalCopy) ...[
                                           const SizedBox(height: 4),
                                           Text(
-                                            'Add the official receiving account for every provider your restaurant accepts.',
+                                            'Add the official receiving account for every provider your business accepts.',
                                             style: theme.textTheme.bodySmall
                                                 ?.copyWith(
                                                   color: theme
@@ -563,7 +564,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: Text(
-                                          'Receipt destinations are checked against these values. Leave a provider blank only when the restaurant does not accept it.',
+                                          'Receipt destinations are checked against these values. Leave a provider blank only when the business does not accept it.',
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(height: 1.45),
                                         ),
@@ -1769,7 +1770,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           const Padding(
             padding: EdgeInsets.only(top: 72),
             child: EmptyView(
-              message: 'No floor staff yet. Add the first team member.',
+              message: 'No payment staff yet. Add the first team member.',
               icon: AppIcons.team,
             ),
           )
@@ -1783,7 +1784,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final staffNumber = staff['staff_number']?.toString() ?? '';
     final isActive = staff['is_active'] as bool? ?? true;
     final isUpdating = _staffStatusUpdates.contains(staffNumber);
-    final roleName = staff['role']?.toString().toUpperCase() ?? 'UNKNOWN';
+    final roleName = PaymentContext.roleLabel(staff['role']).toUpperCase();
     final roleDisplay = roleName.isEmpty
         ? roleName
         : '${roleName[0]}${roleName.substring(1).toLowerCase()}';
@@ -1819,7 +1820,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   child: Icon(
                     roleName == 'CASHIER'
                         ? AppIcons.pointOfSale
-                        : AppIcons.serviceBell,
+                        : AppIcons.staffBadge,
                     color: roleColor,
                     size: 18,
                   ),
@@ -2317,7 +2318,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     final type =
                         business?['business_type']?.toString() ??
                         business?['subscription_tier']?.toString() ??
-                        'Restaurant';
+                        'Business';
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -2443,7 +2444,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: _buildMetricCard(
-                                      context.tr('ACTIVE BILLS'),
+                                      context.tr('OPEN PAYMENTS'),
                                       '$pendingCount',
                                       const Color(0xFFF59E0B),
                                     ),
@@ -2714,7 +2715,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        'Staff ${ticket['waiter_id']} • Table ${ticket['table_number'] ?? '—'} • ${_formatLedgerDate(ticket['created_at'])}',
+                                        'Staff ${ticket['waiter_id']} • ${PaymentContext.display(ticket['table_number'])} • ${_formatLedgerDate(ticket['created_at'])}',
                                         style: TextStyle(
                                           color: AppVariant.usesIPhoneUi
                                               ? Theme.of(context)
