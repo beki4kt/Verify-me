@@ -1519,6 +1519,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
 
                     TextField(
                       controller: refController,
+                      enabled: !isSubmitting,
                       textCapitalization: TextCapitalization.characters,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.bold,
@@ -1535,6 +1536,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
 
                     TextField(
                       controller: billController,
+                      enabled: !isSubmitting,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -1606,15 +1608,14 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                 isSubmitting = true;
                                 errorText = null;
                               });
+                              FocusScope.of(context).unfocus();
 
                               try {
                                 final amountStr = billController.text.trim();
                                 final enteredAmount = double.tryParse(
                                   amountStr,
                                 );
-                                final transactionId = refController.text
-                                    .trim()
-                                    .toUpperCase();
+                                final transactionId = refController.text.trim();
                                 if (enteredAmount == null ||
                                     !enteredAmount.isFinite ||
                                     enteredAmount <= 0) {

@@ -6,55 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_environment.dart';
+import 'core/models/verification_result.dart';
+import 'core/services/payment_verification_client.dart';
 import 'core/session/session_controller.dart';
 
-class VerificationResult {
-  final bool isSuccess;
-  final String? errorMessage;
-  final String? errorCode;
-  final bool retryable;
-  final int? retryAfterSeconds;
-  final Map<String, dynamic>? data;
-
-  VerificationResult({
-    required this.isSuccess,
-    this.errorMessage,
-    this.errorCode,
-    this.retryable = false,
-    this.retryAfterSeconds,
-    this.data,
-  });
-
-  String get displayErrorMessage {
-    final message = errorMessage ?? 'Payment verification failed.';
-    return switch (errorCode) {
-      'SESSION_REQUIRED' || 'SESSION_EXPIRED' => 'Your staff session expired. Sign in again before verifying this payment.',
-      'RECEIVING_ACCOUNT_INVALID' =>
-        '$message Ask the restaurant administrator to update this provider account.',
-      'DESTINATION_MISMATCH' =>
-        '$message Confirm that the customer paid the restaurant account shown at checkout.',
-      'UNDERPAID' => '$message Ask the customer to pay the remaining balance.',
-      'TRANSACTION_TOO_OLD' =>
-        '$message Use a receipt inside the allowed verification window.',
-      'DUPLICATE_PAYMENT' =>
-        '$message Refresh the ticket list before attempting another verification.',
-      'RATE_LIMIT' || 'PROVIDER_RATE_LIMIT' =>
-        retryAfterSeconds == null
-            ? 'Too many attempts. Try again shortly.'
-            : 'Too many attempts. Retry in about $retryAfterSeconds seconds.',
-      'PROVIDER_UNAVAILABLE' ||
-      'VERIFIER_TEMPORARILY_UNAVAILABLE' ||
-      'VERIFIER_ERROR' =>
-        retryAfterSeconds == null
-            ? 'Payment service unavailable. Try again shortly.'
-            : 'Payment service unavailable. Retry in about $retryAfterSeconds seconds.',
-      'CONNECTION_FAILED' =>
-        'Cannot reach CHEKMI. Check your connection and try again.',
-      'TIMEOUT' => 'Still checking. Refresh tickets before retrying.',
-      _ => message,
-    };
-  }
-}
+export 'core/models/verification_result.dart';
 
 class ApiService {
   static String get baseUrl => AppEnvironment.apiBaseUrl;
@@ -329,56 +285,34 @@ class ApiService {
         errorCode: 'INVALID_PROVIDER',
       );
     }
+    final client = http.Client();
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/verify-and-create'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': 'Bearer ${_requireSessionToken()}',
-              'User-Agent': 'CHEKMI/1.0',
-            },
-            body: jsonEncode({
-              'reference': transactionId.trim().toUpperCase(),
+      final result =
+          await PaymentVerificationClient(
+            client: client,
+            endpoint: Uri.parse(AppEnvironment.verificationUrl),
+            supportsStatus: AppEnvironment.usesEdgeVerification,
+          ).verify(
+            token: _requireSessionToken(),
+            publicKey: AppEnvironment.supabasePublishableKey,
+            body: {
+              'reference': transactionId.trim(),
               'provider': normalizedProvider,
               'expectedAmount': expectedAmount,
               'tableNumber': tableNumber.trim(),
               if (receiptImageBytes != null)
                 'receiptImageBase64': base64Encode(receiptImageBytes),
-            }),
-          )
-          .timeout(const Duration(seconds: 35));
-      final decoded = response.body.isEmpty
-          ? <String, dynamic>{}
-          : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return VerificationResult(isSuccess: true, data: decoded);
-      }
+            },
+          );
+      refreshDashboardData();
+      return result;
+    } catch (_) {
       return VerificationResult(
         isSuccess: false,
-        errorMessage:
-            decoded['error']?.toString() ??
-            'Verification failed (${response.statusCode}).',
-        errorCode: decoded['code']?.toString(),
-        retryable: decoded['retryable'] == true,
-        retryAfterSeconds: (decoded['retryAfterSeconds'] as num?)?.toInt(),
-        data: decoded,
+        errorCode: 'SESSION_REQUIRED',
       );
-    } on TimeoutException {
-      return VerificationResult(
-        isSuccess: false,
-        errorMessage: 'Verification timed out. Check before retrying.',
-        errorCode: 'TIMEOUT',
-        retryable: true,
-      );
-    } catch (error) {
-      return VerificationResult(
-        isSuccess: false,
-        errorMessage: 'Cannot reach CHEKMI.',
-        errorCode: 'CONNECTION_FAILED',
-        retryable: true,
-      );
+    } finally {
+      client.close();
     }
   }
 

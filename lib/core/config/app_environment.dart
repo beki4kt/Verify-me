@@ -24,6 +24,14 @@ class AppEnvironment {
   static const String _configuredApiUrl = String.fromEnvironment(
     'VERIFY_ME_API_URL',
   );
+  static const String _configuredVerificationUrl = String.fromEnvironment(
+    'CHEKMI_VERIFICATION_URL',
+  );
+  static bool get usesEdgeVerification =>
+      _configuredVerificationUrl.trim().isNotEmpty;
+  static String get verificationUrl => usesEdgeVerification
+      ? _normalizeUrl(_configuredVerificationUrl)
+      : '$apiBaseUrl/verify-and-create';
   static const String _configuredSupabaseUrl = String.fromEnvironment(
     'CHEKMI_SUPABASE_URL',
   );
@@ -64,6 +72,7 @@ class AppEnvironment {
       apiUrlWasProvided: _configuredApiUrl.trim().isNotEmpty,
       supabaseUrlWasProvided: _configuredSupabaseUrl.trim().isNotEmpty,
       supabaseKeyWasProvided: _configuredSupabaseKey.trim().isNotEmpty,
+      verificationUrl: _configuredVerificationUrl,
     );
     if (problems.isNotEmpty) throw AppConfigurationException(problems);
   }
@@ -77,10 +86,27 @@ class AppEnvironment {
     bool apiUrlWasProvided = true,
     bool supabaseUrlWasProvided = true,
     bool supabaseKeyWasProvided = true,
+    String verificationUrl = '',
   }) {
     final problems = <String>[];
     final mode = environment.trim().toLowerCase();
     final protectedMode = mode == 'production' || mode == 'staging';
+    if (verificationUrl.trim().isNotEmpty) {
+      _validateEndpoint(
+        value: verificationUrl,
+        label: 'CHEKMI_VERIFICATION_URL',
+        requireHttps: true,
+        problems: problems,
+      );
+      final uri = Uri.tryParse(verificationUrl);
+      final project = Uri.tryParse(supabaseUrl);
+      if (uri?.host != project?.host ||
+          uri?.path != '/functions/v1/chekmi-verify') {
+        problems.add(
+          'CHEKMI_VERIFICATION_URL must use this Supabase project’s chekmi-verify function.',
+        );
+      }
+    }
     if (!const {'development', 'staging', 'production'}.contains(mode)) {
       problems.add('CHEKMI_ENV must be development, staging, or production.');
     }
