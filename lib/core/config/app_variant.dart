@@ -2,8 +2,7 @@ import 'package:flutter/foundation.dart';
 
 /// Compile-time product switches used by installable review builds.
 ///
-/// Test 2 keeps production behaviour intact while presenting a shorter,
-/// icon-led interface for visual review.
+/// Product presentation switches shared by installable and preview builds.
 abstract final class AppVariant {
   static const bool isTest2 = bool.fromEnvironment('CHEKMI_TEST2');
   static const bool forceIPhoneUi = bool.fromEnvironment('CHEKMI_IPHONE_UI');
@@ -13,7 +12,7 @@ abstract final class AppVariant {
   );
   static const bool usesMinimalCopy = bool.fromEnvironment(
     'CHEKMI_MINIMAL_UI',
-    defaultValue: isTest2,
+    defaultValue: true,
   );
 
   /// Uses the native-feeling iPhone presentation on iOS, while allowing the

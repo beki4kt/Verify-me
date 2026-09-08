@@ -45,8 +45,10 @@ void main() {
     'connected login supports keyboard, password visibility and reduced motion',
     (tester) async {
       await show(tester, const StaffLoginScreen(), reducedMotion: true);
-      expect(find.text('WORKSPACE CONNECTED'), findsOneWidget);
-      expect(find.text('Your team.\nReady for business.'), findsOneWidget);
+      expect(find.byKey(const Key('login-business-code')), findsOneWidget);
+      expect(find.text('Sign in'), findsWidgets);
+      expect(find.text('WORKSPACE CONNECTED'), findsNothing);
+      expect(find.text('Your team.\nReady for business.'), findsNothing);
       await tester.ensureVisible(
         find.byKey(const Key('iphone-staff-password')),
       );
@@ -76,7 +78,7 @@ void main() {
         ),
       );
       await show(tester, TrialModeScreen(client: client, manualOnly: true));
-      expect(find.text('0 of 10 free checks remaining'), findsOneWidget);
+      expect(find.text('0 free checks left'), findsOneWidget);
       await tester.ensureVisible(find.text('Telebirr'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Telebirr'));
@@ -99,7 +101,7 @@ void main() {
     await tester.ensureVisible(find.text('Telebirr'));
     await tester.tap(find.text('Telebirr'));
     await tester.pumpAndSettle();
-    expect(find.text('DEMO SCAN MODE'), findsOneWidget);
+    expect(find.text('DEMO SCAN MODE'), findsNothing);
     expect(find.byKey(const Key('demo-reference')), findsOneWidget);
     expect(find.byType(WaiterDashboard), findsNothing);
     client.close();

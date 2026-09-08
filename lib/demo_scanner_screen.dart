@@ -87,32 +87,18 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const HeroPillBadge(
-                    label: 'TRY A REAL RECEIPT',
-                    icon: AppIcons.scanReceipt,
-                  ),
-                  const SizedBox(height: 16),
                   Text(
-                    'Choose a payment method.',
+                    'Payment method',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Scan a receipt or enter its reference. See the provider’s result without connecting a business.',
-                  ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
                   Text(
                     _remaining == null
-                        ? '10 free checks per installation'
-                        : '$_remaining of 10 free checks remaining',
+                        ? '10 free checks'
+                        : '$_remaining free checks left',
                     key: const Key('demo-remaining'),
                     style: Theme.of(context).textTheme.titleMedium
                         ?.copyWith(color: AppColors.aqua),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Each lookup uses one check, including unsuccessful lookups. Demo results are not saved as business payments.',
-                    style: TextStyle(fontSize: 12, height: 1.5),
                   ),
                 ],
               ),
@@ -128,9 +114,7 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
           ],
           if (_remaining == 0) ...[
             const SizedBox(height: 20),
-            const Text(
-              'Your 10 free checks are complete. Connect your business from the welcome screen to continue.',
-            ),
+            const Text('Free checks used.'),
           ],
           const SizedBox(height: 22),
           LayoutBuilder(
@@ -167,17 +151,10 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
                                 methods[i].$2,
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
-                              const SizedBox(height: 6),
-                              const Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Try a receipt',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                  Icon(AppIcons.forward, size: 17),
-                                ],
+                              const SizedBox(height: 10),
+                              const Align(
+                                alignment: Alignment.centerRight,
+                                child: Icon(AppIcons.forward, size: 17),
                               ),
                             ],
                           ),
@@ -366,15 +343,8 @@ class _DemoReceiptScreenState extends State<_DemoReceiptScreen>
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const HeroPillBadge(
-            label: 'DEMO SCAN MODE',
-            icon: AppIcons.scanReceipt,
-          ),
-          const SizedBox(height: 16),
           Text(
-            _remaining == null
-                ? '10 free checks per installation'
-                : '$_remaining checks remaining',
+            _remaining == null ? '10 free checks' : '$_remaining checks left',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
@@ -416,16 +386,9 @@ class _DemoReceiptScreenState extends State<_DemoReceiptScreen>
                 labelText: widget.provider == 'cbebirr'
                     ? 'Receiving phone number'
                     : 'Receiving bank account',
-                helperText: 'Use the destination shown on this receipt.',
-                helperMaxLines: 2,
               ),
             ),
           ],
-          const SizedBox(height: 18),
-          const Text(
-            'This checks the receipt with the provider. It does not confirm payment to a connected business.',
-            style: TextStyle(fontSize: 12, height: 1.5),
-          ),
           if (_error != null) ...[
             const SizedBox(height: 16),
             ErrorBanner(message: _error!),
@@ -437,7 +400,7 @@ class _DemoReceiptScreenState extends State<_DemoReceiptScreen>
           ),
           TextButton(
             onPressed: _busy ? null : () => _verify(statusOnly: true),
-            child: const Text('Check last result · no extra check'),
+            child: const Text('Last result'),
           ),
           if (_result != null) ...[
             const SizedBox(height: 20),

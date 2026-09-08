@@ -296,15 +296,6 @@ class _HeroCard extends StatelessWidget {
                   letterSpacing: -1.1,
                 ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Verify payment receipts for your shop, service, or business. Keep every invoice and order connected.',
-            style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-              color: CupertinoColors.secondaryLabel.resolveFrom(context),
-              fontSize: 15,
-              height: 1.45,
-            ),
-          ),
         ],
       ),
     ),

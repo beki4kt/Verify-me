@@ -180,13 +180,13 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
       constraints: const BoxConstraints(maxWidth: 940),
       child: Column(
         children: [
-          HeroPillBadge(
-            label: AppVariant.usesMinimalCopy
-                ? 'PAYMENTS, VERIFIED'
-                : 'REAL-TIME PAYMENT OPERATIONS',
-            icon: AppIcons.verified,
-          ),
-          const SizedBox(height: AppSpacing.lg),
+          if (!AppVariant.usesMinimalCopy) ...[
+            const HeroPillBadge(
+              label: 'REAL-TIME PAYMENT OPERATIONS',
+              icon: AppIcons.verified,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
           GradientText(
             AppVariant.usesMinimalCopy
                 ? 'Every payment.\nVerified.'
@@ -267,8 +267,10 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
               ? CrossAxisAlignment.start
               : CrossAxisAlignment.center,
           children: [
-            const HeroPillBadge(label: 'ONE CODE AWAY', icon: AppIcons.key),
-            const SizedBox(height: AppSpacing.lg),
+            if (!AppVariant.usesMinimalCopy) ...[
+              const HeroPillBadge(label: 'ONE CODE AWAY', icon: AppIcons.key),
+              const SizedBox(height: AppSpacing.lg),
+            ],
             GradientText(
               context.tr('Connect this terminal'),
               textAlign: wide ? TextAlign.start : TextAlign.center,
@@ -289,17 +291,19 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                     ?.copyWith(height: 1.55),
               ),
             ],
-            const SizedBox(height: AppSpacing.lg),
-            Wrap(
-              alignment: wide ? WrapAlignment.start : WrapAlignment.center,
-              spacing: AppSpacing.lg,
-              runSpacing: AppSpacing.sm,
-              children: const [
-                _TrustItem(icon: AppIcons.lock, label: 'Tenant encrypted'),
-                _TrustItem(icon: AppIcons.cloudReady, label: 'Cloud synced'),
-                _TrustItem(icon: AppIcons.shield, label: 'Role protected'),
-              ],
-            ),
+            if (!AppVariant.usesMinimalCopy) ...[
+              const SizedBox(height: AppSpacing.lg),
+              Wrap(
+                alignment: wide ? WrapAlignment.start : WrapAlignment.center,
+                spacing: AppSpacing.lg,
+                runSpacing: AppSpacing.sm,
+                children: const [
+                  _TrustItem(icon: AppIcons.lock, label: 'Tenant encrypted'),
+                  _TrustItem(icon: AppIcons.cloudReady, label: 'Cloud synced'),
+                  _TrustItem(icon: AppIcons.shield, label: 'Role protected'),
+                ],
+              ),
+            ],
           ],
         );
         final form = Container(

@@ -1476,7 +1476,9 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                       initialValue: contextKind,
                       isExpanded: true,
                       decoration: _buildInputDecoration(
-                        context.tr('LINK PAYMENT TO'),
+                        AppVariant.usesMinimalCopy
+                            ? 'FOR'
+                            : context.tr('LINK PAYMENT TO'),
                         AppIcons.receipt,
                       ),
                       items: PaymentContextKind.values
@@ -1512,9 +1514,11 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                 : AppIcons.receipt,
                           ).copyWith(
                             hintText: contextKind.hint,
-                            helperText: context.tr(
-                              'Leave blank to use the bank reference.',
-                            ),
+                            helperText: AppVariant.usesMinimalCopy
+                                ? null
+                                : context.tr(
+                                    'Leave blank to use the bank reference.',
+                                  ),
                             helperMaxLines: 2,
                           ),
                     ),

@@ -36,11 +36,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Connect this terminal'), findsOneWidget);
-    expect(find.text('CONNECT WORKSPACE'), findsOneWidget);
+    expect(find.text('Workspace'), findsOneWidget);
+    expect(find.text('CONNECT'), findsWidgets);
     expect(find.byType(FloatingNavIsland), findsOneWidget);
     expect(find.byType(GradientText), findsWidgets);
-    expect(find.textContaining('Verified in real time'), findsOneWidget);
+    expect(find.text('Every payment.\nVerified.'), findsOneWidget);
     expect(find.text('6'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
     expect(find.text('CHEKMI'), findsOneWidget);
@@ -177,7 +177,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Demo scanner'), findsOneWidget);
-    expect(find.text('Choose a payment method.'), findsOneWidget);
+    expect(find.text('Payment method'), findsOneWidget);
     expect(find.byType(WaiterDashboard), findsNothing);
     expect(find.text('OPEN PAYMENTS'), findsNothing);
     expect(find.byType(PaymentLogo), findsNWidgets(6));
@@ -214,10 +214,10 @@ void main() {
     await tester.tap(find.text('Telebirr'));
     await tester.pumpAndSettle();
 
-    expect(find.text('VERIFY PAYMENT'), findsWidgets);
-    expect(find.text('TRANSACTION REF'), findsOneWidget);
+    expect(find.text('NEW PAYMENT'), findsOneWidget);
+    expect(find.text('REFERENCE'), findsOneWidget);
     expect(find.text('Invoice number (optional)'), findsOneWidget);
-    expect(find.text('AMOUNT DUE (ETB)'), findsOneWidget);
+    expect(find.text('AMOUNT (ETB)'), findsOneWidget);
     expect(find.textContaining('ACCOUNT SUFFIX'), findsNothing);
     expect(find.textContaining('CBE BIRR PHONE'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -257,16 +257,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('SIMPLE, FLEXIBLE PRICING'), findsOneWidget);
-    expect(find.text('Two plans. One clear choice.'), findsOneWidget);
+    expect(find.text('PLANS'), findsOneWidget);
+    expect(find.text('Choose a plan'), findsOneWidget);
     expect(find.text('Basic'), findsWidgets);
     expect(find.text('Pro'), findsWidgets);
-    expect(find.text('BEST CHOICE'), findsOneWidget);
+    expect(find.text('PRO'), findsOneWidget);
     expect(find.text('1200 ETB'), findsOneWidget);
-    expect(
-      find.text('Daily revenue reports and bank analytics'),
-      findsOneWidget,
-    );
+    expect(find.text('Reports · analytics'), findsOneWidget);
 
     await tester.tap(find.textContaining('3 months').first);
     await tester.pumpAndSettle();

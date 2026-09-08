@@ -12,7 +12,7 @@ The database reserves usage with row locks and a unique request ID before callin
 
 CBE/Abyssinia demo receipts require the receiving bank account for their provider lookup suffix; CBE Birr requires the receiving phone. These values are lookup inputs in an unbound demo. The result does not establish that a receipt paid any connected business. Real staff verification continues to enforce trusted destination/amount/freshness rules through the existing `chekmi-verify` function.
 
-The connected-business login now has a workspace identity card, business code, team-role explanation, staggered entrance motion, interactive hover surfaces, focus-dependent field/card highlights, animated error and loading states, a password reveal control, and clear access/reset guidance. It responds to narrow phone layouts and desktop widths, supports both +2519 and +2517 prefixes, and respects reduced motion. Existing role routing remains in the shared login handler.
+The connected-business login begins with the business code and name, followed immediately by the credentials. Decorative hero copy, role chips, field instructions, and access guidance have been removed. The panel uses a layered cyan-to-violet border, elevated shadow, focus glow, hover lift, animated error/loading states, and a password reveal control. It responds to narrow phone layouts and desktop widths, supports both +2519 and +2517 prefixes, and respects reduced motion. Concise product copy is now the default across the app; operational errors, confirmations, and legal text remain explicit.
 
 ## Install
 

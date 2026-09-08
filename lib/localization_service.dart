@@ -140,7 +140,7 @@ class LocalizationService extends ChangeNotifier {
         'ዝግጁ ሲሆኑ የድርጅትዎን የስራ ቦታ ያገናኙ።',
   };
 
-  /// Short, action-first English used by the Test 2 review build.
+  /// Short, action-first English used throughout the product.
   ///
   /// Operational warnings, confirmations, and legal copy deliberately keep
   /// their full wording. Only navigation, headings, helper copy, and common

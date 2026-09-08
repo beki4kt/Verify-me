@@ -246,6 +246,8 @@ class AppTheme {
                 ? const TextStyle(
                     inherit: false,
                     color: Colors.white,
+                    fontFamily: '.SF Pro Text',
+                    fontFamilyFallback: ['SF Pro Display', 'Arial'],
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
                     letterSpacing: -.2,
@@ -297,6 +299,8 @@ class AppTheme {
                 ? const TextStyle(
                     inherit: false,
                     color: Colors.white,
+                    fontFamily: '.SF Pro Text',
+                    fontFamilyFallback: ['SF Pro Display', 'Arial'],
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
                     letterSpacing: -.2,
@@ -328,6 +332,8 @@ class AppTheme {
                 ? TextStyle(
                     inherit: false,
                     color: scheme.primary,
+                    fontFamily: '.SF Pro Text',
+                    fontFamilyFallback: const ['SF Pro Display', 'Arial'],
                     fontSize: 17,
                     fontWeight: FontWeight.w500,
                     letterSpacing: -.2,
@@ -349,6 +355,8 @@ class AppTheme {
                 ? TextStyle(
                     inherit: false,
                     color: scheme.primary,
+                    fontFamily: '.SF Pro Text',
+                    fontFamilyFallback: const ['SF Pro Display', 'Arial'],
                     fontSize: 17,
                     fontWeight: FontWeight.w400,
                     letterSpacing: -.2,
