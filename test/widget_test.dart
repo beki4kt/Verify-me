@@ -1,5 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:verify_me/core/services/demo_verification_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:verify_me/business_gateway_screen.dart';
@@ -16,7 +19,7 @@ import 'package:verify_me/trial_mode_screen.dart';
 import 'package:verify_me/waiter_dashboard.dart';
 
 void main() {
-  testWidgets('provisioning screen renders the new visual system', (
+  testWidgets('provisioning screen renders the polished SaaS visual system', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -35,13 +38,17 @@ void main() {
 
     expect(find.text('Connect this terminal'), findsOneWidget);
     expect(find.text('CONNECT WORKSPACE'), findsOneWidget);
-    expect(find.byType(BrandHero), findsOneWidget);
+    expect(find.byType(FloatingNavIsland), findsOneWidget);
+    expect(find.byType(GradientText), findsWidgets);
+    expect(find.textContaining('Verified in real time'), findsOneWidget);
+    expect(find.text('6'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
     expect(find.text('CHEKMI'), findsOneWidget);
-    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(Image), findsWidgets);
 
     final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await pointer.addPointer();
-    await pointer.moveTo(tester.getCenter(find.byType(ElevatedButton)));
+    await pointer.moveTo(tester.getCenter(find.byType(ElevatedButton).first));
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(tester.takeException(), isNull);
@@ -107,7 +114,7 @@ void main() {
     expect(captured.textTheme.bodyLarge?.color, isNot(Colors.white));
   });
 
-  testWidgets('global language and theme controls stay compact', (
+  testWidgets('global language and theme controls stay touch-friendly', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -136,15 +143,17 @@ void main() {
 
     expect(
       tester.getSize(find.byType(GlassLanguageToggleButton)),
-      const Size(72, 32),
+      const Size(80, 40),
     );
     expect(
       tester.getSize(find.byType(GlassThemeToggleButton)),
-      const Size(32, 32),
+      const Size(44, 44),
     );
   });
 
-  testWidgets('trial waiter opens the real waiter flow', (tester) async {
+  testWidgets('live demo opens payment methods without a staff dashboard', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -153,17 +162,25 @@ void main() {
         ],
         child: MaterialApp(
           theme: AppTheme.dark(),
-          home: const TrialModeScreen(),
+          home: TrialModeScreen(
+            manualOnly: true,
+            client: DemoVerificationClient(
+              token: () async => 'a' * 64,
+              client: MockClient(
+                (_) async => http.Response('{"demo":true,"remaining":10}', 200),
+              ),
+            ),
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Trial mode'), findsOneWidget);
-    expect(find.text('Waiter'), findsOneWidget);
-    expect(find.text('LIVE WAITER FLOW'), findsOneWidget);
-    expect(find.text('OPEN WAITER'), findsOneWidget);
-    expect(find.byType(PaymentLogo), findsOneWidget);
+    expect(find.text('Demo scanner'), findsOneWidget);
+    expect(find.text('Choose a payment method.'), findsOneWidget);
+    expect(find.byType(WaiterDashboard), findsNothing);
+    expect(find.text('OPEN PAYMENTS'), findsNothing);
+    expect(find.byType(PaymentLogo), findsNWidgets(6));
     expect(find.textContaining('SUFFIX'), findsNothing);
   });
 
@@ -192,18 +209,15 @@ void main() {
     await tester.tap(find.text('Scan receipt'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining('Browser testing uses secure manual receipt entry'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Use manual entry in Safari'), findsOneWidget);
 
     await tester.tap(find.text('Telebirr'));
     await tester.pumpAndSettle();
 
-    expect(find.text('SUBMIT TICKET'), findsWidgets);
+    expect(find.text('VERIFY PAYMENT'), findsWidgets);
     expect(find.text('TRANSACTION REF'), findsOneWidget);
-    expect(find.text('TABLE NUMBER'), findsOneWidget);
-    expect(find.text('EXPECTED BILL AMOUNT (ETB)'), findsOneWidget);
+    expect(find.text('Invoice number (optional)'), findsOneWidget);
+    expect(find.text('AMOUNT DUE (ETB)'), findsOneWidget);
     expect(find.textContaining('ACCOUNT SUFFIX'), findsNothing);
     expect(find.textContaining('CBE BIRR PHONE'), findsNothing);
     expect(tester.takeException(), isNull);

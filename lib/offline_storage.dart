@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'dart:math';
+
 import 'package:hive_flutter/hive_flutter.dart';
 
 part 'offline_storage.g.dart';
@@ -88,6 +91,23 @@ class SyncManager {
 // --- PHASE 1: BUSINESS LAYER DEVICE LOCKING ---
 class DeviceStorage {
   static const String _boxName = 'device_settings';
+  static Future<String>? _demoTokenFuture;
+
+  static Future<String> demoInstallationToken() =>
+      _demoTokenFuture ??= _loadDemoToken();
+  static Future<String> _loadDemoToken() async {
+    if (!Hive.isBoxOpen(_boxName)) await init();
+    final box = Hive.box(_boxName);
+    final existing = box.get('demo_installation_token');
+    if (existing is String && existing.length == 64) return existing;
+    final random = Random.secure();
+    final token = List.generate(
+      32,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    await box.put('demo_installation_token', token);
+    return token;
+  }
 
   static Future<void> init() async {
     await Hive.openBox(_boxName);
