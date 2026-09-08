@@ -12,11 +12,13 @@ import {
   authoritativeAbyssiniaSuffix,
   authoritativeEthiopianPhone,
   matchesCbeReceivingAccount,
+  matchesTelebirrReceivingAccount,
   matchesReceivingAccount,
   positiveAmount,
   validateTransactionFreshness,
 } from "../paymentSecurity";
 import { callServiceRpc, SupabaseRpcError } from "../supabaseRpc";
+import { verifierConfiguration, verifyWithVeritas } from "../veritasVerifier";
 import {
   FixtureProviderUnavailableError,
   fixtureVerification,
@@ -228,7 +230,10 @@ async function dispatch(provider: Provider, body: VerifyBody): Promise<NormResul
       // Exhaustiveness guard – should never be reached.
       throw new ClientError(`Unsupported provider: ${provider}`, 400, "INVALID_PROVIDER");
   }
-  return verifyWithOwnedRoute(provider, body);
+  const engine = verifierConfiguration().engine;
+  if (engine === "veritas") return verifyWithVeritas(provider, body);
+  if (engine === "owned") return verifyWithOwnedRoute(provider, body);
+  throw new OwnedVerifierError("Invalid verification engine configuration.", "VERIFIER_CONFIGURATION_ERROR", 503, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +381,7 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
     }
     if (!reference || !tableNumber || expected === null) {
       throw new ClientError(
-        "Reference, table number, and a positive expected amount are required.",
+        "Bank reference, business reference, and a positive amount due are required.",
         400,
         "INVALID_TICKET",
       );
@@ -563,6 +568,8 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
             context.receiving_account,
             receiverAccount,
           )
+        : provider === "telebirr"
+        ? matchesTelebirrReceivingAccount(context.receiving_account, receiverAccount)
         : matchesReceivingAccount(
             context.receiving_account,
             receiverAccount,
@@ -601,7 +608,7 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
 
     const providerPayload = {
       ...data,
-      verificationRequest: { submittedReference: reference },
+      verificationRequest: { submittedReference: reference, engine: verifierConfiguration().engine, method: "transaction-id" },
       ...(destinationProof ? { destinationProof } : {}),
     };
     canonicalReference = String(data.reference ?? lookupReference).toUpperCase();

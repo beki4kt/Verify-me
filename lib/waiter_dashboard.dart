@@ -1348,19 +1348,20 @@ class _WaiterDashboardState extends State<WaiterDashboard>
       final textRecognizer = TextRecognizer(
         script: TextRecognitionScript.latin,
       );
-      final RecognizedText recognizedText = await textRecognizer.processImage(
-        inputImage,
-      );
-      await textRecognizer.close();
+      final RecognizedText recognizedText;
+      try {
+        recognizedText = await textRecognizer.processImage(inputImage);
+      } finally {
+        await textRecognizer.close();
+      }
 
       String? extractedId = ReceiptParser.extractTransactionId(
         recognizedText.text,
         _selectedBank ?? 'Universal / Unknown',
       );
 
-      setState(() => _isExtracting = false);
-
       if (!mounted) return;
+      setState(() => _isExtracting = false);
       _showSubmissionSheet(extractedId, receiptImageBytes: receiptImageBytes);
     } catch (e) {
       if (mounted) {
@@ -1461,11 +1462,13 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                           child: PaymentBrand(provider: 'CBE Birr'),
                         ),
                       ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setSheetState(() => selectedBank = val);
-                        }
-                      },
+                      onChanged: isSubmitting
+                          ? null
+                          : (val) {
+                              if (val != null) {
+                                setSheetState(() => selectedBank = val);
+                              }
+                            },
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<PaymentContextKind>(

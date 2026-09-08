@@ -58,6 +58,7 @@ class PaymentVerificationClient {
           'DATABASE_UNAVAILABLE',
           'COMMIT_NOT_CONFIRMED',
           'VERIFICATION_IN_PROGRESS',
+          'INVALID_SERVICE_RESPONSE',
         }.contains(result.errorCode)) {
       // Recovery only reads an existing payment. It never repeats the paid
       // Veritas lookup or accepts an uncommitted provider receipt as success.
@@ -124,7 +125,9 @@ class PaymentVerificationClient {
                 body['message']?.toString() ??
                 'The payment was not verified.',
       retryable: missingCommit || body['retryable'] == true,
-      retryAfterSeconds: (body['retryAfterSeconds'] as num?)?.toInt(),
+      retryAfterSeconds: body['retryAfterSeconds'] is num
+          ? (body['retryAfterSeconds'] as num).toInt()
+          : int.tryParse(body['retryAfterSeconds']?.toString() ?? ''),
       data: body,
     );
   }

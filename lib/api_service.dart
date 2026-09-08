@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/app_environment.dart';
 import 'core/models/verification_result.dart';
 import 'core/services/payment_verification_client.dart';
+import 'core/services/dashboard_polling.dart';
 import 'core/session/session_controller.dart';
 
 export 'core/models/verification_result.dart';
@@ -393,17 +394,14 @@ class ApiService {
     );
   }
 
-  static Stream<Map<String, dynamic>> _pollCurrentBusiness() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final business = await fetchCurrentBusiness();
-      final payload = jsonEncode(business);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield business;
-      }
-      await _waitForRefresh(const Duration(seconds: 5));
-    }
+  static Stream<Map<String, dynamic>> _pollCurrentBusiness() {
+    return _pollScoped((token) async {
+      final response = await _supabase.rpc(
+        'get_current_business',
+        params: {'p_token': token},
+      );
+      return Map<String, dynamic>.from(response as Map);
+    });
   }
 
   static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
@@ -452,30 +450,15 @@ class ApiService {
     DateTime? to,
     String? staffNumber,
     String? provider,
-  }) async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
-        'list_ticket_report',
-        params: {
-          'p_token': _requireSessionToken(),
-          'p_from': from?.toUtc().toIso8601String(),
-          'p_to': to?.toUtc().toIso8601String(),
-          'p_staff_number': staffNumber,
-          'p_provider': provider,
-        },
-      );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await _waitForRefresh(const Duration(seconds: 5));
-    }
-  }
+  }) => _pollRows(
+    'list_ticket_report',
+    parameters: {
+      'p_from': from?.toUtc().toIso8601String(),
+      'p_to': to?.toUtc().toIso8601String(),
+      'p_staff_number': staffNumber,
+      'p_provider': provider,
+    },
+  );
 
   static Future<void> recordVerificationAttempt({
     required String provider,
@@ -505,24 +488,8 @@ class ApiService {
     return _shareWhileListening(_pollVerificationAttempts());
   }
 
-  static Stream<List<Map<String, dynamic>>> _pollVerificationAttempts() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
-        'list_my_verification_attempts',
-        params: {'p_token': _requireSessionToken()},
-      );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await _waitForRefresh(const Duration(seconds: 5));
-    }
-  }
+  static Stream<List<Map<String, dynamic>>> _pollVerificationAttempts() =>
+      _pollRows('list_my_verification_attempts');
 
   static String _requireSessionToken() {
     final token = _staffSessionToken;
@@ -560,61 +527,39 @@ class ApiService {
     );
   }
 
-  static Stream<List<Map<String, dynamic>>> _pollTickets(String scope) async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
-        'list_tickets',
-        params: {'p_token': _requireSessionToken(), 'p_scope': scope},
-      );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await _waitForRefresh(const Duration(seconds: 5));
-    }
-  }
+  static Stream<List<Map<String, dynamic>>> _pollTickets(String scope) =>
+      _pollRows('list_tickets', parameters: {'p_scope': scope});
 
-  /// Shares one RPC poll between dashboard sections and tears it down as soon
-  /// as the route's final listener is disposed. This prevents invisible
-  /// dashboards from continuing to make requests after navigation.
-  static Stream<T> _shareWhileListening<T>(Stream<T> source) {
-    return source.asBroadcastStream(
-      onCancel: (subscription) => unawaited(subscription.cancel()),
+  static Stream<List<Map<String, dynamic>>> _pollRows(
+    String rpc, {
+    Map<String, dynamic> parameters = const {},
+    Duration interval = const Duration(seconds: 5),
+  }) => _pollScoped((token) async {
+    final response = await _supabase.rpc(
+      rpc,
+      params: {'p_token': token, ...parameters},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+  }, interval: interval);
+
+  static Stream<T> _pollScoped<T>(
+    Future<T> Function(String token) fetch, {
+    Duration interval = const Duration(seconds: 5),
+  }) {
+    final token = _staffSessionToken;
+    if (token == null) return Stream<T>.empty();
+    return dashboardPolling<T>(
+      fetch: () => fetch(token).timeout(const Duration(seconds: 15)),
+      isActive: () => _staffSessionToken == token,
+      wait: () => _waitForRefresh(interval),
     );
   }
 
-  /// Keeps a polling stream alive for the dashboard route and immediately
-  /// replays its latest value when a tab is rebuilt.
-  static Stream<T> _replayLatest<T>(Stream<T> source) {
-    late StreamController<T> controller;
-    StreamSubscription<T>? subscription;
-    T? latest;
-    var hasLatest = false;
-    controller = StreamController<T>.broadcast(
-      onListen: () {
-        if (hasLatest) {
-          scheduleMicrotask(() {
-            if (!controller.isClosed) controller.add(latest as T);
-          });
-        }
-        subscription ??= source.listen(
-          (value) {
-            latest = value;
-            hasLatest = true;
-            controller.add(value);
-          },
-          onError: controller.addError,
-          onDone: controller.close,
-        );
-      },
-    );
-    return controller.stream;
-  }
+  // Polling sources now own sharing, cancellation, recovery and per-listener replay.
+  static Stream<T> _shareWhileListening<T>(Stream<T> source) => source;
+  static Stream<T> _replayLatest<T>(Stream<T> source) => source;
 
   static void _resetStreamCaches() {
     _ticketStreamCache.clear();
@@ -650,48 +595,18 @@ class ApiService {
     );
   }
 
-  static Stream<List<Map<String, dynamic>>>
-  _pollTipWithdrawalRequests() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
+  static Stream<List<Map<String, dynamic>>> _pollTipWithdrawalRequests() =>
+      _pollRows(
         'list_tip_withdrawal_requests',
-        params: {'p_token': _requireSessionToken()},
+        interval: const Duration(seconds: 3),
       );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await _waitForRefresh(const Duration(seconds: 3));
-    }
-  }
 
   static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
     return _staffRosterStream ??= _replayLatest(_pollStaffRoster());
   }
 
-  static Stream<List<Map<String, dynamic>>> _pollStaffRoster() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
-        'list_staff_roster',
-        params: {'p_token': _requireSessionToken()},
-      );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await _waitForRefresh(const Duration(seconds: 5));
-    }
-  }
+  static Stream<List<Map<String, dynamic>>> _pollStaffRoster() =>
+      _pollRows('list_staff_roster');
 
   // --- 4. TENANT & STAFF MANAGEMENT ---
   static Future<void> changeCurrentAdminPassword({

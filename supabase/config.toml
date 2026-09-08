@@ -1,0 +1,3 @@
+[functions.chekmi-verify]
+verify_jwt = false
+entrypoint = "./functions/chekmi-verify/index.js"

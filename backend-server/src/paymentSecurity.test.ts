@@ -6,6 +6,7 @@ import {
   authoritativeAbyssiniaSuffix,
   authoritativeEthiopianPhone,
   matchesCbeReceivingAccount,
+  matchesTelebirrReceivingAccount,
   matchesReceivingAccount,
   normalizeAccount,
   positiveAmount,
@@ -21,6 +22,20 @@ test("destination matching supports exact and masked suffix values", () => {
   assert.equal(matchesReceivingAccount("+251911222333", "0911222333"), true);
   assert.equal(matchesReceivingAccount("1000123456789", "9999456789"), false);
   assert.equal(matchesReceivingAccount("1000123456789", "*6789"), false);
+});
+
+test("Telebirr supports its middle-masked wallet format and rejects conflicting or insufficient digits", () => {
+  for (const account of ["0911223333", "251911223333", "+251911223333"]) {
+    assert.equal(matchesTelebirrReceivingAccount(account, "2519****3333"), true);
+    assert.equal(matchesTelebirrReceivingAccount(account, "2519****9999"), false);
+    assert.equal(matchesTelebirrReceivingAccount(account, "2517****3333"), false);
+    assert.equal(matchesTelebirrReceivingAccount(account, "251922223333"), false);
+    for (const invalid of ["****3333", "2519***3333", "2519****333", "2519****3333extra", null]) {
+      assert.equal(matchesTelebirrReceivingAccount(account, invalid), false);
+    }
+  }
+  assert.equal(matchesTelebirrReceivingAccount("merchant3333", "2519****3333"), false);
+  assert.equal(matchesTelebirrReceivingAccount("0911223333", "251911223333"), true);
 });
 
 test("Abyssinia suffix is derived only from the configured business account", () => {

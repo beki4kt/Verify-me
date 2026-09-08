@@ -11,12 +11,27 @@ class ReceiptParser {
 
   static String? extractTransactionId(String rawText, String targetBank) {
     if (rawText.trim().isEmpty) return null;
+    final bank = targetBank.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    // New CBE receipt tokens are case-sensitive. Read the official URL before
+    // uppercasing OCR text; never guess the token's case from other receipt text.
+    if (bank == 'cbe') {
+      final url = RegExp(
+        r'https?://mbreciept\.cbe\.com\.et/[A-Za-z0-9-]+',
+        caseSensitive: false,
+      ).firstMatch(rawText);
+      if (url != null) return url.group(0);
+      final token = rawText.trim();
+      if (!token.toUpperCase().startsWith('FT') &&
+          RegExp(r'^[A-Za-z0-9-]{15,80}$').hasMatch(token) &&
+          token.contains(RegExp(r'[0-9]'))) {
+        return token;
+      }
+    }
     final text = rawText
         .toUpperCase()
         .replaceAll('\r', '\n')
         .replaceAll(RegExp(r'[‐‑‒–—]'), '-')
         .replaceAll('|', 'I');
-    final bank = targetBank.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
 
     for (final line in text.split('\n')) {
       final normalizedLine = line.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -70,6 +85,7 @@ class ReceiptParser {
       .replaceAll(RegExp(r'^(?:NO|NUMBER)'), '');
 
   static List<RegExp> _providerPatterns(String bank) {
+    if (bank == 'dashen') return [RegExp(r'\b[0-9]{3}[A-Z0-9]{13}\b')];
     if (bank.contains('cbe') || bank.contains('abyssinia')) {
       return [RegExp(r'\bFT[A-Z0-9]{9,14}\b')];
     }
@@ -91,6 +107,9 @@ class ReceiptParser {
     required bool anchored,
   }) {
     if (value.length < 8 || value.length > 18) return false;
+    if (bank == 'dashen') {
+      return RegExp(r'^[0-9]{3}[A-Z0-9]{13}$').hasMatch(value);
+    }
     if (!value.contains(RegExp(r'[A-Z]')) || !value.contains(RegExp(r'\d'))) {
       return false;
     }

@@ -23,7 +23,8 @@ class VerificationResult {
         '$message Ask the business administrator to update this provider account.',
       'DESTINATION_MISMATCH' =>
         '$message Confirm that the customer paid the business account shown at checkout.',
-      'UNDERPAID' => '$message Ask the customer to pay the remaining balance.',
+      'UNDERPAID' =>
+        '$message This version requires one receipt covering the full amount due; separate receipts cannot be combined.',
       'TRANSACTION_TOO_OLD' =>
         '$message Use a receipt inside the allowed verification window.',
       'DUPLICATE_PAYMENT' =>
