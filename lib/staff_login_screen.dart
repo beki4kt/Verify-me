@@ -1,22 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart';
 
 import 'api_service.dart';
+import 'core/theme/app_colors.dart';
+import 'core/widgets/staff_login_experience.dart';
 import 'offline_storage.dart';
 import 'business_gateway_screen.dart';
 import 'waiter_dashboard.dart';
 import 'cashier_dashboard.dart';
 import 'super_admin_login_screen.dart';
 import 'admin_dashboard.dart';
-import 'core/theme/app_colors.dart';
-import 'core/theme/app_motion.dart';
-import 'core/theme/app_spacing.dart';
-import 'core/theme/app_typography.dart';
-import 'core/widgets/app_shell.dart';
-import 'core/widgets/state_views.dart';
-import 'localization_service.dart';
+import 'core/config/app_environment.dart';
 import 'trial_mode_screen.dart';
 import 'core/config/app_variant.dart';
 
@@ -31,11 +25,13 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
+  String _phonePrefix = '9';
+  bool _obscurePassword = true;
   String? _errorMessage;
   late Map<String, String?> _lockedBusiness;
 
   bool get _isTestDemoWorkspace =>
-      AppVariant.isTest2 && _lockedBusiness['code'] == 'MESOB-DEMO';
+      !AppEnvironment.isProduction && _lockedBusiness['code'] == 'MESOB-DEMO';
 
   @override
   void initState() {
@@ -51,19 +47,32 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    final rawPhone = _phoneController.text.trim();
-    final password = _passwordController.text.trim();
+    if (_isLoading) return;
+    final rawPhone = _phoneController.text.replaceAll(RegExp(r'\s'), '');
+    final password = _passwordController.text;
 
-    if (rawPhone.isEmpty || password.isEmpty) return;
+    if (rawPhone.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = 'Enter your phone number and password.');
+      return;
+    }
 
     // STRICT VALIDATION
-    if (rawPhone.length != 8) {
+    if (!RegExp(r'^\d{8}$').hasMatch(rawPhone)) {
       setState(() => _errorMessage = "Please enter exactly 8 digits.");
       return;
     }
 
+    final businessId = _lockedBusiness['id'];
+    if (businessId == null) {
+      setState(
+        () => _errorMessage =
+            'This workspace connection expired. Choose the workspace again.',
+      );
+      return;
+    }
+
     // CONCATENATE FOR THE DATABASE
-    final formattedPhone = '+2519$rawPhone';
+    final formattedPhone = '+251$_phonePrefix$rawPhone';
 
     setState(() {
       _isLoading = true;
@@ -74,7 +83,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
     try {
       final role = await ApiService.loginStaffUnderBusiness(
-        _lockedBusiness['id']!,
+        businessId,
         formattedPhone,
         password,
       );
@@ -86,6 +95,16 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         Widget nextScreen;
 
         // APPLY CURLY BRACES TO ALL FLOW CONTROL STRUCTURES
+        if (role == 'super_admin' && !AppVariant.exposesOperatorConsole) {
+          await ApiService.logoutStaff();
+          if (!mounted) return;
+          setState(() {
+            _errorMessage =
+                'Platform operations are not available in this app.';
+          });
+          return;
+        }
+
         if (role == 'super_admin') {
           nextScreen = const SuperAdminLoginScreen();
         } else if (role == 'admin') {
@@ -111,7 +130,12 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = "Login Error: Check connection.");
+        final message = e.toString().replaceFirst('Exception: ', '').trim();
+        setState(
+          () => _errorMessage = message.isEmpty
+              ? 'Could not sign in. Check the connection and try again.'
+              : message,
+        );
       }
     } finally {
       if (mounted) {
@@ -121,12 +145,37 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   void _useDemoAccount({required String phone, required String password}) {
+    _phonePrefix = '9';
     _phoneController.text = phone;
     _passwordController.text = password;
     _handleLogin();
   }
 
   void _confirmUnbindDevice() {
+    if (AppVariant.usesIPhoneUi) {
+      showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('Change workspace?'),
+          content: const Text(
+            'This removes the business connection from this iPhone.',
+          ),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => _unbindDevice(dialogContext),
+              child: const Text('Change'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -134,7 +183,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
           AppVariant.usesMinimalCopy ? 'Change workspace?' : 'Unbind Terminal?',
         ),
         content: Text(
-          AppVariant.usesMinimalCopy ? 'Remove this workspace?' : 'This will remove the current restaurant connection from this device.',
+          AppVariant.usesMinimalCopy ? 'Remove this workspace?' : 'This will remove the current business connection from this device.',
         ),
         actions: [
           TextButton(
@@ -145,20 +194,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             ),
           ),
           TextButton(
-            onPressed: () async {
-              await DeviceStorage.clearDeviceLock();
-
-              // GUARD THE ASYNC GAP
-              if (!mounted || !dialogContext.mounted) return;
-
-              Navigator.pop(dialogContext);
-              Navigator.pushReplacement(
-                context,
-                CupertinoPageRoute(
-                  builder: (_) => const BusinessGatewayScreen(),
-                ),
-              );
-            },
+            onPressed: () => _unbindDevice(dialogContext),
             child: const Text(
               'UNBIND',
               style: TextStyle(color: Colors.redAccent),
@@ -169,246 +205,76 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Scaffold(
-      body: AppBackdrop(
-        maxWidth: 560,
-        entry: true,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: FadeSlideIn(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    const GlassLanguageToggleButton(),
-                    const GlassThemeToggleButton(),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                BrandHero(
-                  onLogoTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SuperAdminLoginScreen(),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                Text(
-                  context.tr('Welcome back'),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.displayMedium,
-                ),
-                if (!AppVariant.usesMinimalCopy) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    context.tr('Sign in to continue to your shift.'),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.xl),
-                Align(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withValues(alpha: .1),
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(
-                        color: AppColors.success.withValues(alpha: .2),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          AppIcons.storefront,
-                          color: AppColors.success,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _lockedBusiness['name'] ?? 'Restaurant',
-                          style: AppTypography.microLabel(
-                            color: AppColors.success,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                HoverSurface(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_isTestDemoWorkspace) ...[
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: AppSpacing.sm,
-                          runSpacing: AppSpacing.sm,
-                          children: [
-                            ActionChip(
-                              avatar: const Icon(
-                                AppIcons.administration,
-                                size: 17,
-                              ),
-                              label: const Text('Admin'),
-                              onPressed: _isLoading
-                                  ? null
-                                  : () => _useDemoAccount(
-                                      phone: '11000001',
-                                      password: 'AdminTest!2026',
-                                    ),
-                            ),
-                            ActionChip(
-                              avatar: const Icon(
-                                AppIcons.pointOfSale,
-                                size: 17,
-                              ),
-                              label: const Text('Cashier'),
-                              onPressed: _isLoading
-                                  ? null
-                                  : () => _useDemoAccount(
-                                      phone: '11000002',
-                                      password: 'CashierTest!2026',
-                                    ),
-                            ),
-                            ActionChip(
-                              avatar: const Icon(
-                                AppIcons.serviceBell,
-                                size: 17,
-                              ),
-                              label: const Text('Waiter'),
-                              onPressed: _isLoading
-                                  ? null
-                                  : () => _useDemoAccount(
-                                      phone: '11000003',
-                                      password: 'WaiterTest!2026',
-                                    ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                      ],
-                      TextField(
-                        controller: _phoneController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(8),
-                        ],
-                        style: TextStyle(
-                          color: colors.onSurface,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: context.tr('Phone number'),
-                          prefixIcon: Padding(
-                            padding: const EdgeInsets.only(
-                              left: 16.0,
-                              right: 8.0,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  AppIcons.phone,
-                                  color: AppColors.primary,
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  '+2519',
-                                  style: TextStyle(
-                                    color: colors.onSurface,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  width: 2,
-                                  height: 24,
-                                  color: colors.onSurface.withValues(alpha: .1),
-                                ),
-                                const SizedBox(width: 12),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        style: TextStyle(color: colors.onSurface),
-                        onSubmitted: (_) => _handleLogin(),
-                        decoration: InputDecoration(
-                          labelText: context.tr('Password'),
-                          prefixIcon: const Icon(AppIcons.lock),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
+  Future<void> _unbindDevice(BuildContext dialogContext) async {
+    await DeviceStorage.clearDeviceLock();
+    if (!mounted || !dialogContext.mounted) return;
 
-                      if (_errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: ErrorBanner(message: _errorMessage!),
-                        ),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _handleLogin,
-                          icon: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(AppIcons.login),
-                          label: Text(
-                            context.tr(_isLoading ? 'SIGNING IN' : 'SIGN IN'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                TextButton(
-                  onPressed: _confirmUnbindDevice,
-                  child: Text(
-                    context.tr('This is not your restaurant? Change workspace'),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TrialModeScreen()),
-                  ),
-                  icon: const Icon(AppIcons.sparkle),
-                  label: Text(context.tr('TRY THE LIVE DEMO')),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    Navigator.pop(dialogContext);
+    await Navigator.of(context).pushReplacement(
+      CupertinoPageRoute<void>(builder: (_) => const BusinessGatewayScreen()),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => StaffLoginExperience(
+    businessName: _lockedBusiness['name'] ?? 'Business',
+    businessCode: _lockedBusiness['code'] ?? '',
+    phone: _phoneController,
+    password: _passwordController,
+    loading: _isLoading,
+    obscure: _obscurePassword,
+    prefix: _phonePrefix,
+    onPrefix: (value) => setState(() => _phonePrefix = value),
+    error: _errorMessage,
+    onLogin: _handleLogin,
+    onTogglePassword: () =>
+        setState(() => _obscurePassword = !_obscurePassword),
+    onChangeBusiness: _confirmUnbindDevice,
+    onDemo: AppVariant.isPublicRelease
+        ? null
+        : () => Navigator.of(context).push(
+            CupertinoPageRoute<void>(builder: (_) => const TrialModeScreen()),
+          ),
+    onOwner: AppVariant.exposesOperatorConsole
+        ? () => Navigator.of(context).push(
+            CupertinoPageRoute<void>(
+              builder: (_) => const SuperAdminLoginScreen(),
+            ),
+          )
+        : null,
+    quickAccess: _isTestDemoWorkspace
+        ? Wrap(
+            spacing: 8,
+            children: [
+              ActionChip(
+                label: const Text('Admin'),
+                onPressed: _isLoading
+                    ? null
+                    : () => _useDemoAccount(
+                        phone: '11000001',
+                        password: 'AdminTest!2026',
+                      ),
+              ),
+              ActionChip(
+                label: const Text('Cashier'),
+                onPressed: _isLoading
+                    ? null
+                    : () => _useDemoAccount(
+                        phone: '11000002',
+                        password: 'CashierTest!2026',
+                      ),
+              ),
+              ActionChip(
+                label: const Text('Staff'),
+                onPressed: _isLoading
+                    ? null
+                    : () => _useDemoAccount(
+                        phone: '11000003',
+                        password: 'WaiterTest!2026',
+                      ),
+              ),
+            ],
+          )
+        : null,
+  );
 }

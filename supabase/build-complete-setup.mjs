@@ -18,11 +18,11 @@ const sections = [
     ? "-- CHEKMI complete Supabase APP TEST setup"
     : "-- CHEKMI complete Supabase setup",
   "-- Generated from base_schema.sql plus every dated migration.",
-  "-- Schema version: 2026-08-26.3",
+  "-- Schema version: 2026-09-10.1",
   includeDemo
     ? "-- TEST ONLY: includes the known MESOB-DEMO role credentials used by Trial Mode."
     : "-- Safe to rerun; it does not insert demo businesses or known credentials.",
-  "-- Replace the legal-document YOUR_DOMAIN URLs before production launch.",
+  "-- Current public legal-document URLs are included by the release migration.",
   "",
   "begin;",
   "",

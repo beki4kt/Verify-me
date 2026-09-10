@@ -43,27 +43,70 @@ const cheerio = __importStar(require("cheerio"));
 const common_1 = require("./common");
 const types_1 = require("./types");
 function cleanLabel(value) {
-    return value.replace(/\s+/g, " ").trim().toLowerCase();
+    return value.replace(/\s+/g, " ").trim().toLowerCase().replace(/[.:]+$/, "").trim();
 }
 /** Parse the public Ethio Telecom receipt table without logging payer data. */
 function parseTelebirrHtml(html) {
     const $ = cheerio.load(html);
+    const cellsFor = (row) => row.children("td, th")
+        .toArray()
+        .filter((cell) => $(cell).find("table").length === 0)
+        .map((cell) => $(cell).text().replace(/\s+/g, " ").trim());
     const rows = $("tr")
         .toArray()
-        .map((row) => $(row)
-        .find("td")
-        .toArray()
-        .map((cell) => $(cell).text().replace(/\s+/g, " ").trim()))
+        .map((row) => cellsFor($(row)))
         .filter((cells) => cells.length > 0);
+    const matchesLabel = (cell, label) => {
+        const value = cleanLabel(cell);
+        const expected = cleanLabel(label);
+        if (value === expected)
+            return true;
+        if (!value.endsWith(expected))
+            return false;
+        const prefix = value.slice(0, -expected.length);
+        return /[^a-z0-9]$/.test(prefix);
+    };
+    const invoiceLabels = ["invoice no", "invoice number", "receipt no", "receipt number"];
+    const columnLabels = [...invoiceLabels, "payment date", "settled amount"];
+    const allLabels = [...columnLabels, "payer name", "payer telebirr no", "payer phone",
+        "credited party name", "credited party account no", "credited party account number",
+        "bank account number", "transaction status", "service fee", "service charge",
+        "service fee vat", "service fee v.a.t", "total paid amount", "customer note"];
+    // Telebirr's invoice section has three headers followed by a data row.
+    // Keep column lookup within that table rather than flattening ancestor rows.
+    const invoiceValues = new Map();
+    for (const row of $("tr").toArray()) {
+        const headers = cellsFor($(row));
+        if (!headers.some((cell) => invoiceLabels.some((label) => matchesLabel(cell, label))) ||
+            !headers.some((cell) => matchesLabel(cell, "payment date")) ||
+            !headers.some((cell) => matchesLabel(cell, "settled amount")))
+            continue;
+        const values = cellsFor($(row).nextAll("tr").first());
+        if (headers.length !== values.length)
+            continue;
+        headers.forEach((header, index) => {
+            const label = columnLabels.find((candidate) => matchesLabel(header, candidate));
+            const value = (0, common_1.nonEmpty)(values[index]);
+            if (label && value && !allLabels.some((candidate) => matchesLabel(value, candidate))) {
+                invoiceValues.set(label, value);
+            }
+        });
+    }
     const valueFor = (...labels) => {
-        const lowered = labels.map(cleanLabel);
+        for (const label of labels) {
+            const value = invoiceValues.get(label);
+            if (value)
+                return value;
+        }
         for (const cells of rows) {
             for (let index = 0; index < cells.length; index++) {
-                const cell = cleanLabel(cells[index] ?? "");
-                if (!lowered.some((label) => cell.includes(label)))
+                const cell = cells[index] ?? "";
+                if (!labels.some((label) => matchesLabel(cell, label)))
                     continue;
                 for (let valueIndex = index + 1; valueIndex < cells.length; valueIndex++) {
                     const candidate = (0, common_1.nonEmpty)(cells[valueIndex]);
+                    if (candidate && allLabels.some((label) => matchesLabel(candidate, label)))
+                        break;
                     if (candidate)
                         return candidate;
                 }
@@ -71,12 +114,9 @@ function parseTelebirrHtml(html) {
         }
         return null;
     };
-    const receiptNo = valueFor("receipt no", "receipt number") ??
-        (0, common_1.nonEmpty)(html.match(/(?:Receipt\s*(?:No\.?|Number))[^A-Z0-9]*([A-Z0-9]{8,32})/i)?.[1]);
-    const paymentDate = valueFor("payment date") ??
-        (0, common_1.nonEmpty)(html.match(/(\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}:\d{2})/)?.[1]);
-    const settledAmount = valueFor("settled amount") ??
-        (0, common_1.nonEmpty)(html.match(/Settled\s+Amount.*?([\d,]+(?:\.\d+)?\s*Birr)/is)?.[1]);
+    const receiptNo = valueFor(...invoiceLabels);
+    const paymentDate = valueFor("payment date");
+    const settledAmount = valueFor("settled amount");
     const serviceFee = valueFor("service fee", "service charge");
     const serviceFeeVAT = valueFor("service fee vat", "service fee v.a.t");
     let creditedPartyName = valueFor("credited party name");
@@ -139,10 +179,11 @@ function normalizeTelebirr(submittedReference, receipt) {
     const amount = (0, common_1.numberFrom)(receipt.settledAmount);
     const date = (0, common_1.ethiopianLocalDate)(receipt.paymentDate);
     const status = receipt.transactionStatus;
-    const reference = receipt.receiptNo ?? submittedReference;
+    const reference = receipt.receiptNo;
     if (amount === null ||
         amount <= 0 ||
         !date ||
+        !reference ||
         !receipt.payerName ||
         !receipt.creditedPartyName ||
         !receipt.creditedPartyAccountNo ||
@@ -151,7 +192,7 @@ function normalizeTelebirr(submittedReference, receipt) {
         return {
             ok: false,
             provider: "telebirr",
-            error: status || "Telebirr receipt is missing required verified fields.",
+            error: "Telebirr receipt fields, reference or completion status could not be verified.",
             code: "RECEIPT_MISMATCH",
         };
     }
@@ -228,6 +269,7 @@ async function verifyTelebirrOwned(rawReference) {
         };
     }
     let lastTransportError = null;
+    let lastVerificationFailure = null;
     if ((0, common_1.shouldUseDirectProvider)()) {
         try {
             const receipt = await directReceipt(reference);
@@ -235,6 +277,7 @@ async function verifyTelebirrOwned(rawReference) {
                 const normalized = normalizeTelebirr(reference, receipt);
                 if (normalized.ok)
                     return normalized;
+                lastVerificationFailure = normalized;
             }
         }
         catch (error) {
@@ -254,6 +297,7 @@ async function verifyTelebirrOwned(rawReference) {
                 const normalized = normalizeTelebirr(reference, receipt);
                 if (normalized.ok)
                     return normalized;
+                lastVerificationFailure = normalized;
             }
             catch (error) {
                 lastTransportError = (0, common_1.toOwnedVerifierError)(error, "Telebirr relay");
@@ -262,6 +306,8 @@ async function verifyTelebirrOwned(rawReference) {
     }
     if (lastTransportError)
         throw lastTransportError;
+    if (lastVerificationFailure)
+        return lastVerificationFailure;
     return {
         ok: false,
         provider: "telebirr",

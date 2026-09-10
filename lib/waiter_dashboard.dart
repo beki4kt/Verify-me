@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -11,15 +14,21 @@ import 'offline_storage.dart';
 import 'receipt_parser.dart';
 import 'staff_login_screen.dart'; // FIXED: Points to the new login screen
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_motion.dart';
 import 'core/theme/app_typography.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/widgets/app_shell.dart';
 import 'core/widgets/payment_brand.dart';
+import 'core/widgets/skeleton.dart';
 import 'core/widgets/state_views.dart';
+import 'core/widgets/status_pill.dart';
+import 'core/widgets/success_overlay.dart';
 import 'core/widgets/transaction_filter_bar.dart';
 import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
+import 'core/config/payment_context.dart';
+import 'iphone/iphone_dashboard_shell.dart';
 
 class WaiterDashboard extends StatefulWidget {
   const WaiterDashboard({
@@ -35,7 +44,8 @@ class WaiterDashboard extends StatefulWidget {
   State<WaiterDashboard> createState() => _WaiterDashboardState();
 }
 
-class _WaiterDashboardState extends State<WaiterDashboard> {
+class _WaiterDashboardState extends State<WaiterDashboard>
+    with TickerProviderStateMixin {
   late Stream<List<Map<String, dynamic>>> _myTicketsStream;
   late Stream<List<Map<String, dynamic>>> _attemptsStream;
   late Stream<List<Map<String, dynamic>>> _withdrawalRequestsStream;
@@ -43,6 +53,14 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
   TransactionPeriod _historyPeriod = TransactionPeriod.all;
   DateTimeRange? _historyCustomRange;
   String? _historyPaymentMethod;
+
+  /// Drives the scanner's sweeping beam and breathing frame. Runs only while
+  /// the camera preview is live; muted by TickerMode when the Scan tab is not
+  /// visible, and explicitly stopped when the picker replaces the camera.
+  late final AnimationController _scanPulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  );
 
   // Camera Variables
   CameraController? _cameraController;
@@ -62,7 +80,13 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     (name: 'MPesa', subtitle: 'M-Pesa wallet', icon: AppIcons.sendToMobile),
   ];
 
-  bool get _manualReceiptEntryOnly => kIsWeb || widget.forceManualReceiptEntry;
+  List<({String name, String subtitle, IconData icon})> get _enabledBanks =>
+      _banks
+          .where((bank) => AppVariant.isPaymentProviderEnabled(bank.name))
+          .toList(growable: false);
+
+  bool get _manualReceiptEntryOnly =>
+      (kIsWeb && !AppVariant.webCameraTest) || widget.forceManualReceiptEntry;
 
   @override
   void initState() {
@@ -71,6 +95,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     _attemptsStream = ApiService.streamMyVerificationAttempts();
     _withdrawalRequestsStream = ApiService.streamTipWithdrawalRequests();
     _hideTipBalance = DeviceStorage.getHideTipBalance();
+  }
+
+  void _refreshData() {
+    ApiService.refreshDashboardData();
   }
 
   Future<void> _changeHistoryPeriod(TransactionPeriod period) async {
@@ -196,7 +224,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       _availableCameras = await availableCameras();
       if (_availableCameras != null && _availableCameras!.isNotEmpty) {
         _cameraController = CameraController(
-          _availableCameras![0],
+          _availableCameras!.firstWhere(
+            (camera) => camera.lensDirection == CameraLensDirection.back,
+            orElse: () => _availableCameras!.first,
+          ),
           ResolutionPreset.high,
           enableAudio: false,
           imageFormatGroup: ImageFormatGroup.jpeg,
@@ -204,6 +235,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
 
         await _cameraController!.initialize();
         if (mounted) {
+          _scanPulse.repeat();
           setState(() {
             _isCameraInitialized = true;
             _isCameraInitializing = false;
@@ -229,6 +261,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
   Future<void> _changeBank() async {
     await _cameraController?.dispose();
     _cameraController = null;
+    _scanPulse.stop();
     if (mounted) {
       setState(() {
         _selectedBank = null;
@@ -240,6 +273,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
 
   @override
   void dispose() {
+    _scanPulse.dispose();
     _cameraController?.dispose();
     super.dispose();
   }
@@ -250,32 +284,34 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       stream: _myTicketsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          );
-        }
-
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(
-            child: Text(
-              AppVariant.usesMinimalCopy
-                  ? 'No tickets'
-                  : 'No active tickets. Swipe to scan a receipt.',
-              style: const TextStyle(color: AppColors.textFaint, fontSize: 14),
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: List.generate(
+              5,
+              (index) =>
+                  FadeSlideIn(index: index, child: const TicketSkeletonRow()),
             ),
           );
         }
 
-        final activeTickets = snapshot.data!
+        final tickets = snapshot.data ?? const <Map<String, dynamic>>[];
+        final activeTickets = tickets
             .where((t) => t['status'] != 'rejected')
             .toList();
 
         if (activeTickets.isEmpty) {
-          return const Center(
-            child: Text(
-              'No active tickets.',
-              style: TextStyle(color: AppColors.textFaint, fontSize: 14),
-            ),
+          return EmptyView(
+            icon: AppIcons.receipt,
+            title: AppVariant.usesMinimalCopy
+                ? 'No payments'
+                : context.tr('No open payments'),
+            message: AppVariant.usesMinimalCopy
+                ? 'Scan to add one'
+                : context.tr(
+                    'Scan a receipt to verify a payment and record a payment.',
+                  ),
+            actionLabel: context.tr('Scan a receipt'),
+            onAction: () => DefaultTabController.maybeOf(context)?.animateTo(1),
           );
         }
 
@@ -289,61 +325,56 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                 ? const Color(0xFF10B981)
                 : const Color(0xFFF59E0B);
 
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: HoverSurface(
-                accent: statusColor,
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        isSettled ? AppIcons.success : AppIcons.pending,
-                        color: statusColor,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${ticket['bill_amount']} ETB',
-                            style: AppTypography.money(),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'REF: ${ticket['transaction_ref']}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: .1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        ticket['status'].toString().toUpperCase(),
-                        style: TextStyle(
+            return FadeSlideIn(
+              index: index.clamp(0, 5),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: HoverSurface(
+                  accent: statusColor,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isSettled ? AppIcons.success : AppIcons.pending,
                           color: statusColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
+                          size: 20,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${ticket['bill_amount']} ETB',
+                              style: AppTypography.money(),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'REF: ${ticket['transaction_ref']}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              PaymentContext.display(ticket['table_number']),
+                              style: Theme.of(context).textTheme.bodySmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      StatusPill(
+                        label: ticket['status'].toString(),
+                        color: statusColor,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -355,68 +386,75 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
 
   // --- TAB 2: THE LIVE SCANNER ---
   Widget _buildScannerTab() {
+    Widget content;
     if (_selectedBank == null) {
-      return _buildBankPicker();
+      content = KeyedSubtree(
+        key: const ValueKey('scanner-picker'),
+        child: _buildBankPicker(),
+      );
+    } else if (_isCameraInitializing) {
+      content = KeyedSubtree(
+        key: const ValueKey('scanner-opening'),
+        child: LoadingView(message: 'Opening the $_selectedBank scanner…'),
+      );
+    } else if (_cameraError != null) {
+      content = KeyedSubtree(
+        key: const ValueKey('scanner-error'),
+        child: _buildCameraError(),
+      );
+    } else if (!_isCameraInitialized || _cameraController == null) {
+      content = KeyedSubtree(
+        key: const ValueKey('scanner-picker'),
+        child: _buildBankPicker(),
+      );
+    } else {
+      content = KeyedSubtree(
+        key: const ValueKey('scanner-live'),
+        child: _buildLiveCamera(),
+      );
     }
-    if (_isCameraInitializing) {
-      return Center(
+    return FadeThroughSwitcher(child: content);
+  }
+
+  Widget _buildCameraError() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 18),
-            Text(
-              'Opening the $_selectedBank scanner…',
-              style: Theme.of(context).textTheme.bodyMedium,
+            ErrorView(
+              message: _cameraError!,
+              onRetry: _selectedBank == null
+                  ? null
+                  : () => _selectBankAndStartCamera(_selectedBank!),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextButton.icon(
+              onPressed: () =>
+                  _showSubmissionSheet(null, initialProvider: _selectedBank),
+              icon: const Icon(AppIcons.keyboard, size: 18),
+              label: Text(
+                AppVariant.usesMinimalCopy
+                    ? 'Enter manually'
+                    : 'Enter payment details manually',
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _changeBank,
+              icon: const Icon(AppIcons.transfer, size: 18),
+              label: Text(
+                AppVariant.usesMinimalCopy
+                    ? 'Change provider'
+                    : 'Choose another provider',
+              ),
             ),
           ],
         ),
-      );
-    }
-    if (_cameraError != null) {
-      return Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ErrorBanner(message: _cameraError!),
-                const SizedBox(height: AppSpacing.lg),
-                FilledButton.icon(
-                  onPressed: () => _showSubmissionSheet(
-                    null,
-                    initialProvider: _selectedBank,
-                  ),
-                  icon: const Icon(AppIcons.keyboard),
-                  label: Text(
-                    AppVariant.usesMinimalCopy
-                        ? 'ENTER MANUALLY'
-                        : 'ENTER PAYMENT DETAILS MANUALLY',
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                TextButton.icon(
-                  onPressed: _changeBank,
-                  icon: const Icon(AppIcons.transfer),
-                  label: Text(
-                    AppVariant.usesMinimalCopy
-                        ? 'CHANGE PROVIDER'
-                        : 'CHOOSE ANOTHER PROVIDER',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-    if (!_isCameraInitialized || _cameraController == null) {
-      return _buildBankPicker();
-    }
+      ),
+    );
+  }
 
+  Widget _buildLiveCamera() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: ClipRRect(
@@ -449,6 +487,38 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                 ),
               ),
             ),
+            if (_isExtracting)
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOut,
+                  opacity: 1,
+                  child: ColoredBox(
+                    color: Colors.white.withValues(alpha: .85),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 44,
+                            child: CircularProgressIndicator(
+                              color: AppColors.primary,
+                              strokeWidth: 3,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Reading receipt…',
+                            style: AppTypography.microLabel(
+                              color: Colors.black.withValues(alpha: .72),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               top: 16,
               left: 16,
@@ -499,7 +569,12 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
               child: SizedBox(
                 width: 280,
                 height: 190,
-                child: CustomPaint(painter: _ScannerFramePainter()),
+                child: AnimatedBuilder(
+                  animation: _scanPulse,
+                  builder: (context, _) => CustomPaint(
+                    painter: _ScannerFramePainter(progress: _scanPulse.value),
+                  ),
+                ),
               ),
             ),
             Positioned(
@@ -576,14 +651,19 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
         );
         final totalChecked = historyChecks.fold<double>(
           0,
-          (sum, t) => sum + ((t['bill_amount'] as num?)?.toDouble() ?? 0),
+          (sum, t) =>
+              sum +
+              ((t['verified_amount'] as num?)?.toDouble() ??
+                  (t['actual_amount'] as num?)?.toDouble() ??
+                  (t['bill_amount'] as num?)?.toDouble() ??
+                  0),
         );
         final dark = Theme.of(context).brightness == Brightness.dark;
         final walletText = dark ? Colors.white : const Color(0xFF312E81);
         final walletMuted = dark ? Colors.white70 : const Color(0xFF6366A8);
 
         return ListView(
-          padding: const EdgeInsets.all(AppSpacing.xl),
+          padding: EdgeInsets.all(AppVariant.usesIPhoneUi ? 16 : AppSpacing.xl),
           children: [
             Row(
               children: [
@@ -604,10 +684,11 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Waiter ${ApiService.currentStaffNumber ?? ''}',
+                        'Staff ${ApiService.currentStaffNumber ?? ''}',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
-                      if (!AppVariant.usesMinimalCopy) ...[
+                      if (!AppVariant.usesMinimalCopy &&
+                          !AppVariant.usesIPhoneUi) ...[
                         const SizedBox(height: 3),
                         Text(
                           'Verified staff profile',
@@ -617,83 +698,87 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     ],
                   ),
                 ),
-                const GlassThemeToggleButton(),
+                if (!AppVariant.usesIPhoneUi) const GlassThemeToggleButton(),
               ],
             ),
             const SizedBox(height: AppSpacing.xl),
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: dark
-                      ? const [Color(0xFF4338CA), Color(0xFF6D28D9)]
-                      : const [Color(0xFFE8EAFF), Color(0xFFF1EAFE)],
-                ),
-                border: dark
-                    ? null
-                    : Border.all(
-                        color: AppColors.primary.withValues(alpha: .16),
-                      ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: dark ? .2 : .1),
-                    blurRadius: 32,
-                    offset: const Offset(0, 16),
+            FadeSlideIn(
+              index: 1,
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: dark
+                        ? const [Color(0xFF4338CA), Color(0xFF6D28D9)]
+                        : const [Color(0xFFE8EAFF), Color(0xFFF1EAFE)],
                   ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(AppIcons.wallet, color: walletMuted),
-                      const SizedBox(width: 10),
-                      Text(
-                        context.tr('AVAILABLE TIPS'),
-                        style: AppTypography.microLabel(color: walletMuted),
+                  border: dark
+                      ? null
+                      : Border.all(
+                          color: AppColors.primary.withValues(alpha: .16),
+                        ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(
+                        alpha: dark ? .2 : .1,
                       ),
-                      const Spacer(),
-                      IconButton(
-                        tooltip: _hideTipBalance
-                            ? 'Show balance'
-                            : 'Hide balance',
-                        onPressed: _toggleTipBalance,
-                        color: walletMuted,
-                        icon: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: Icon(
-                            _hideTipBalance
-                                ? AppIcons.hidden
-                                : AppIcons.visible,
-                            key: ValueKey(_hideTipBalance),
+                      blurRadius: 32,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(AppIcons.receipt, color: walletMuted),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            context.tr('VERIFIED PAYMENTS'),
+                            style: AppTypography.microLabel(color: walletMuted),
                           ),
                         ),
-                      ),
-                      const BrandMark(size: 32),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    _hideTipBalance
-                        ? '••••••'
-                        : '${availableTips.toStringAsFixed(2)} ETB',
-                    style: AppTypography.money(size: 32, color: walletText),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    pendingTips > 0
-                        ? '${pendingTips.toStringAsFixed(2)} ETB pending settlement'
-                        : context.tr('All recorded tips are settled'),
-                    style: TextStyle(
-                      color: walletMuted,
-                      fontWeight: FontWeight.w600,
+                        IconButton(
+                          tooltip: _hideTipBalance
+                              ? 'Show balance'
+                              : 'Hide balance',
+                          onPressed: _toggleTipBalance,
+                          color: walletMuted,
+                          icon: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            child: Icon(
+                              _hideTipBalance
+                                  ? AppIcons.hidden
+                                  : AppIcons.visible,
+                              key: ValueKey(_hideTipBalance),
+                            ),
+                          ),
+                        ),
+                        const BrandMark(size: 32),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 28),
+                    Text(
+                      _hideTipBalance
+                          ? '••••••'
+                          : '${totalChecked.toStringAsFixed(2)} ETB',
+                      style: AppTypography.money(size: 32, color: walletText),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '${_historyPeriod.label} · ${historyChecks.length} payments · ${historySettled.length} settled',
+                      style: TextStyle(
+                        color: walletMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -720,36 +805,44 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     .length;
                 return GlassPanel(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: ExpansionTile(
+                    key: const Key('optional-staff-tips'),
+                    tilePadding: EdgeInsets.zero,
+                    title: Text(context.tr('Staff tips')),
+                    subtitle: Text(context.tr('For teams that accept tips')),
                     children: [
-                      const Icon(AppIcons.outbox, color: AppColors.success),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              AppVariant.usesMinimalCopy
-                                  ? 'Withdraw'
-                                  : 'Tip withdrawal',
-                              style: TextStyle(fontWeight: FontWeight.w800),
+                      Row(
+                        children: [
+                          const Icon(AppIcons.outbox, color: AppColors.success),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  AppVariant.usesMinimalCopy
+                                      ? 'Withdraw'
+                                      : 'Tip withdrawal',
+                                  style: TextStyle(fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  pendingRequests > 0
+                                      ? '$pendingRequests request pending'
+                                      : '${withdrawable.toStringAsFixed(2)} ETB available · ${pendingTips.toStringAsFixed(2)} pending',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              pendingRequests > 0
-                                  ? '$pendingRequests request pending'
-                                  : '${withdrawable.toStringAsFixed(2)} ETB available',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: withdrawable > 0
-                            ? () => _showWithdrawalRequest(withdrawable)
-                            : null,
-                        icon: const Icon(AppIcons.send, size: 18),
-                        label: const Text('Request'),
+                          ),
+                          FilledButton.tonalIcon(
+                            onPressed: withdrawable > 0
+                                ? () => _showWithdrawalRequest(withdrawable)
+                                : null,
+                            icon: const Icon(AppIcons.send, size: 18),
+                            label: const Text('Request'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -773,71 +866,81 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                   setState(() => _historyPaymentMethod = value),
             ),
             const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: HoverSurface(
-                    onTap: () => _showReceiptHistory(historyChecks),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(AppIcons.receipt, color: AppColors.primary),
-                        const SizedBox(height: 18),
-                        Text(
-                          '${historyChecks.length}',
-                          style: AppTypography.money(size: 26),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          context.tr('Total checks'),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Text(
-                              context.tr('View receipts'),
-                              style: AppTypography.microLabel(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            const Spacer(),
-                            const Icon(AppIcons.forward, size: 16),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: HoverSurface(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(AppIcons.money, color: AppColors.success),
-                        const SizedBox(height: 18),
-                        Text(
-                          '${totalChecked.toStringAsFixed(0)} ETB',
-                          style: AppTypography.money(size: 26),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          context.tr('Verified volume'),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          '${historySettled.length} settled',
-                          style: AppTypography.microLabel(
-                            color: AppColors.success,
+            FadeSlideIn(
+              index: 2,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: HoverSurface(
+                      onTap: () => _showReceiptHistory(historyChecks),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            AppIcons.receipt,
+                            color: AppColors.primary,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 18),
+                          Text(
+                            '${historyChecks.length}',
+                            style: AppTypography.money(size: 26),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            context.tr('Total checks'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  context.tr('View receipts'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTypography.microLabel(
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(AppIcons.forward, size: 16),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: HoverSurface(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(AppIcons.money, color: AppColors.success),
+                          const SizedBox(height: 18),
+                          Text(
+                            '${totalChecked.toStringAsFixed(0)} ETB',
+                            style: AppTypography.money(size: 26),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            context.tr('Verified volume'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '${historySettled.length} settled',
+                            style: AppTypography.microLabel(
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
             Row(
@@ -950,10 +1053,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                   _profileRow(
                     AppIcons.storefront,
                     'Workspace',
-                    'Current restaurant',
+                    'Current business',
                   ),
                   const Divider(height: 28),
-                  _profileRow(AppIcons.shield, 'Access', 'Waiter'),
+                  _profileRow(AppIcons.shield, 'Access', 'Staff'),
                 ],
               ),
             ),
@@ -1070,7 +1173,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      'REF ${t['transaction_ref'] ?? '—'} • Table ${t['table_number'] ?? '—'}',
+                                      'REF ${t['transaction_ref'] ?? '—'} • ${PaymentContext.display(t['table_number'])}',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: AppTypography.microLabel(),
@@ -1122,14 +1225,14 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
 
   Widget _buildBankPicker() {
     return ListView(
-      padding: const EdgeInsets.all(AppSpacing.xl),
+      padding: EdgeInsets.all(AppVariant.usesIPhoneUi ? 16 : AppSpacing.xl),
       children: [
         Text(
-          context.tr('Choose a payment provider'),
+          context.tr('Payment method'),
           style: Theme.of(context).textTheme.headlineSmall
               ?.copyWith(fontWeight: FontWeight.w800),
         ),
-        if (!AppVariant.usesMinimalCopy) ...[
+        if (!AppVariant.usesMinimalCopy && !AppVariant.usesIPhoneUi) ...[
           const SizedBox(height: 8),
           Text(
             _manualReceiptEntryOnly
@@ -1140,17 +1243,19 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
         ],
         if (_manualReceiptEntryOnly) ...[
           const SizedBox(height: AppSpacing.lg),
-          const GlassPanel(
+          GlassPanel(
             padding: EdgeInsets.all(AppSpacing.md),
             accent: AppColors.aqua,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(AppIcons.language, color: AppColors.aqua),
-                SizedBox(width: AppSpacing.md),
+                const Icon(AppIcons.language, color: AppColors.aqua),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Text(
-                    'Browser testing uses secure manual receipt entry. Camera OCR remains available in the mobile app.',
+                    context.tr(
+                      'Use manual entry in Safari. Camera scanning works in the iPhone app.',
+                    ),
                   ),
                 ),
               ],
@@ -1161,18 +1266,21 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
         LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth > 620;
+            final banks = _enabledBanks;
             return GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: wide ? 3 : 2,
-                childAspectRatio: wide ? 1.55 : 1.22,
+                // Slightly taller cards on phones so the iPhone text theme
+                // (and larger accessibility text) never overflows the tile.
+                childAspectRatio: wide ? 1.55 : 1.05,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
               ),
-              itemCount: _banks.length,
+              itemCount: banks.length,
               itemBuilder: (context, index) {
-                final bank = _banks[index];
+                final bank = banks[index];
                 return HoverSurface(
                   onTap: () {
                     if (_manualReceiptEntryOnly) {
@@ -1187,11 +1295,15 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       PaymentLogo(provider: bank.name, size: 42),
-                      const Spacer(),
-                      Text(
-                        bank.name,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                      const SizedBox(height: 10),
+                      Flexible(
+                        child: Text(
+                          bank.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
                       ),
                       const SizedBox(height: 3),
                       Text(
@@ -1222,6 +1334,14 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     try {
       final XFile imageFile = await _cameraController!.takePicture();
       final originalBytes = await imageFile.readAsBytes();
+      // ML Kit text recognition is native-only. The HTTPS browser test captures
+      // the receipt and lets the tester enter its reference manually.
+      if (kIsWeb) {
+        if (!mounted) return;
+        setState(() => _isExtracting = false);
+        _showSubmissionSheet(null, receiptImageBytes: originalBytes);
+        return;
+      }
       final receiptImageBytes = await FlutterImageCompress.compressWithList(
         originalBytes,
         minWidth: 1280,
@@ -1234,19 +1354,20 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
       final textRecognizer = TextRecognizer(
         script: TextRecognitionScript.latin,
       );
-      final RecognizedText recognizedText = await textRecognizer.processImage(
-        inputImage,
-      );
-      await textRecognizer.close();
+      final RecognizedText recognizedText;
+      try {
+        recognizedText = await textRecognizer.processImage(inputImage);
+      } finally {
+        await textRecognizer.close();
+      }
 
       String? extractedId = ReceiptParser.extractTransactionId(
         recognizedText.text,
         _selectedBank ?? 'Universal / Unknown',
       );
 
-      setState(() => _isExtracting = false);
-
       if (!mounted) return;
+      setState(() => _isExtracting = false);
       _showSubmissionSheet(extractedId, receiptImageBytes: receiptImageBytes);
     } catch (e) {
       if (mounted) {
@@ -1268,8 +1389,13 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     );
     final billController = TextEditingController();
     final tableController = TextEditingController();
+    PaymentContextKind contextKind = PaymentContextKind.invoice;
     String selectedBank = initialProvider ?? _selectedBank ?? 'Telebirr';
+    if (!AppVariant.isPaymentProviderEnabled(selectedBank)) {
+      selectedBank = 'Telebirr';
+    }
     bool isSubmitting = false;
+    bool submissionSucceeded = false;
     String? errorText;
 
     showModalBottomSheet(
@@ -1297,8 +1423,8 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                   children: [
                     Text(
                       AppVariant.usesMinimalCopy
-                          ? 'NEW TICKET'
-                          : 'SUBMIT TICKET',
+                          ? 'NEW PAYMENT'
+                          : 'VERIFY PAYMENT',
                       style: TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w900,
@@ -1319,53 +1445,79 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                         AppVariant.usesMinimalCopy ? 'BANK' : 'SELECT BANK',
                         AppIcons.banking,
                       ),
-                      items: const [
-                        DropdownMenuItem<String>(
-                          value: 'Telebirr',
-                          child: PaymentBrand(provider: 'Telebirr'),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'CBE',
-                          child: PaymentBrand(provider: 'CBE'),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'Abyssinia',
-                          child: PaymentBrand(provider: 'Abyssinia'),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'MPesa',
-                          child: PaymentBrand(provider: 'M-Pesa'),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'Dashen',
-                          child: PaymentBrand(provider: 'Dashen'),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'CBEBirr',
-                          child: PaymentBrand(provider: 'CBE Birr'),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setSheetState(() => selectedBank = val);
-                        }
-                      },
+                      items: _enabledBanks
+                          .map(
+                            (bank) => DropdownMenuItem<String>(
+                              value: bank.name,
+                              child: PaymentBrand(provider: bank.name),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: isSubmitting
+                          ? null
+                          : (val) {
+                              if (val != null) {
+                                setSheetState(() => selectedBank = val);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<PaymentContextKind>(
+                      key: const Key('payment-context-kind'),
+                      initialValue: contextKind,
+                      isExpanded: true,
+                      decoration: _buildInputDecoration(
+                        AppVariant.usesMinimalCopy
+                            ? 'FOR'
+                            : context.tr('LINK PAYMENT TO'),
+                        AppIcons.receipt,
+                      ),
+                      items: PaymentContextKind.values
+                          .map(
+                            (kind) => DropdownMenuItem(
+                              value: kind,
+                              child: Text(context.tr(kind.label)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: isSubmitting
+                          ? null
+                          : (kind) {
+                              if (kind != null) {
+                                setSheetState(() => contextKind = kind);
+                              }
+                            },
                     ),
                     const SizedBox(height: 16),
                     TextField(
+                      key: const Key('payment-context-value'),
                       controller: tableController,
+                      enabled: !isSubmitting,
+                      maxLength: 80,
                       textCapitalization: TextCapitalization.characters,
                       style: Theme.of(context).textTheme.bodyLarge
                           ?.copyWith(fontWeight: FontWeight.bold),
-                      decoration: _buildInputDecoration(
-                        AppVariant.usesMinimalCopy ? 'TABLE' : 'TABLE NUMBER',
-                        AppIcons.table,
-                      ),
+                      decoration:
+                          _buildInputDecoration(
+                            '${context.tr(contextKind.fieldLabel)} (${context.tr('optional')})',
+                            contextKind == PaymentContextKind.table
+                                ? AppIcons.table
+                                : AppIcons.receipt,
+                          ).copyWith(
+                            hintText: contextKind.hint,
+                            helperText: AppVariant.usesMinimalCopy
+                                ? null
+                                : context.tr(
+                                    'Leave blank to use the bank reference.',
+                                  ),
+                            helperMaxLines: 2,
+                          ),
                     ),
                     const SizedBox(height: 16),
 
                     TextField(
                       controller: refController,
+                      enabled: !isSubmitting,
                       textCapitalization: TextCapitalization.characters,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.bold,
@@ -1382,6 +1534,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
 
                     TextField(
                       controller: billController,
+                      enabled: !isSubmitting,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -1399,7 +1552,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                           _buildInputDecoration(
                             AppVariant.usesMinimalCopy
                                 ? 'AMOUNT (ETB)'
-                                : 'EXPECTED BILL AMOUNT (ETB)',
+                                : 'AMOUNT DUE (ETB)',
                             AppIcons.money,
                           ).copyWith(
                             filled: true,
@@ -1410,7 +1563,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                     if (!AppVariant.usesMinimalCopy) ...[
                       const SizedBox(height: 8),
                       const Text(
-                        'Any transferred amount exceeding this expected bill will be classified as a tip by the cashier.',
+                        'Enter the full amount due. Any excess payment is currently recorded as a staff tip.',
                         style: TextStyle(
                           color: AppColors.textFaint,
                           fontSize: 10,
@@ -1441,11 +1594,10 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                       onPressed: isSubmitting
                           ? null
                           : () async {
-                              if (tableController.text.trim().isEmpty ||
-                                  refController.text.isEmpty ||
+                              if (refController.text.trim().isEmpty ||
                                   billController.text.isEmpty) {
                                 setSheetState(
-                                  () => errorText = 'Please provide the table number, transaction ref, and bill amount.',
+                                  () => errorText = 'Enter the bank transaction reference and amount due.',
                                 );
                                 return;
                               }
@@ -1454,20 +1606,19 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                 isSubmitting = true;
                                 errorText = null;
                               });
+                              FocusScope.of(context).unfocus();
 
                               try {
                                 final amountStr = billController.text.trim();
                                 final enteredAmount = double.tryParse(
                                   amountStr,
                                 );
-                                final transactionId = refController.text
-                                    .trim()
-                                    .toUpperCase();
+                                final transactionId = refController.text.trim();
                                 if (enteredAmount == null ||
                                     !enteredAmount.isFinite ||
                                     enteredAmount <= 0) {
                                   throw Exception(
-                                    'Enter a valid positive bill amount.',
+                                    'Enter a valid positive amount due.',
                                   );
                                 }
 
@@ -1476,7 +1627,11 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                       transactionId: transactionId,
                                       provider: selectedBank,
                                       expectedAmount: enteredAmount,
-                                      tableNumber: tableController.text.trim(),
+                                      tableNumber: PaymentContext.encode(
+                                        contextKind,
+                                        tableController.text,
+                                        transactionId,
+                                      ),
                                       receiptImageBytes: receiptImageBytes,
                                     );
 
@@ -1489,32 +1644,33 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                                           ?.toDouble() ??
                                       0;
 
-                                  if (!context.mounted) return;
+                                  if (!mounted || !context.mounted) return;
+                                  submissionSucceeded = true;
                                   Navigator.pop(context); // Close the sheet
 
-                                  // Show visual feedback on the dashboard
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        calculatedTip > 0
-                                            ? 'Verified • +${calculatedTip.toStringAsFixed(2)} ETB tip'
-                                            : 'Verified',
-                                      ),
-                                      backgroundColor: const Color(0xFF10B981),
-                                    ),
+                                  // Success animation only ever follows the
+                                  // backend's authoritative verification —
+                                  // pending and failed results never reach it.
+                                  await SuccessOverlay.show(
+                                    this.context,
+                                    message: calculatedTip > 0
+                                        ? 'VERIFIED · +${calculatedTip.toStringAsFixed(2)} ETB TIP'
+                                        : 'VERIFIED',
                                   );
                                 } else {
                                   throw Exception(result.displayErrorMessage);
                                 }
                               } catch (e) {
-                                setSheetState(
-                                  () => errorText = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
-                                  ),
-                                );
+                                if (context.mounted) {
+                                  setSheetState(
+                                    () => errorText = e.toString().replaceAll(
+                                      'Exception: ',
+                                      '',
+                                    ),
+                                  );
+                                }
                               } finally {
-                                if (mounted) {
+                                if (!submissionSucceeded && context.mounted) {
                                   setSheetState(() => isSubmitting = false);
                                 }
                               }
@@ -1531,7 +1687,7 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
                           : Text(
                               AppVariant.usesMinimalCopy
                                   ? 'SUBMIT'
-                                  : 'SUBMIT TICKET',
+                                  : 'VERIFY PAYMENT',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
@@ -1553,64 +1709,81 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
     return InputDecoration(labelText: label, prefixIcon: Icon(icon));
   }
 
+  Future<void> _signOutOrExit() async {
+    if (widget.trialMode) {
+      Navigator.of(context).pop();
+      return;
+    }
+    await ApiService.logoutStaff();
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      CupertinoPageRoute<void>(builder: (_) => const StaffLoginScreen()),
+    );
+  }
+
+  void _openHelpAndPrivacy() {
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(builder: (_) => const SupportPrivacyScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
-          title: const BrandLockup(compact: true),
-          titleTextStyle: AppTypography.appBarTitle(),
-          leading: IconButton(
-            tooltip: widget.trialMode ? 'Exit demo' : 'Sign out',
-            icon: Icon(
-              widget.trialMode ? AppIcons.close : AppIcons.logout,
-              color: AppColors.danger,
-            ),
-            onPressed: () async {
-              if (widget.trialMode) {
-                Navigator.of(context).pop();
-                return;
-              }
-              await ApiService.logoutStaff();
-              if (!context.mounted) return;
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const StaffLoginScreen()),
-              );
-            },
-          ),
-          actions: [
-            const GlassLanguageToggleButton(),
-            const GlassThemeToggleButton(),
-            IconButton(
-              tooltip: 'Help and privacy',
-              icon: const Icon(AppIcons.support),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SupportPrivacyScreen()),
+        appBar: AppVariant.usesIPhoneUi
+            ? IPhoneDashboardNavigationBar(
+                title: Text(context.tr(widget.trialMode ? 'Demo' : 'Staff')),
+                onSignOut: _signOutOrExit,
+                onHelp: _openHelpAndPrivacy,
+                onRefresh: _refreshData,
+              )
+            : AppBar(
+                title: const BrandLockup(compact: true),
+                titleTextStyle: AppTypography.appBarTitle(),
+                leading: IconButton(
+                  tooltip: widget.trialMode ? 'Exit demo' : 'Sign out',
+                  icon: Icon(
+                    widget.trialMode ? AppIcons.close : AppIcons.logout,
+                    color: AppColors.danger,
+                  ),
+                  onPressed: _signOutOrExit,
+                ),
+                actions: [
+                  const GlassLanguageToggleButton(),
+                  const GlassThemeToggleButton(),
+                  IconButton(
+                    tooltip: 'Help and privacy',
+                    icon: const Icon(AppIcons.support),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SupportPrivacyScreen(),
+                      ),
+                    ),
+                  ),
+                ],
+                bottom: TabBar(
+                  dividerHeight: 0,
+                  tabs: [
+                    Tab(
+                      icon: const Icon(AppIcons.receipt, size: 18),
+                      text: context.tr('Payments'),
+                    ),
+                    Tab(
+                      icon: const Icon(AppIcons.scanReceipt, size: 18),
+                      text: context.tr('Scan receipt'),
+                    ),
+                    Tab(
+                      icon: const Icon(AppIcons.history, size: 18),
+                      text: context.tr('Activity'),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-          bottom: TabBar(
-            dividerHeight: 0,
-            tabs: [
-              Tab(
-                icon: const Icon(AppIcons.receipt, size: 18),
-                text: context.tr('Tickets'),
-              ),
-              Tab(
-                icon: const Icon(AppIcons.scanReceipt, size: 18),
-                text: context.tr('Scan receipt'),
-              ),
-              Tab(
-                icon: const Icon(AppIcons.wallet, size: 18),
-                text: context.tr('Wallet'),
-              ),
-            ],
-          ),
-        ),
         body: AppBackdrop(
-          child: TabBarView(
+          child: DashboardTabView(
+            preserveState: AppVariant.usesIPhoneUi,
             physics: const NeverScrollableScrollPhysics(),
             children: [
               _buildTicketFeed(),
@@ -1619,57 +1792,119 @@ class _WaiterDashboardState extends State<WaiterDashboard> {
             ],
           ),
         ),
+        bottomNavigationBar: AppVariant.usesIPhoneUi
+            ? IPhoneBottomTabBar(
+                items: [
+                  IPhoneTabItem(
+                    label: context.tr('Payments'),
+                    icon: AppIcons.receipt,
+                  ),
+                  IPhoneTabItem(
+                    label: context.tr('Scan'),
+                    icon: AppIcons.scanReceipt,
+                  ),
+                  IPhoneTabItem(
+                    label: context.tr('Activity'),
+                    icon: AppIcons.history,
+                  ),
+                ],
+              )
+            : null,
       ),
     );
   }
 }
 
+/// The scanner's guidance frame. [progress] (0..1, looping) drives:
+///  • corner brackets that breathe gently in and out,
+///  • a horizontal beam that sweeps down the frame and back,
+///  • a faint violet wash that follows the beam, like light catching paper.
 class _ScannerFramePainter extends CustomPainter {
+  _ScannerFramePainter({required this.progress});
+
+  final double progress;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.primarySoft
-      ..strokeWidth = 3
+    // Corner brackets breathe between 96% and 100% scale around the center.
+    final breathe = Curves.easeInOut.transform(
+      (sin(progress * 2 * pi) + 1) / 2,
+    );
+    final bracketPaint = Paint()
+      ..color = AppColors.primarySoft.withValues(alpha: .85 + .15 * breathe)
+      ..strokeWidth = 3 + breathe
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     const corner = 34.0;
     const radius = 20.0;
+    final inset = 6 * breathe;
     final path = Path()
-      ..moveTo(0, corner)
-      ..lineTo(0, radius)
-      ..quadraticBezierTo(0, 0, radius, 0)
-      ..lineTo(corner, 0)
-      ..moveTo(size.width - corner, 0)
-      ..lineTo(size.width - radius, 0)
-      ..quadraticBezierTo(size.width, 0, size.width, radius)
-      ..lineTo(size.width, corner)
-      ..moveTo(size.width, size.height - corner)
-      ..lineTo(size.width, size.height - radius)
+      ..moveTo(inset, corner)
+      ..lineTo(inset, radius + inset)
+      ..quadraticBezierTo(inset, inset, radius + inset, inset)
+      ..lineTo(corner, inset)
+      ..moveTo(size.width - corner, inset)
+      ..lineTo(size.width - radius - inset, inset)
       ..quadraticBezierTo(
-        size.width,
-        size.height,
-        size.width - radius,
-        size.height,
+        size.width - inset,
+        inset,
+        size.width - inset,
+        radius + inset,
       )
-      ..lineTo(size.width - corner, size.height)
-      ..moveTo(corner, size.height)
-      ..lineTo(radius, size.height)
-      ..quadraticBezierTo(0, size.height, 0, size.height - radius)
-      ..lineTo(0, size.height - corner);
-    canvas.drawPath(path, paint);
+      ..lineTo(size.width - inset, corner)
+      ..moveTo(size.width - inset, size.height - corner)
+      ..lineTo(size.width - inset, size.height - radius - inset)
+      ..quadraticBezierTo(
+        size.width - inset,
+        size.height - inset,
+        size.width - radius - inset,
+        size.height - inset,
+      )
+      ..lineTo(size.width - corner, size.height - inset)
+      ..moveTo(corner, size.height - inset)
+      ..lineTo(radius + inset, size.height - inset)
+      ..quadraticBezierTo(
+        inset,
+        size.height - inset,
+        inset,
+        size.height - radius - inset,
+      )
+      ..lineTo(inset, size.height - corner);
+    canvas.drawPath(path, bracketPaint);
 
-    final scan = Paint()
-      ..shader = const LinearGradient(
-        colors: [Colors.transparent, AppColors.primarySoft, Colors.transparent],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, 1))
-      ..strokeWidth = 2;
-    canvas.drawLine(
-      Offset(18, size.height / 2),
-      Offset(size.width - 18, size.height / 2),
-      scan,
+    // The beam sweeps top→bottom→top over the loop.
+    final sweep = Curves.easeInOutCubic.transform(
+      progress < .5 ? progress * 2 : 2 - progress * 2,
     );
+    final beamY = 20 + (size.height - 40) * sweep;
+
+    // Soft wash trailing the beam.
+    final wash = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          AppColors.primary.withValues(alpha: 0),
+          AppColors.primary.withValues(alpha: .10),
+        ],
+      ).createShader(Rect.fromLTWH(0, beamY - 46, size.width, 46));
+    canvas.drawRect(Rect.fromLTWH(0, beamY - 46, size.width, 46), wash);
+
+    // Bright beam line.
+    final beam = Paint()
+      ..shader = LinearGradient(
+        colors: const [
+          Colors.transparent,
+          AppColors.primarySoft,
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromLTWH(0, beamY - 1, size.width, 2))
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(14, beamY), Offset(size.width - 14, beamY), beam);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ScannerFramePainter oldDelegate) =>
+      oldDelegate.progress != progress;
 }

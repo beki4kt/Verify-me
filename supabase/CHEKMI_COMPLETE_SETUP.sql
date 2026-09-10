@@ -1,8 +1,8 @@
 -- CHEKMI complete Supabase setup
 -- Generated from base_schema.sql plus every dated migration.
--- Schema version: 2026-08-26.3
+-- Schema version: 2026-09-10.1
 -- Safe to rerun; it does not insert demo businesses or known credentials.
--- Replace the legal-document YOUR_DOMAIN URLs before production launch.
+-- Current public legal-document URLs are included by the release migration.
 
 begin;
 
@@ -1959,8 +1959,8 @@ grant execute on function public.request_business_deletion(text,text) to anon,au
 
 insert into public.legal_documents(document_type,version,effective_at,url,is_current)
 values
-  ('privacy','2026-08-12',now(),'https://YOUR_DOMAIN/privacy',true),
-  ('terms','2026-08-12',now(),'https://YOUR_DOMAIN/terms',true)
+  ('privacy','2026-08-12',now(),'https://beki4kt.github.io/Verify-me/privacy.html',true),
+  ('terms','2026-08-12',now(),'https://beki4kt.github.io/Verify-me/terms.html',true)
 on conflict(document_type,version) do nothing;
 
 -- Migration: 202608170001_payment_correctness.sql
@@ -2496,6 +2496,210 @@ on conflict(singleton) do update set
   applied_at=excluded.applied_at;
 
 notify pgrst,'reload schema';
+
+-- Migration: 202609080001_demo_verifications.sql
+-- Demo receipts never enter business tickets or staff sessions.
+create table if not exists public.demo_installations (
+  token_hash text primary key check (token_hash ~ '^[0-9a-f]{64}$'),
+  used integer not null default 0 check (used between 0 and 10),
+  created_at timestamptz not null default now()
+);
+create table if not exists public.demo_lookup_requests (
+  token_hash text not null references public.demo_installations(token_hash),
+  request_id uuid not null,
+  fingerprint text not null,
+  result jsonb,
+  created_at timestamptz not null default now(),
+  primary key (token_hash, request_id)
+);
+create table if not exists public.demo_daily_usage (
+  day date primary key,
+  used integer not null default 0 check (used >= 0)
+);
+alter table public.demo_installations enable row level security;
+alter table public.demo_lookup_requests enable row level security;
+alter table public.demo_daily_usage enable row level security;
+revoke all on public.demo_installations, public.demo_lookup_requests, public.demo_daily_usage from public, anon, authenticated;
+
+create or replace function public.demo_lookup_status(p_token_hash text, p_request_id uuid default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare count_used integer; saved jsonb;
+begin
+  select used into count_used from public.demo_installations where token_hash=p_token_hash;
+  if p_request_id is not null then
+    select result into saved from public.demo_lookup_requests where token_hash=p_token_hash and request_id=p_request_id;
+  end if;
+  return jsonb_build_object('remaining',10-coalesce(count_used,0),'result',saved);
+end $$;
+
+create or replace function public.reserve_demo_lookup(p_token_hash text,p_request_id uuid,p_fingerprint text,p_daily_limit integer)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare count_used integer; daily_used integer; old_request public.demo_lookup_requests; today date := (now() at time zone 'UTC')::date;
+begin
+  if p_daily_limit is null or p_daily_limit < 1 or p_daily_limit > 10000 or p_fingerprint !~ '^[0-9a-f]{64}$' then
+    raise exception 'Invalid demo reservation' using errcode='22023';
+  end if;
+  insert into public.demo_installations(token_hash) values(p_token_hash) on conflict do nothing;
+  select used into count_used from public.demo_installations where token_hash=p_token_hash for update;
+  select * into old_request from public.demo_lookup_requests where token_hash=p_token_hash and request_id=p_request_id;
+  if found then
+    if old_request.fingerprint <> p_fingerprint then
+      return jsonb_build_object('state','conflict','remaining',10-count_used);
+    end if;
+    return jsonb_build_object('state','existing','remaining',10-count_used,'result',old_request.result);
+  end if;
+  if count_used>=10 then return jsonb_build_object('state','exhausted','remaining',0); end if;
+  insert into public.demo_daily_usage(day) values(today) on conflict do nothing;
+  select used into daily_used from public.demo_daily_usage where day=today for update;
+  if daily_used>=p_daily_limit then return jsonb_build_object('state','capacity','remaining',10-count_used); end if;
+  update public.demo_installations set used=used+1 where token_hash=p_token_hash;
+  update public.demo_daily_usage set used=used+1 where day=today;
+  insert into public.demo_lookup_requests(token_hash,request_id,fingerprint) values(p_token_hash,p_request_id,p_fingerprint);
+  return jsonb_build_object('state','reserved','remaining',9-count_used);
+end $$;
+
+create or replace function public.finish_demo_lookup(p_token_hash text,p_request_id uuid,p_result jsonb)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+  update public.demo_lookup_requests set result=p_result
+    where token_hash=p_token_hash and request_id=p_request_id and result is null;
+  if not found then raise exception 'Demo result could not be saved' using errcode='P0002'; end if;
+end $$;
+revoke all on function public.demo_lookup_status(text,uuid), public.reserve_demo_lookup(text,uuid,text,integer), public.finish_demo_lookup(text,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.demo_lookup_status(text,uuid), public.reserve_demo_lookup(text,uuid,text,integer), public.finish_demo_lookup(text,uuid,jsonb) to service_role;
+
+-- Migration: 202609100001_publishability.sql
+-- Public release compliance: current legal URLs and a complete, user-initiated
+-- staff account deletion flow. Financial rows retain only the non-personal
+-- staff reference required for business audit integrity.
+
+create table if not exists public.staff_account_deletion_requests (
+  request_id uuid primary key default extensions.gen_random_uuid(),
+  business_id uuid not null references public.businesses(business_id) on delete restrict,
+  staff_number text not null,
+  reason text,
+  status text not null default 'processing'
+    check (status in ('processing','completed','failed')),
+  requested_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+alter table public.staff_account_deletion_requests enable row level security;
+revoke all on public.staff_account_deletion_requests from anon,authenticated;
+
+create or replace function public.delete_current_staff_account(
+  p_token text,
+  p_reason text default null
+) returns public.staff_account_deletion_requests
+language plpgsql
+security definer
+set search_path=public,extensions
+as $$
+declare
+  s public.staff_sessions;
+  created public.staff_account_deletion_requests;
+  anonymous_phone text;
+begin
+  s := public.require_staff_session(p_token);
+
+  insert into public.staff_account_deletion_requests(
+    business_id,staff_number,reason
+  ) values (
+    s.business_id,s.staff_number,nullif(btrim(p_reason),'')
+  ) returning * into created;
+
+  anonymous_phone := 'deleted-' || replace(created.request_id::text,'-','');
+
+  update public.staff
+  set
+    name='Deleted staff',
+    phone_number=anonymous_phone,
+    password=null,
+    password_hash=extensions.crypt(
+      encode(extensions.gen_random_bytes(32),'hex'),
+      extensions.gen_salt('bf')
+    ),
+    is_active=false
+  where business_id=s.business_id and staff_number=s.staff_number;
+
+  if not found then
+    raise exception 'Staff account not found' using errcode='P0002';
+  end if;
+
+  update public.staff_sessions
+  set revoked_at=now()
+  where business_id=s.business_id
+    and staff_number=s.staff_number
+    and revoked_at is null;
+
+  update public.staff_account_deletion_requests
+  set status='completed',completed_at=now()
+  where request_id=created.request_id
+  returning * into created;
+
+  insert into public.security_audit_log(
+    business_id,actor_staff_number,action,subject_type,subject_id
+  ) values (
+    s.business_id,s.staff_number,'staff_account_deleted','staff',s.staff_number
+  );
+
+  return created;
+end $$;
+
+revoke all on function public.delete_current_staff_account(text,text) from public;
+grant execute on function public.delete_current_staff_account(text,text) to anon,authenticated;
+
+create table if not exists public.client_error_events (
+  event_id uuid primary key default extensions.gen_random_uuid(),
+  business_id uuid not null references public.businesses(business_id) on delete cascade,
+  staff_number text not null,
+  area text not null check (length(area) between 1 and 48),
+  error_code text not null check (length(error_code) between 1 and 96),
+  platform text not null check (length(platform) between 1 and 32),
+  occurred_at timestamptz not null default now()
+);
+
+create index if not exists client_error_events_occurred_at_idx
+  on public.client_error_events(occurred_at desc);
+alter table public.client_error_events enable row level security;
+revoke all on public.client_error_events from anon,authenticated;
+
+create or replace function public.report_client_error(
+  p_token text,
+  p_area text,
+  p_error_code text,
+  p_platform text
+) returns void
+language plpgsql
+security definer
+set search_path=public,extensions
+as $$
+declare s public.staff_sessions;
+begin
+  s := public.require_staff_session(p_token);
+  insert into public.client_error_events(
+    business_id,staff_number,area,error_code,platform
+  ) values (
+    s.business_id,
+    s.staff_number,
+    left(coalesce(nullif(btrim(p_area),''),'unknown'),48),
+    left(coalesce(nullif(btrim(p_error_code),''),'unknown'),96),
+    left(coalesce(nullif(btrim(p_platform),''),'unknown'),32)
+  );
+end $$;
+
+revoke all on function public.report_client_error(text,text,text,text) from public;
+grant execute on function public.report_client_error(text,text,text,text) to anon,authenticated;
+
+update public.legal_documents set is_current=false where is_current;
+insert into public.legal_documents(document_type,version,effective_at,url,is_current)
+values
+  ('privacy','2026-09-10',now(),'https://beki4kt.github.io/Verify-me/privacy.html',true),
+  ('terms','2026-09-10',now(),'https://beki4kt.github.io/Verify-me/terms.html',true)
+on conflict(document_type,version) do update set
+  effective_at=excluded.effective_at,
+  url=excluded.url,
+  is_current=true;
 
 commit;
 

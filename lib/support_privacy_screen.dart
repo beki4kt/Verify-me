@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'api_service.dart';
+import 'core/config/legal_links.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_typography.dart';
 import 'core/widgets/app_shell.dart';
 import 'core/widgets/state_views.dart';
+import 'staff_login_screen.dart';
 
 enum _HelpSection { support, policies, account }
 
@@ -26,7 +29,7 @@ class SupportPrivacyScreen extends StatefulWidget {
 }
 
 class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
-  static const _legalVersion = '2026-08-12';
+  static const _legalVersion = '2026-09-10';
 
   final _subjectController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -39,6 +42,9 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
   bool _deletionConfirmed = false;
   final Set<String> _acceptedPolicies = {};
   late Future<List<Map<String, dynamic>>> _cases;
+
+  bool get _canDeleteBusiness =>
+      widget.allowAccountDeletion || ApiService.currentUserRole == 'admin';
 
   @override
   void initState() {
@@ -133,7 +139,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Everything you send here is tied to your secure restaurant session and visible to the CHEKMI owner team.',
+                'Everything you send here is tied to your secure business session and visible to the CHEKMI owner team.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -395,12 +401,13 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         accent: AppColors.aqua,
         accepted: _acceptedPolicies.contains('privacy'),
         points: const [
-          'CHEKMI processes staff identity, restaurant configuration, payment references, verification evidence, and operational audit events.',
+          'CHEKMI processes staff identity, business configuration, payment references, verification evidence, and operational audit events.',
           'Access is tenant-scoped. Credentials and backend service keys are never included in support or crash logs.',
           'Receipt evidence is retained for 365 days by default; statutory financial records are retained for up to seven years.',
           'Access, correction, or deletion questions can be submitted through the support form on this screen.',
         ],
         onAccept: () => _acceptPolicy('privacy'),
+        onOpen: () => _openLink(LegalLinks.privacy),
       ),
       const SizedBox(height: AppSpacing.lg),
       _PolicyCard(
@@ -411,26 +418,29 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         accent: AppColors.primary,
         accepted: _acceptedPolicies.contains('terms'),
         points: const [
-          'CHEKMI assists with payment verification and restaurant workflow; the payment provider remains the source of settlement truth.',
+          'CHEKMI assists with payment verification and business workflow; the payment provider remains the source of settlement truth.',
           'Users must protect credentials, use assigned accounts, and report suspicious verification or access activity promptly.',
           'Plans control usage and features. Suspension may occur after expiry, abuse, or a material security risk.',
           'Financial disputes and refunds require documented review and remain subject to provider and applicable legal rules.',
         ],
         onAccept: () => _acceptPolicy('terms'),
+        onOpen: () => _openLink(LegalLinks.terms),
       ),
       const SizedBox(height: AppSpacing.lg),
       GlassPanel(
-        accent: AppColors.warning,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
           children: [
-            const Icon(AppIcons.info, color: AppColors.warning),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(
-                'These in-app summaries support informed consent. The public launch still requires counsel-reviewed full policy documents at the production Privacy and Terms URLs.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+            OutlinedButton.icon(
+              onPressed: () => _openLink(LegalLinks.support),
+              icon: const Icon(AppIcons.support),
+              label: const Text('PUBLIC SUPPORT'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _openLink(LegalLinks.accountDeletion),
+              icon: const Icon(AppIcons.manageAccount),
+              label: const Text('DELETION GUIDE'),
             ),
           ],
         ),
@@ -462,13 +472,11 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Restaurant account deletion',
+                        'Delete my staff account',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       Text(
-                        widget.allowAccountDeletion
-                            ? 'Requests enter a protected review and statutory-retention workflow.'
-                            : 'Only a restaurant administrator can submit this request.',
+                        'Removes your personal profile and ends access. Required business audit records keep an anonymous staff reference.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -476,7 +484,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
                 ),
               ],
             ),
-            if (widget.allowAccountDeletion) ...[
+            ...[
               const SizedBox(height: AppSpacing.lg),
               TextField(
                 key: const Key('deletionReasonField'),
@@ -485,7 +493,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
                 maxLines: 5,
                 maxLength: 1000,
                 decoration: const InputDecoration(
-                  labelText: 'Why are you closing the account?',
+                  labelText: 'Reason for deletion',
                   alignLabelWithHint: true,
                 ),
               ),
@@ -503,7 +511,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
               OutlinedButton.icon(
                 onPressed: !_deletionConfirmed || _sendingDeletion
                     ? null
-                    : _requestDeletion,
+                    : () => _requestDeletion(business: false),
                 icon: _sendingDeletion
                     ? const SizedBox.square(
                         dimension: 18,
@@ -512,6 +520,16 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
                     : const Icon(AppIcons.delete),
                 label: const Text('REQUEST ACCOUNT DELETION'),
               ),
+              if (_canDeleteBusiness) ...[
+                const SizedBox(height: AppSpacing.sm),
+                TextButton.icon(
+                  onPressed: _sendingDeletion
+                      ? null
+                      : () => _requestDeletion(business: true),
+                  icon: const Icon(AppIcons.business),
+                  label: const Text('REQUEST BUSINESS CLOSURE'),
+                ),
+              ],
             ],
           ],
         ),
@@ -593,7 +611,13 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
     }
   }
 
-  Future<void> _requestDeletion() async {
+  Future<void> _openLink(Uri uri) async {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _message('Could not open the page. Try again.', true);
+    }
+  }
+
+  Future<void> _requestDeletion({required bool business}) async {
     final reason = _deletionReasonController.text.trim();
     if (reason.length < 10) {
       _message(
@@ -605,9 +629,11 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Submit deletion request?'),
-        content: const Text(
-          'This starts an owner review. It does not immediately erase financial records or bypass legal retention requirements.',
+        title: Text(
+          business ? 'Request business closure?' : 'Delete your account?',
+        ),
+        content: Text(
+          business ? 'The business closure request enters a retention review.' : 'Your profile will be anonymized immediately and you will be signed out. This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -624,10 +650,23 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
     if (confirmed != true || !mounted) return;
     setState(() => _sendingDeletion = true);
     try {
-      await ApiService.requestBusinessDeletion(reason);
+      if (business) {
+        await ApiService.requestBusinessDeletion(reason);
+      } else {
+        await ApiService.deleteCurrentStaffAccount(reason);
+      }
       _deletionReasonController.clear();
       setState(() => _deletionConfirmed = false);
-      _message('Deletion request submitted for protected owner review.', false);
+      if (business) {
+        _message('Business closure request submitted.', false);
+      } else {
+        await ApiService.logoutStaff();
+        if (!mounted) return;
+        await Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => const StaffLoginScreen()),
+          (route) => false,
+        );
+      }
     } catch (error) {
       _message(error.toString().replaceFirst('Exception: ', ''), true);
     } finally {
@@ -656,6 +695,7 @@ class _PolicyCard extends StatelessWidget {
     required this.points,
     required this.accepted,
     required this.onAccept,
+    required this.onOpen,
   });
 
   final String title;
@@ -666,6 +706,7 @@ class _PolicyCard extends StatelessWidget {
   final List<String> points;
   final bool accepted;
   final Future<void> Function() onAccept;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) => GlassPanel(
@@ -706,10 +747,21 @@ class _PolicyCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
         ],
         const SizedBox(height: AppSpacing.sm),
-        FilledButton.icon(
-          onPressed: accepted ? null : onAccept,
-          icon: Icon(accepted ? AppIcons.verified : AppIcons.check),
-          label: Text(accepted ? 'ACCEPTED' : 'ACCEPT $type'.toUpperCase()),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            FilledButton.icon(
+              onPressed: accepted ? null : onAccept,
+              icon: Icon(accepted ? AppIcons.verified : AppIcons.check),
+              label: Text(accepted ? 'ACCEPTED' : 'ACCEPT $type'.toUpperCase()),
+            ),
+            OutlinedButton.icon(
+              onPressed: onOpen,
+              icon: const Icon(AppIcons.forward),
+              label: const Text('READ FULL DOCUMENT'),
+            ),
+          ],
         ),
       ],
     ),
