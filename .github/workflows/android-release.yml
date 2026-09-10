@@ -1,6 +1,14 @@
 name: Android production release
 
 on:
+  push:
+    branches: ['release/**']
+    paths:
+      - android/**
+      - lib/**
+      - pubspec.yaml
+      - pubspec.lock
+      - .github/workflows/android-release.yml
   workflow_dispatch:
 
 permissions:
