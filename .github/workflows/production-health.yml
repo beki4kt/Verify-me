@@ -1,6 +1,12 @@
 name: Production health
 
 on:
+  push:
+    branches: ['release/**']
+    paths:
+      - .github/workflows/production-health.yml
+      - scripts/check_production_health.mjs
+      - legal-site/**
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
