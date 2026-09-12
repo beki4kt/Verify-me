@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:ui';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:provider/provider.dart';
@@ -14,8 +18,28 @@ import 'localization_service.dart';
 import 'offline_storage.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const _ChekmiBootstrap());
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      _reportUnhandledError(details.exception, area: 'flutter');
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      _reportUnhandledError(error, area: 'platform');
+      return true;
+    };
+    runApp(const _ChekmiBootstrap());
+  }, (error, stack) => _reportUnhandledError(error, area: 'zone'));
+}
+
+void _reportUnhandledError(Object error, {required String area}) {
+  unawaited(
+    ApiService.reportClientError(
+      area: area,
+      errorCode: error.runtimeType.toString(),
+      platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
+    ),
+  );
 }
 
 class _ChekmiBootstrap extends StatefulWidget {
@@ -33,7 +57,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
   void initState() {
     super.initState();
     _session = SessionController();
-    _startup = _initialize();
+    _startup = AppVariant.isUiPreview ? Future<void>.value() : _initialize();
   }
 
   Future<void> _initialize() async {
@@ -45,7 +69,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
     if (lockedBusiness['id'] != null) {
       _session.bindBusiness(
         businessId: lockedBusiness['id']!,
-        businessName: lockedBusiness['name'] ?? 'Restaurant',
+        businessName: lockedBusiness['name'] ?? 'Business',
       );
       ApiService.currentBusinessId = lockedBusiness['id'];
     }
@@ -60,7 +84,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
         final configurationError = snapshot.error is AppConfigurationException;
         return MaterialApp(
           title: AppVariant.isTest2 ? 'CHEKMI Test 2' : 'CHEKMI',
-          theme: AppTheme.dark(),
+          theme: AppTheme.dark(iPhone: AppVariant.usesIPhoneUi),
           home: Scaffold(
             body: Center(
               child: Padding(
@@ -109,7 +133,7 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
       if (snapshot.connectionState != ConnectionState.done) {
         return MaterialApp(
           title: AppVariant.isTest2 ? 'CHEKMI Test 2' : 'CHEKMI',
-          theme: AppTheme.dark(),
+          theme: AppTheme.dark(iPhone: AppVariant.usesIPhoneUi),
           home: const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           ),
@@ -145,11 +169,15 @@ class VerifyMeApp extends StatelessWidget {
       title: AppVariant.isTest2 ? 'CHEKMI Test 2' : 'CHEKMI',
       debugShowCheckedModeBanner: false,
       locale: localization.locale,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.light(iPhone: AppVariant.usesIPhoneUi),
+      darkTheme: AppTheme.dark(iPhone: AppVariant.usesIPhoneUi),
       themeMode: theme.mode,
-      themeAnimationDuration: const Duration(milliseconds: 650),
-      themeAnimationCurve: Curves.easeInOutCubicEmphasized,
+      themeAnimationDuration: Duration(
+        milliseconds: AppVariant.usesIPhoneUi ? 220 : 650,
+      ),
+      themeAnimationCurve: AppVariant.usesIPhoneUi
+          ? Curves.easeOutCubic
+          : Curves.easeInOutCubicEmphasized,
       builder: (context, child) =>
           AppEnvironment.environmentName.trim().toLowerCase() == 'staging'
           ? Banner(

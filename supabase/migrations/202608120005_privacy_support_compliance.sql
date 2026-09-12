@@ -132,6 +132,6 @@ grant execute on function public.request_business_deletion(text,text) to anon,au
 
 insert into public.legal_documents(document_type,version,effective_at,url,is_current)
 values
-  ('privacy','2026-08-12',now(),'https://YOUR_DOMAIN/privacy',true),
-  ('terms','2026-08-12',now(),'https://YOUR_DOMAIN/terms',true)
+  ('privacy','2026-08-12',now(),'https://beki4kt.github.io/Verify-me/privacy.html',true),
+  ('terms','2026-08-12',now(),'https://beki4kt.github.io/Verify-me/terms.html',true)
 on conflict(document_type,version) do nothing;

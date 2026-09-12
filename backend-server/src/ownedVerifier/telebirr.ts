@@ -40,30 +40,69 @@ interface TelebirrReceipt {
 }
 
 function cleanLabel(value: string): string {
-  return value.replace(/\s+/g, " ").trim().toLowerCase();
+  return value.replace(/\s+/g, " ").trim().toLowerCase().replace(/[.:]+$/, "").trim();
 }
 
 /** Parse the public Ethio Telecom receipt table without logging payer data. */
 export function parseTelebirrHtml(html: string): TelebirrReceipt {
   const $ = cheerio.load(html);
+  const cellsFor = (row: ReturnType<typeof $>) => row.children("td, th")
+    .toArray()
+    .filter((cell) => $(cell).find("table").length === 0)
+    .map((cell) => $(cell).text().replace(/\s+/g, " ").trim());
   const rows = $("tr")
     .toArray()
     .map((row) =>
-      $(row)
-        .find("td")
-        .toArray()
-        .map((cell) => $(cell).text().replace(/\s+/g, " ").trim()),
+      cellsFor($(row)),
     )
     .filter((cells) => cells.length > 0);
 
+  const matchesLabel = (cell: string, label: string) => {
+    const value = cleanLabel(cell);
+    const expected = cleanLabel(label);
+    if (value === expected) return true;
+    if (!value.endsWith(expected)) return false;
+    const prefix = value.slice(0, -expected.length);
+    return /[^a-z0-9]$/.test(prefix);
+  };
+  const invoiceLabels = ["invoice no", "invoice number", "receipt no", "receipt number"];
+  const columnLabels = [...invoiceLabels, "payment date", "settled amount"];
+  const allLabels = [...columnLabels, "payer name", "payer telebirr no", "payer phone",
+    "credited party name", "credited party account no", "credited party account number",
+    "bank account number", "transaction status", "service fee", "service charge",
+    "service fee vat", "service fee v.a.t", "total paid amount", "customer note"];
+
+  // Telebirr's invoice section has three headers followed by a data row.
+  // Keep column lookup within that table rather than flattening ancestor rows.
+  const invoiceValues = new Map<string, string>();
+  for (const row of $("tr").toArray()) {
+    const headers = cellsFor($(row));
+    if (!headers.some((cell) => invoiceLabels.some((label) => matchesLabel(cell, label))) ||
+        !headers.some((cell) => matchesLabel(cell, "payment date")) ||
+        !headers.some((cell) => matchesLabel(cell, "settled amount"))) continue;
+    const values = cellsFor($(row).nextAll("tr").first());
+    if (headers.length !== values.length) continue;
+    headers.forEach((header, index) => {
+      const label = columnLabels.find((candidate) => matchesLabel(header, candidate));
+      const value = nonEmpty(values[index]);
+      if (label && value && !allLabels.some((candidate) => matchesLabel(value, candidate))) {
+        invoiceValues.set(label, value);
+      }
+    });
+  }
+
   const valueFor = (...labels: string[]): string | null => {
-    const lowered = labels.map(cleanLabel);
+    for (const label of labels) {
+      const value = invoiceValues.get(label);
+      if (value) return value;
+    }
     for (const cells of rows) {
       for (let index = 0; index < cells.length; index++) {
-        const cell = cleanLabel(cells[index] ?? "");
-        if (!lowered.some((label) => cell.includes(label))) continue;
+        const cell = cells[index] ?? "";
+        if (!labels.some((label) => matchesLabel(cell, label))) continue;
         for (let valueIndex = index + 1; valueIndex < cells.length; valueIndex++) {
           const candidate = nonEmpty(cells[valueIndex]);
+          if (candidate && allLabels.some((label) => matchesLabel(candidate, label))) break;
           if (candidate) return candidate;
         }
       }
@@ -71,21 +110,9 @@ export function parseTelebirrHtml(html: string): TelebirrReceipt {
     return null;
   };
 
-  const receiptNo =
-    valueFor("receipt no", "receipt number") ??
-    nonEmpty(
-      html.match(
-        /(?:Receipt\s*(?:No\.?|Number))[^A-Z0-9]*([A-Z0-9]{8,32})/i,
-      )?.[1],
-    );
-  const paymentDate =
-    valueFor("payment date") ??
-    nonEmpty(html.match(/(\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}:\d{2})/)?.[1]);
-  const settledAmount =
-    valueFor("settled amount") ??
-    nonEmpty(
-      html.match(/Settled\s+Amount.*?([\d,]+(?:\.\d+)?\s*Birr)/is)?.[1],
-    );
+  const receiptNo = valueFor(...invoiceLabels);
+  const paymentDate = valueFor("payment date");
+  const settledAmount = valueFor("settled amount");
   const serviceFee = valueFor("service fee", "service charge");
   const serviceFeeVAT = valueFor("service fee vat", "service fee v.a.t");
   let creditedPartyName = valueFor("credited party name");
@@ -155,11 +182,12 @@ function normalizeTelebirr(
   const amount = numberFrom(receipt.settledAmount);
   const date = ethiopianLocalDate(receipt.paymentDate);
   const status = receipt.transactionStatus;
-  const reference = receipt.receiptNo ?? submittedReference;
+  const reference = receipt.receiptNo;
   if (
     amount === null ||
     amount <= 0 ||
     !date ||
+    !reference ||
     !receipt.payerName ||
     !receipt.creditedPartyName ||
     !receipt.creditedPartyAccountNo ||
@@ -169,7 +197,7 @@ function normalizeTelebirr(
     return {
       ok: false,
       provider: "telebirr",
-      error: status || "Telebirr receipt is missing required verified fields.",
+      error: "Telebirr receipt fields, reference or completion status could not be verified.",
       code: "RECEIPT_MISMATCH",
     };
   }
@@ -269,12 +297,14 @@ export async function verifyTelebirrOwned(
   }
 
   let lastTransportError: OwnedVerifierError | null = null;
+  let lastVerificationFailure: OwnedVerificationResult | null = null;
   if (shouldUseDirectProvider()) {
     try {
       const receipt = await directReceipt(reference);
       if (receipt) {
         const normalized = normalizeTelebirr(reference, receipt);
         if (normalized.ok) return normalized;
+        lastVerificationFailure = normalized;
       }
     } catch (error) {
       lastTransportError = toOwnedVerifierError(error, "Telebirr");
@@ -297,6 +327,7 @@ export async function verifyTelebirrOwned(
         if (!receipt) continue;
         const normalized = normalizeTelebirr(reference, receipt);
         if (normalized.ok) return normalized;
+        lastVerificationFailure = normalized;
       } catch (error) {
         lastTransportError = toOwnedVerifierError(error, "Telebirr relay");
       }
@@ -304,6 +335,7 @@ export async function verifyTelebirrOwned(
   }
 
   if (lastTransportError) throw lastTransportError;
+  if (lastVerificationFailure) return lastVerificationFailure;
   return {
     ok: false,
     provider: "telebirr",

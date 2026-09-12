@@ -1,0 +1,60 @@
+name: iPhone IPA for AltStore
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['build/iphone-altstore-*']
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Show Apple toolchain
+        run: xcodebuild -version
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+      - name: Install Flutter packages
+        run: flutter pub get
+      - name: Build native release for physical iPhone
+        env:
+          SUPABASE_URL: ${{ vars.CHEKMI_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
+        run: >-
+          flutter build ios --release --no-codesign
+          --build-number=${{ github.run_number }}
+          --dart-define=CHEKMI_ENV=production
+          --dart-define=CHEKMI_TEST2=true
+          --dart-define=CHEKMI_SUPABASE_URL="$SUPABASE_URL"
+          --dart-define=CHEKMI_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          --dart-define=CHEKMI_VERIFICATION_URL=https://lpbdxtzyzlaioggefscc.supabase.co/functions/v1/chekmi-verify
+      - name: Package unsigned IPA for AltStore signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=build/ios/iphoneos/Runner.app
+          test -f "$APP/Runner"
+          file "$APP/Runner" | grep arm64
+          /usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$APP/Info.plist"
+          mkdir -p build/altstore/Payload
+          ditto "$APP" build/altstore/Payload/Runner.app
+          cd build/altstore
+          /usr/bin/zip -qry Chekmi-iPhone.ipa Payload
+          shasum -a 256 Chekmi-iPhone.ipa > Chekmi-iPhone.ipa.sha256
+          printf 'Source commit: %s\nBuild: %s\nUnsigned release IPA: install using AltStore to sign with your Apple account.\n' "$GITHUB_SHA" "$GITHUB_RUN_NUMBER" > BUILD-INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Chekmi-iPhone-AltStore
+          path: |
+            build/altstore/Chekmi-iPhone.ipa
+            build/altstore/Chekmi-iPhone.ipa.sha256
+            build/altstore/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 7

@@ -15,6 +15,7 @@ exports.verifyCbeBirrOwned = verifyCbeBirrOwned;
 exports.verifyMpesaOwned = verifyMpesaOwned;
 const axios_1 = __importDefault(require("axios"));
 const pdf_parse_1 = __importDefault(require("pdf-parse"));
+const { providerHttpsAgent } = require("../../scripts/provider-tls.cjs");
 const common_1 = require("./common");
 const types_1 = require("./types");
 function failed(provider, error, code = "RECEIPT_MISMATCH") {
@@ -364,6 +365,7 @@ async function fetchMpesaPayload(reference, useRelay) {
     const response = await axios_1.default.get(url.toString(), {
         timeout: (0, common_1.configuredTimeout)(),
         maxContentLength: common_1.MAX_PROVIDER_RESPONSE_BYTES,
+        httpsAgent: useRelay ? undefined : providerHttpsAgent(url),
         headers: {
             Accept: "application/json",
             Referer: "https://m-pesabusiness.safaricom.et/",

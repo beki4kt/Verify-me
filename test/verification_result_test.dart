@@ -2,6 +2,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:verify_me/api_service.dart';
 
 void main() {
+  test(
+    'underpayment does not suggest an unsupported split-payment workflow',
+    () {
+      final result = VerificationResult(
+        isSuccess: false,
+        errorCode: 'UNDERPAID',
+        errorMessage: 'Payment is below the amount due.',
+      );
+      expect(
+        result.displayErrorMessage,
+        contains('separate receipts cannot be combined'),
+      );
+    },
+  );
   test('destination mismatch explains the next action', () {
     final result = VerificationResult(
       isSuccess: false,

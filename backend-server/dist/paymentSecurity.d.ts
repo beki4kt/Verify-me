@@ -4,6 +4,11 @@ export declare function normalizeAccount(value: unknown): string;
  * least six stable characters and accept exact or suffix-equivalent matches.
  */
 export declare function matchesReceivingAccount(configuredAccount: unknown, verifiedAccount: unknown, minimumStableCharacters?: number): boolean;
+/** Telebirr hides the middle of wallet numbers with four literal asterisks.
+ * This checks the provider's visible prefix and final four digits, not the
+ * hidden digits. Never apply this rule to other providers or merchant IDs.
+ */
+export declare function matchesTelebirrReceivingAccount(configuredAccount: unknown, verifiedAccount: unknown): boolean;
 /** Match CBE's first-character plus final-four account mask. */
 export declare function matchesCbeReceivingAccount(configuredAccount: unknown, verifiedAccount: unknown): boolean;
 /**

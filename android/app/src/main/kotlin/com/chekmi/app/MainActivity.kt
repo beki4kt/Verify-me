@@ -1,4 +1,4 @@
-package com.leulverify.verify_me
+package com.chekmi.app
 import io.flutter.embedding.android.FlutterActivity
 
 class MainActivity : FlutterActivity()

@@ -57,18 +57,33 @@ class _PricingScreenState extends State<PricingScreen> {
     );
   }
 
-  Widget _header() => Row(
-    children: [
-      IconButton(
-        tooltip: 'Back',
-        onPressed: () => Navigator.maybePop(context),
-        icon: const Icon(AppIcons.back),
+  Widget _header() => FloatingNavIsland(
+    leading: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.maybePop(context),
+          icon: const Icon(AppIcons.back),
+        ),
+        const SizedBox(width: 2),
+        const BrandLockup(compact: true),
+      ],
+    ),
+    navigation: [
+      TextButton(onPressed: _openTrial, child: const Text('LIVE DEMO')),
+      TextButton(
+        onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const BusinessGatewayScreen()),
+          (_) => false,
+        ),
+        child: const Text('WORKSPACE'),
       ),
-      const SizedBox(width: 4),
-      const BrandLockup(compact: true),
-      const Spacer(),
-      const GlassLanguageToggleButton(),
-      const GlassThemeToggleButton(),
+    ],
+    trailing: const [
+      GlassLanguageToggleButton(),
+      SizedBox(width: 7),
+      GlassThemeToggleButton(),
     ],
   );
 
@@ -122,31 +137,14 @@ class _PricingScreenState extends State<PricingScreen> {
 
   Widget _hero() => Column(
     children: [
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: .12),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppColors.primary.withValues(alpha: .35)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              AppIcons.sparkle,
-              size: 16,
-              color: AppColors.primarySoft,
-            ),
-            const SizedBox(width: 7),
-            Text(
-              AppVariant.usesMinimalCopy ? 'PLANS' : 'SIMPLE, FLEXIBLE PRICING',
-              style: AppTypography.microLabel(color: AppColors.primarySoft),
-            ),
-          ],
-        ),
+      HeroPillBadge(
+        label: AppVariant.usesMinimalCopy
+            ? 'PLANS'
+            : 'SIMPLE, FLEXIBLE PRICING',
+        icon: AppIcons.sparkle,
       ).animate().fadeIn(delay: 80.ms).slideY(begin: -.15, end: 0),
       const SizedBox(height: AppSpacing.md),
-      Text(
+      GradientText(
         AppVariant.usesMinimalCopy
             ? 'Choose a plan'
             : 'Two plans. One clear choice.',
@@ -160,7 +158,7 @@ class _PricingScreenState extends State<PricingScreen> {
       if (!AppVariant.usesMinimalCopy) ...[
         const SizedBox(height: 8),
         Text(
-          'Start small with Basic, or choose Pro for the complete restaurant command center.',
+          'Start small with Basic, or choose Pro for the complete business command center.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge,
         ).animate().fadeIn(delay: 180.ms),
@@ -244,7 +242,7 @@ class _PricingScreenState extends State<PricingScreen> {
                   Text(
                     signedIn
                         ? 'Send the owner team a billing request. Your current service stays active during review.'
-                        : 'Connect your restaurant workspace and the CHEKMI team will activate your selection.',
+                        : 'Connect your business workspace and the CHEKMI team will activate your selection.',
                     textAlign: compact ? TextAlign.center : TextAlign.start,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -272,20 +270,22 @@ class _PricingScreenState extends State<PricingScreen> {
                             : 'TRY IT FREE'),
                 ),
               ),
-              FilledButton.icon(
-                onPressed: _submitting ? null : _continueWithPlan,
-                icon: _submitting
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(signedIn ? AppIcons.send : AppIcons.forward),
-                label: Text(
-                  AppVariant.usesMinimalCopy
-                      ? (signedIn ? 'REQUEST' : 'START')
-                      : (signedIn
-                            ? 'REQUEST ${_selectedPlan.name.toUpperCase()}'
-                            : 'GET STARTED'),
+              PrimaryGlow(
+                child: FilledButton.icon(
+                  onPressed: _submitting ? null : _continueWithPlan,
+                  icon: _submitting
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(signedIn ? AppIcons.send : AppIcons.forward),
+                  label: Text(
+                    AppVariant.usesMinimalCopy
+                        ? (signedIn ? 'REQUEST' : 'START')
+                        : (signedIn
+                              ? 'REQUEST ${_selectedPlan.name.toUpperCase()}'
+                              : 'GET STARTED'),
+                  ),
                 ),
               ),
             ],
@@ -337,7 +337,7 @@ class _PricingScreenState extends State<PricingScreen> {
         category: 'billing',
         subject: '${_selectedPlan.name} plan request',
         description:
-            'Please review and activate the ${_selectedPlan.name} plan on the $billingLabel billing cycle for this restaurant.',
+            'Please review and activate the ${_selectedPlan.name} plan on the $billingLabel billing cycle for this business.',
         priority: 'normal',
       );
       if (!mounted) return;
@@ -379,7 +379,7 @@ class _PlanChoice extends StatelessWidget {
   static const _basicFeatures = [
     '2,500 verifications each month',
     '1 staff seat and all 6 providers',
-    'Receipt scanning and live tickets',
+    'Receipt scanning and payment tracking',
     'Recent transaction history',
   ];
 
@@ -393,7 +393,7 @@ class _PlanChoice extends StatelessWidget {
   static const _minimalBasicFeatures = [
     '2,500 checks / month',
     '1 staff · 6 providers',
-    'Scan · tickets · history',
+    'Scan · payments · history',
   ];
 
   static const _minimalProFeatures = [
@@ -419,7 +419,9 @@ class _PlanChoice extends StatelessWidget {
           child: AnimatedScale(
             duration: const Duration(milliseconds: 260),
             curve: Curves.easeOutBack,
-            scale: selected ? 1 : .975,
+            scale: plan.recommended
+                ? (selected ? 1.025 : 1.005)
+                : (selected ? 1 : .975),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 320),
               curve: Curves.easeOutCubic,
@@ -430,19 +432,29 @@ class _PlanChoice extends StatelessWidget {
                           .withValues(alpha: .38),
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(
-                  color: selected
-                      ? accent.withValues(alpha: .76)
+                  color: selected || plan.recommended
+                      ? accent.withValues(alpha: selected ? .82 : .52)
                       : Theme.of(context).colorScheme.outline
                             .withValues(alpha: .16),
-                  width: selected ? 2 : 1,
+                  width: plan.recommended ? 2 : (selected ? 1.5 : 1),
                 ),
-                boxShadow: selected
+                boxShadow: selected || plan.recommended
                     ? [
                         BoxShadow(
-                          color: accent.withValues(alpha: .16),
-                          blurRadius: 30,
-                          offset: const Offset(0, 12),
+                          color: accent.withValues(
+                            alpha: plan.recommended ? .30 : .16,
+                          ),
+                          blurRadius: plan.recommended ? 46 : 30,
+                          spreadRadius: plan.recommended ? -8 : -6,
+                          offset: const Offset(0, 16),
                         ),
+                        if (plan.recommended)
+                          BoxShadow(
+                            color: AppColors.aqua.withValues(alpha: .10),
+                            blurRadius: 40,
+                            spreadRadius: -12,
+                            offset: const Offset(10, 8),
+                          ),
                       ]
                     : null,
               ),
@@ -564,7 +576,7 @@ class _PlanChoice extends StatelessWidget {
                                       ),
                                     ),
                                     Text(
-                                      'Sized to your restaurant',
+                                      'Sized to your business',
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall,
