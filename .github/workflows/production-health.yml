@@ -23,6 +23,8 @@ jobs:
       - name: Check customer-facing services
         id: health
         continue-on-error: true
+        env:
+          CHEKMI_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
         run: node scripts/check_production_health.mjs
       - name: Open or update incident
         if: ${{ steps.health.outcome == 'failure' }}
