@@ -28,6 +28,7 @@ import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
 import 'core/config/payment_context.dart';
+import 'core/models/tip_balance.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
 class WaiterDashboard extends StatefulWidget {
@@ -641,10 +642,6 @@ class _WaiterDashboardState extends State<WaiterDashboard>
         final historySettled = historyChecks
             .where((t) => t['status'] == 'settled')
             .toList();
-        final availableTips = settled.fold<double>(
-          0,
-          (sum, t) => sum + ((t['tip_amount'] as num?)?.toDouble() ?? 0),
-        );
         final pendingTips = pending.fold<double>(
           0,
           (sum, t) => sum + ((t['tip_amount'] as num?)?.toDouble() ?? 0),
@@ -785,21 +782,12 @@ class _WaiterDashboardState extends State<WaiterDashboard>
             StreamBuilder<List<Map<String, dynamic>>>(
               stream: _withdrawalRequestsStream,
               builder: (context, withdrawalSnapshot) {
-                final requests = withdrawalSnapshot.data ?? const [];
-                final committed = requests
-                    .where(
-                      (request) =>
-                          request['status'] == 'pending' ||
-                          request['status'] == 'approved',
-                    )
-                    .fold<double>(
-                      0,
-                      (sum, request) =>
-                          sum + ((request['amount'] as num?)?.toDouble() ?? 0),
-                    );
-                final withdrawable = (availableTips - committed)
-                    .clamp(0, double.infinity)
-                    .toDouble();
+                final requests =
+                    withdrawalSnapshot.data ?? const <Map<String, dynamic>>[];
+                final withdrawable = calculateWithdrawableTips(
+                  tickets: settled,
+                  withdrawals: requests,
+                );
                 final pendingRequests = requests
                     .where((request) => request['status'] == 'pending')
                     .length;
@@ -1122,6 +1110,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                     ),
                   ),
                   IconButton(
+                    tooltip: 'Close payment history',
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(AppIcons.close),
                   ),

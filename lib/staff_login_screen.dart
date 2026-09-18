@@ -13,6 +13,7 @@ import 'admin_dashboard.dart';
 import 'core/config/app_environment.dart';
 import 'trial_mode_screen.dart';
 import 'core/config/app_variant.dart';
+import 'core/models/ethiopian_phone.dart';
 
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
@@ -72,7 +73,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     }
 
     // CONCATENATE FOR THE DATABASE
-    final formattedPhone = '+251$_phonePrefix$rawPhone';
+    final formattedPhone = formatEthiopianPhone(_phonePrefix, rawPhone);
 
     setState(() {
       _isLoading = true;

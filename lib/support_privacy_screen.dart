@@ -586,6 +586,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         description: description,
         priority: _priority,
       );
+      if (!mounted) return;
       _subjectController.clear();
       _descriptionController.clear();
       _refreshCases();
@@ -612,7 +613,12 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
   }
 
   Future<void> _openLink(Uri uri) async {
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // The same actionable message covers missing handlers and launch errors.
+    }
+    if (mounted) {
       _message('Could not open the page. Try again.', true);
     }
   }
@@ -655,6 +661,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
       } else {
         await ApiService.deleteCurrentStaffAccount(reason);
       }
+      if (!mounted) return;
       _deletionReasonController.clear();
       setState(() => _deletionConfirmed = false);
       if (business) {

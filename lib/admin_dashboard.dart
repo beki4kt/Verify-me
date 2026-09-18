@@ -24,6 +24,7 @@ import 'pricing_screen.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
 import 'core/config/payment_context.dart';
+import 'core/models/ethiopian_phone.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
 class _PaymentAccountProvider {
@@ -808,6 +809,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 onPressed: isSubmitting
                                     ? null
                                     : () async {
+                                        if (_enabledPaymentAccountProviders
+                                            .every(
+                                              (provider) =>
+                                                  numberControllers[provider
+                                                          .numberKey]!
+                                                      .text
+                                                      .trim()
+                                                      .isEmpty,
+                                            )) {
+                                          setSheetState(() {
+                                            errorText = 'Configure at least one payment account before saving.';
+                                          });
+                                          return;
+                                        }
                                         for (final provider
                                             in _enabledPaymentAccountProviders) {
                                           final number =
@@ -1238,17 +1253,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
     confirmPasswordController.dispose();
   }
 
-  void _showAddStaffSheet() {
+  Future<void> _showAddStaffSheet() async {
     final pinController = TextEditingController();
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
     final passwordController = TextEditingController();
+    String phonePrefix = '9';
     String selectedRole = 'waiter';
     bool isSubmitting = false;
     bool submissionSucceeded = false;
+    bool obscurePassword = true;
     String? errorText;
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface
@@ -1306,6 +1323,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         'PHONE NUMBER',
                         AppIcons.phone,
                         isPhone: true,
+                        phonePrefix: phonePrefix,
+                        onPhonePrefixChanged: (value) =>
+                            setSheetState(() => phonePrefix = value),
                       ),
                     ),
 
@@ -1316,11 +1336,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           flex: 2,
                           child: TextField(
                             controller: passwordController,
+                            obscureText: obscurePassword,
+                            enableSuggestions: false,
+                            autocorrect: false,
                             style: Theme.of(context).textTheme.bodyLarge,
-                            decoration: _buildInputDecoration(
-                              'PASSWORD',
-                              AppIcons.lock,
-                            ),
+                            decoration:
+                                _buildInputDecoration(
+                                  'PASSWORD',
+                                  AppIcons.lock,
+                                ).copyWith(
+                                  suffixIcon: IconButton(
+                                    tooltip: obscurePassword
+                                        ? 'Show password'
+                                        : 'Hide password',
+                                    onPressed: () => setSheetState(
+                                      () => obscurePassword = !obscurePassword,
+                                    ),
+                                    icon: Icon(
+                                      obscurePassword
+                                          ? AppIcons.visible
+                                          : AppIcons.hidden,
+                                    ),
+                                  ),
+                                ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -1384,9 +1422,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           : () async {
                               if (nameController.text.isEmpty ||
                                   phoneController.text.length != 8 ||
-                                  passwordController.text.isEmpty) {
+                                  passwordController.text.length < 8) {
                                 setSheetState(
-                                  () => errorText = 'Please fill out all fields and ensure phone is 8 digits.',
+                                  () => errorText = 'Enter a name, an 8-digit phone number, and a password of at least 8 characters.',
                                 );
                                 return;
                               }
@@ -1406,7 +1444,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 await ApiService.createStaffMember(
                                   pin: pinController.text.trim(),
                                   name: nameController.text.trim(),
-                                  phone: '+2519${phoneController.text.trim()}',
+                                  phone: formatEthiopianPhone(
+                                    phonePrefix,
+                                    phoneController.text,
+                                  ),
                                   password: passwordController.text.trim(),
                                   role: selectedRole,
                                 );
@@ -1453,19 +1494,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       },
     );
+    pinController.dispose();
+    nameController.dispose();
+    phoneController.dispose();
+    passwordController.dispose();
   }
 
-  void _showEditStaffSheet(Map<String, dynamic> staffMember) {
+  Future<void> _showEditStaffSheet(Map<String, dynamic> staffMember) async {
     final dbPhone = staffMember['phone_number']?.toString() ?? '';
-    final displayPhone = dbPhone.startsWith('+2519')
-        ? dbPhone.replaceFirst('+2519', '')
-        : dbPhone;
+    final parsedPhone = splitEthiopianPhone(dbPhone);
+    final displayPhone = parsedPhone.subscriber;
 
     final nameController = TextEditingController(
       text: staffMember['name']?.toString() ?? '',
     );
     final phoneController = TextEditingController(text: displayPhone);
     final passwordController = TextEditingController();
+    String phonePrefix = parsedPhone.prefix;
 
     String selectedRole = staffMember['role'];
     if (selectedRole == 'cashier' &&
@@ -1476,7 +1521,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     bool submissionSucceeded = false;
     String? errorText;
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface
@@ -1534,6 +1579,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         'PHONE NUMBER',
                         AppIcons.phone,
                         isPhone: true,
+                        phonePrefix: phonePrefix,
+                        onPhonePrefixChanged: (value) =>
+                            setSheetState(() => phonePrefix = value),
                       ),
                     ),
 
@@ -1608,7 +1656,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 await ApiService.updateStaffProfile(
                                   staffMember['staff_number'].toString(),
                                   nameController.text.trim(),
-                                  '+2519${phoneController.text.trim()}',
+                                  formatEthiopianPhone(
+                                    phonePrefix,
+                                    phoneController.text,
+                                  ),
                                   passwordController.text.trim(),
                                   selectedRole,
                                 );
@@ -1655,12 +1706,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       },
     );
+    nameController.dispose();
+    phoneController.dispose();
+    passwordController.dispose();
   }
 
   InputDecoration _buildInputDecoration(
     String label,
     IconData icon, {
     bool isPhone = false,
+    String phonePrefix = '9',
+    ValueChanged<String>? onPhonePrefixChanged,
   }) {
     return InputDecoration(
       labelText: label,
@@ -1672,13 +1728,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 children: [
                   Icon(icon, color: AppColors.primary),
                   const SizedBox(width: 12),
-                  Text(
-                    '+2519',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                      letterSpacing: 1,
+                  PopupMenuButton<String>(
+                    tooltip: 'Phone prefix',
+                    onSelected: onPhonePrefixChanged,
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: '9', child: Text('+2519')),
+                      PopupMenuItem(value: '7', child: Text('+2517')),
+                    ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '+251$phonePrefix',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(Icons.arrow_drop_down, size: 15),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1920,6 +1991,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     '${data?['byte_size'] ?? bytes.length} bytes • SHA-256 protected',
                   ),
                   trailing: IconButton(
+                    tooltip: 'Close receipt evidence',
                     onPressed: () => Navigator.pop(dialogContext),
                     icon: const Icon(AppIcons.close),
                   ),
@@ -1993,6 +2065,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   title: const Text('Tip withdrawal requests'),
                   subtitle: Text('${requests.length} recent requests'),
                   trailing: IconButton(
+                    tooltip: 'Close withdrawal requests',
                     onPressed: () => Navigator.pop(sheetContext),
                     icon: const Icon(AppIcons.close),
                   ),
