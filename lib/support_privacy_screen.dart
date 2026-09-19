@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -14,15 +16,26 @@ import 'staff_login_screen.dart';
 
 enum _HelpSection { support, policies, account }
 
+Set<String> acceptedLegalDocumentTypes(
+  Iterable<Map<String, dynamic>> consents, {
+  required String version,
+}) => consents
+    .where((row) => row['document_version']?.toString() == version)
+    .map((row) => row['document_type']?.toString() ?? '')
+    .where((type) => type.isNotEmpty)
+    .toSet();
+
 class SupportPrivacyScreen extends StatefulWidget {
   const SupportPrivacyScreen({
     super.key,
     this.allowAccountDeletion = false,
     this.loadCases,
+    this.loadConsents,
   });
 
   final bool allowAccountDeletion;
   final Future<List<Map<String, dynamic>>> Function()? loadCases;
+  final Future<List<Map<String, dynamic>>> Function()? loadConsents;
 
   @override
   State<SupportPrivacyScreen> createState() => _SupportPrivacyScreenState();
@@ -41,6 +54,8 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
   bool _sendingDeletion = false;
   bool _deletionConfirmed = false;
   final Set<String> _acceptedPolicies = {};
+  final Set<String> _acceptingPolicies = {};
+  bool _loadingPolicyState = true;
   late Future<List<Map<String, dynamic>>> _cases;
 
   bool get _canDeleteBusiness =>
@@ -50,6 +65,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
   void initState() {
     super.initState();
     _cases = _loadCases();
+    unawaited(_loadPolicyState());
   }
 
   @override
@@ -348,6 +364,7 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
 
   Widget _supportCaseCard(Map<String, dynamic> item) {
     final status = item['status']?.toString() ?? 'open';
+    final ownerResponse = item['owner_response']?.toString().trim() ?? '';
     final color = switch (status) {
       'resolved' || 'closed' => AppColors.success,
       'in_progress' => AppColors.warning,
@@ -361,30 +378,58 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         borderRadius: BorderRadius.circular(17),
         border: Border.all(color: color.withValues(alpha: .2)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(AppIcons.messages, color: color),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item['subject']?.toString() ?? 'Support case',
-                  style: Theme.of(context).textTheme.titleSmall,
+          Row(
+            children: [
+              Icon(AppIcons.messages, color: color),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item['subject']?.toString() ?? 'Support case',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    Text(
+                      '${item['category'] ?? 'other'} · ${status.replaceAll('_', ' ')}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
-                Text(
-                  '${item['category'] ?? 'other'} · ${status.replaceAll('_', ' ')}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+              ),
+              Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            ],
+          ),
+          if (ownerResponse.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              key: const Key('support-owner-response'),
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface
+                    .withValues(alpha: .7),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'CHEKMI SUPPORT',
+                    style: AppTypography.microLabel(color: AppColors.primary),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(ownerResponse),
+                ],
+              ),
             ),
-          ),
-          Container(
-            width: 9,
-            height: 9,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
+          ],
         ],
       ),
     );
@@ -400,6 +445,8 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         icon: AppIcons.privacy,
         accent: AppColors.aqua,
         accepted: _acceptedPolicies.contains('privacy'),
+        loading: _loadingPolicyState,
+        accepting: _acceptingPolicies.contains('privacy'),
         points: const [
           'CHEKMI processes staff identity, business configuration, payment references, verification evidence, and operational audit events.',
           'Access is tenant-scoped. Credentials and backend service keys are never included in support or crash logs.',
@@ -417,6 +464,8 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
         icon: AppIcons.legal,
         accent: AppColors.primary,
         accepted: _acceptedPolicies.contains('terms'),
+        loading: _loadingPolicyState,
+        accepting: _acceptingPolicies.contains('terms'),
         points: const [
           'CHEKMI assists with payment verification and business workflow; the payment provider remains the source of settlement truth.',
           'Users must protect credentials, use assigned accounts, and report suspicious verification or access activity promptly.',
@@ -568,6 +617,23 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
   Future<List<Map<String, dynamic>>> _loadCases() =>
       widget.loadCases?.call() ?? ApiService.listMySupportCases();
 
+  Future<void> _loadPolicyState() async {
+    try {
+      final rows =
+          await (widget.loadConsents?.call() ??
+              ApiService.listMyLegalConsents());
+      if (!mounted) return;
+      setState(() {
+        _acceptedPolicies
+          ..clear()
+          ..addAll(acceptedLegalDocumentTypes(rows, version: _legalVersion));
+        _loadingPolicyState = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPolicyState = false);
+    }
+  }
+
   Future<void> _submitSupport() async {
     final subject = _subjectController.text.trim();
     final description = _descriptionController.text.trim();
@@ -599,6 +665,8 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
   }
 
   Future<void> _acceptPolicy(String type) async {
+    if (_acceptingPolicies.contains(type)) return;
+    setState(() => _acceptingPolicies.add(type));
     try {
       await ApiService.acceptLegalDocument(type: type, version: _legalVersion);
       if (!mounted) return;
@@ -609,6 +677,8 @@ class _SupportPrivacyScreenState extends State<SupportPrivacyScreen> {
       );
     } catch (error) {
       _message(error.toString().replaceFirst('Exception: ', ''), true);
+    } finally {
+      if (mounted) setState(() => _acceptingPolicies.remove(type));
     }
   }
 
@@ -701,6 +771,8 @@ class _PolicyCard extends StatelessWidget {
     required this.accent,
     required this.points,
     required this.accepted,
+    required this.loading,
+    required this.accepting,
     required this.onAccept,
     required this.onOpen,
   });
@@ -712,6 +784,8 @@ class _PolicyCard extends StatelessWidget {
   final Color accent;
   final List<String> points;
   final bool accepted;
+  final bool loading;
+  final bool accepting;
   final Future<void> Function() onAccept;
   final VoidCallback onOpen;
 
@@ -759,9 +833,22 @@ class _PolicyCard extends StatelessWidget {
           runSpacing: AppSpacing.sm,
           children: [
             FilledButton.icon(
-              onPressed: accepted ? null : onAccept,
-              icon: Icon(accepted ? AppIcons.verified : AppIcons.check),
-              label: Text(accepted ? 'ACCEPTED' : 'ACCEPT $type'.toUpperCase()),
+              onPressed: accepted || loading || accepting ? null : onAccept,
+              icon: accepting || loading
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(accepted ? AppIcons.verified : AppIcons.check),
+              label: Text(
+                loading
+                    ? 'CHECKING'
+                    : accepting
+                    ? 'SAVING'
+                    : accepted
+                    ? 'ACCEPTED'
+                    : 'ACCEPT $type'.toUpperCase(),
+              ),
             ),
             OutlinedButton.icon(
               onPressed: onOpen,

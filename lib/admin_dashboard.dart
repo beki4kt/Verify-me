@@ -18,6 +18,7 @@ import 'core/widgets/metric_card.dart';
 import 'core/widgets/payment_brand.dart';
 import 'core/widgets/state_views.dart';
 import 'core/widgets/transaction_filter_bar.dart';
+import 'core/widgets/dashboard_refresh_status.dart';
 import 'localization_service.dart';
 import 'plan_catalog.dart';
 import 'pricing_screen.dart';
@@ -25,6 +26,8 @@ import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
 import 'core/config/payment_context.dart';
 import 'core/models/ethiopian_phone.dart';
+import 'core/models/audit_export.dart';
+import 'core/services/audit_csv_exporter.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
 class _PaymentAccountProvider {
@@ -2047,6 +2050,74 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  Future<void> _confirmWithdrawalChange(
+    Map<String, dynamic> request,
+    String status,
+  ) async {
+    final amount = (request['amount'] as num?)?.toDouble() ?? 0;
+    final staffNumber = request['staff_number']?.toString() ?? 'Unknown';
+    final (title, action, detail, isDestructive) = switch (status) {
+      'approved' => (
+        'Approve withdrawal?',
+        'APPROVE',
+        'This reserves the request for payment. You can mark it paid after the transfer is complete.',
+        false,
+      ),
+      'rejected' => (
+        'Reject withdrawal?',
+        'REJECT',
+        'The request will close and the reserved tip balance will return to the staff member.',
+        true,
+      ),
+      'paid' => (
+        'Mark withdrawal paid?',
+        'MARK PAID',
+        'Confirm only after sending the money. A paid withdrawal cannot be reopened.',
+        false,
+      ),
+      _ => throw ArgumentError.value(status, 'status'),
+    };
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${amount.toStringAsFixed(2)} ETB',
+              style: Theme.of(dialogContext).textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text('Staff $staffNumber'),
+            const SizedBox(height: 16),
+            Text(detail),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            key: Key('confirm-withdrawal-$status'),
+            style: isDestructive
+                ? FilledButton.styleFrom(backgroundColor: AppColors.danger)
+                : null,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _resolveWithdrawal(request, status);
+    }
+  }
+
   void _showWithdrawalRequests() {
     showModalBottomSheet<void>(
       context: context,
@@ -2134,7 +2205,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   else if (pending) ...[
                                     IconButton.filledTonal(
                                       tooltip: 'Reject',
-                                      onPressed: () => _resolveWithdrawal(
+                                      onPressed: () => _confirmWithdrawalChange(
                                         request,
                                         'rejected',
                                       ),
@@ -2143,7 +2214,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                     const SizedBox(width: 6),
                                     IconButton.filled(
                                       tooltip: 'Approve',
-                                      onPressed: () => _resolveWithdrawal(
+                                      onPressed: () => _confirmWithdrawalChange(
                                         request,
                                         'approved',
                                       ),
@@ -2151,8 +2222,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                     ),
                                   ] else if (approved) ...[
                                     FilledButton.icon(
-                                      onPressed: () =>
-                                          _resolveWithdrawal(request, 'paid'),
+                                      onPressed: () => _confirmWithdrawalChange(
+                                        request,
+                                        'paid',
+                                      ),
                                       icon: const Icon(AppIcons.money),
                                       label: const Text('Mark paid'),
                                     ),
@@ -2168,6 +2241,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
           },
         ),
       ),
+    );
+  }
+
+  void _showAuditLedger() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _AuditLedgerSheet(),
     );
   }
 
@@ -2295,12 +2377,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         ),
                         _adminToolCard(
                           width: width,
+                          icon: AppIcons.verifiedList,
+                          color: AppColors.pink,
+                          title: 'Audit ledger',
+                          detail: 'Review and export CSV',
+                          onTap: _showAuditLedger,
+                          index: 5,
+                        ),
+                        _adminToolCard(
+                          width: width,
                           icon: AppIcons.refresh,
                           color: AppColors.success,
                           title: 'Refresh',
                           detail: 'Reload transactions',
                           onTap: _refreshData,
-                          index: 5,
+                          index: 6,
                         ),
                       ],
                     );
@@ -2466,394 +2557,440 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
               ),
         body: AppBackdrop(
-          child: DashboardTabView(
-            preserveState: AppVariant.usesIPhoneUi,
-            physics: AppVariant.usesIPhoneUi
-                ? const NeverScrollableScrollPhysics()
-                : null,
+          child: Column(
             children: [
-              // TAB 1: FINANCIALS AND LEDGER
-              CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: StreamBuilder<List<Map<String, dynamic>>>(
-                      stream: _ticketsStream,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: ErrorBanner(
-                              message: _friendlyStreamError(snapshot.error),
-                            ),
-                          );
-                        }
-                        if (!_activePlan.includes(
-                          PlanFeature.dailyRevenueReport,
-                        )) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: _buildProInsightsLock(),
-                          );
-                        }
-                        final allTickets =
-                            snapshot.data ?? const <Map<String, dynamic>>[];
-                        final visibleTickets = _filteredTickets(allTickets);
-                        double totalRevenue = 0;
-                        int pendingCount = 0;
-                        Map<String, double> bankTotals = {};
-                        Map<String, int> bankCounts = {};
+              DashboardRefreshStatus(
+                listenable: ApiService.dashboardRefreshState,
+                onRefresh: _refreshData,
+              ),
+              Expanded(
+                child: DashboardTabView(
+                  preserveState: AppVariant.usesIPhoneUi,
+                  physics: AppVariant.usesIPhoneUi
+                      ? const NeverScrollableScrollPhysics()
+                      : null,
+                  children: [
+                    // TAB 1: FINANCIALS AND LEDGER
+                    CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: StreamBuilder<List<Map<String, dynamic>>>(
+                            stream: _ticketsStream,
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: ErrorBanner(
+                                    message: _friendlyStreamError(
+                                      snapshot.error,
+                                    ),
+                                  ),
+                                );
+                              }
+                              if (!_activePlan.includes(
+                                PlanFeature.dailyRevenueReport,
+                              )) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: _buildProInsightsLock(),
+                                );
+                              }
+                              final allTickets =
+                                  snapshot.data ??
+                                  const <Map<String, dynamic>>[];
+                              final visibleTickets = _filteredTickets(
+                                allTickets,
+                              );
+                              double totalRevenue = 0;
+                              int pendingCount = 0;
+                              Map<String, double> bankTotals = {};
+                              Map<String, int> bankCounts = {};
 
-                        if (snapshot.hasData) {
-                          for (var ticket in visibleTickets) {
-                            if (ticket['status'] == 'settled') {
-                              double amount = (ticket['bill_amount'] ?? 0)
-                                  .toDouble();
-                              totalRevenue += amount;
-                              String bankName = ticket['bank'] ?? 'Unknown';
-                              bankTotals[bankName] =
-                                  (bankTotals[bankName] ?? 0) + amount;
-                              bankCounts[bankName] =
-                                  (bankCounts[bankName] ?? 0) + 1;
-                            } else if (ticket['status'] == 'pending') {
-                              pendingCount++;
-                            }
-                          }
-                        }
+                              if (snapshot.hasData) {
+                                for (var ticket in visibleTickets) {
+                                  if (ticket['status'] == 'settled') {
+                                    double amount = (ticket['bill_amount'] ?? 0)
+                                        .toDouble();
+                                    totalRevenue += amount;
+                                    String bankName =
+                                        ticket['bank'] ?? 'Unknown';
+                                    bankTotals[bankName] =
+                                        (bankTotals[bankName] ?? 0) + amount;
+                                    bankCounts[bankName] =
+                                        (bankCounts[bankName] ?? 0) + 1;
+                                  } else if (ticket['status'] == 'pending') {
+                                    pendingCount++;
+                                  }
+                                }
+                              }
 
-                        return Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildLedgerFilters(allTickets),
-                              const SizedBox(height: 18),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildMetricCard(
-                                      context.tr('TOTAL REVENUE'),
-                                      '${totalRevenue.toStringAsFixed(0)} ETB',
-                                      const Color(0xFF10B981),
+                              return Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildLedgerFilters(allTickets),
+                                    const SizedBox(height: 18),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _buildMetricCard(
+                                            context.tr('TOTAL REVENUE'),
+                                            '${totalRevenue.toStringAsFixed(0)} ETB',
+                                            const Color(0xFF10B981),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: _buildMetricCard(
+                                            context.tr('OPEN PAYMENTS'),
+                                            '$pendingCount',
+                                            const Color(0xFFF59E0B),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildMetricCard(
-                                      context.tr('OPEN PAYMENTS'),
-                                      '$pendingCount',
-                                      const Color(0xFFF59E0B),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 24),
-                              Text(
-                                AppVariant.usesIPhoneUi
-                                    ? _modernSectionLabel('PAYMENT METHODS')
-                                    : context.tr('BANK DEPOSIT BREAKDOWN'),
-                                style: AppVariant.usesIPhoneUi
-                                    ? Theme.of(context).textTheme.titleMedium
-                                          ?.copyWith(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: -.25,
-                                          )
-                                    : const TextStyle(
-                                        color: AppColors.textFaint,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 11,
-                                        letterSpacing: 1.5,
-                                      ),
-                              ),
-                              const SizedBox(height: 16),
-                              if (bankTotals.isEmpty)
-                                GlassPanel(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Center(
-                                    child: Text(
-                                      context.tr(
-                                        'No verified transactions yet.',
-                                      ),
-                                      style: const TextStyle(
-                                        color: AppColors.textFaint,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              else
-                                GlassPanel(
-                                      padding: const EdgeInsets.all(20),
-                                      child: Column(
-                                        children: bankTotals.entries.map((
-                                          entry,
-                                        ) {
-                                          Color bColor = _getBankColor(
-                                            entry.key,
-                                          );
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 16.0,
+                                    const SizedBox(height: 24),
+                                    Text(
+                                      AppVariant.usesIPhoneUi
+                                          ? _modernSectionLabel(
+                                              'PAYMENT METHODS',
+                                            )
+                                          : context.tr(
+                                              'BANK DEPOSIT BREAKDOWN',
                                             ),
-                                            child: Row(
+                                      style: AppVariant.usesIPhoneUi
+                                          ? Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  fontSize: 17,
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: -.25,
+                                                )
+                                          : const TextStyle(
+                                              color: AppColors.textFaint,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11,
+                                              letterSpacing: 1.5,
+                                            ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    if (bankTotals.isEmpty)
+                                      GlassPanel(
+                                        padding: const EdgeInsets.all(24),
+                                        child: Center(
+                                          child: Text(
+                                            context.tr(
+                                              'No verified transactions yet.',
+                                            ),
+                                            style: const TextStyle(
+                                              color: AppColors.textFaint,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      GlassPanel(
+                                        padding: const EdgeInsets.all(20),
+                                        child: Column(
+                                          children: bankTotals.entries.map((
+                                            entry,
+                                          ) {
+                                            Color bColor = _getBankColor(
+                                              entry.key,
+                                            );
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 16.0,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  PaymentLogo(
+                                                    provider: entry.key,
+                                                    size: 34,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          entry.key,
+                                                          style:
+                                                              Theme.of(context)
+                                                                  .textTheme
+                                                                  .bodyMedium
+                                                                  ?.copyWith(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                    fontSize:
+                                                                        14,
+                                                                  ),
+                                                        ),
+                                                        Text(
+                                                          '${bankCounts[entry.key] ?? 0} payments • ${totalRevenue == 0 ? '0' : (entry.value / totalRevenue * 100).toStringAsFixed(1)}%',
+                                                          style: Theme.of(
+                                                            context,
+                                                          ).textTheme.bodySmall,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '${entry.value.toStringAsFixed(0)} ETB',
+                                                    style: TextStyle(
+                                                      color: bColor,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 14,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1, end: 0),
+                                  ],
+                                ),
+                              ).animate().fadeIn(duration: 400.ms);
+                            },
+                          ),
+                        ),
+
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                              vertical: 8.0,
+                            ),
+                            child: Text(
+                              AppVariant.usesIPhoneUi
+                                  ? _modernSectionLabel('TRANSACTIONS')
+                                  : context.tr('MASTER TRANSACTION LEDGER'),
+                              style: AppVariant.usesIPhoneUi
+                                  ? Theme.of(context).textTheme.titleMedium
+                                        ?.copyWith(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: -.25,
+                                        )
+                                  : const TextStyle(
+                                      color: AppColors.textFaint,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11,
+                                      letterSpacing: 1.5,
+                                    ),
+                            ),
+                          ),
+                        ),
+
+                        StreamBuilder<List<Map<String, dynamic>>>(
+                          stream: _ticketsStream,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: ErrorBanner(
+                                    message: _friendlyStreamError(
+                                      snapshot.error,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            final visibleTickets = _filteredTickets(
+                              snapshot.data ?? const <Map<String, dynamic>>[],
+                            );
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const SliverToBoxAdapter(
+                                child: Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32.0),
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            if (visibleTickets.isEmpty) {
+                              return SliverToBoxAdapter(
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Text(
+                                      context.tr('Ledger is clear.'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return SliverList(
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
+                                final ticket = visibleTickets[index];
+                                final isSettled = ticket['status'] == 'settled';
+                                final isRejected =
+                                    ticket['status'] == 'rejected';
+                                final bankColor = _getBankColor(
+                                  ticket['bank'] ?? '',
+                                );
+                                final statusColor = isSettled
+                                    ? const Color(0xFF10B981)
+                                    : (isRejected
+                                          ? Colors.redAccent
+                                          : const Color(0xFFF59E0B));
+
+                                return GlassPanel(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 6,
+                                  ),
+                                  padding: const EdgeInsets.all(16),
+                                  borderRadius: AppVariant.usesIPhoneUi
+                                      ? 20
+                                      : 16,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
                                               children: [
-                                                PaymentLogo(
-                                                  provider: entry.key,
-                                                  size: 34,
+                                                Icon(
+                                                  AppIcons.receipt,
+                                                  color: statusColor,
+                                                  size: AppVariant.usesIPhoneUi
+                                                      ? 18
+                                                      : 16,
                                                 ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        entry.key,
-                                                        style: Theme.of(context)
-                                                            .textTheme
-                                                            .bodyMedium
-                                                            ?.copyWith(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              fontSize: 14,
-                                                            ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  '${ticket['bill_amount']} ETB',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyLarge
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize:
+                                                            AppVariant
+                                                                .usesIPhoneUi
+                                                            ? 18
+                                                            : 16,
                                                       ),
-                                                      Text(
-                                                        '${bankCounts[entry.key] ?? 0} payments • ${totalRevenue == 0 ? '0' : (entry.value / totalRevenue * 100).toStringAsFixed(1)}%',
-                                                        style: Theme.of(context)
-                                                            .textTheme
-                                                            .bodySmall,
-                                                      ),
-                                                    ],
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                PaymentBrand(
+                                                  provider:
+                                                      ticket['bank']
+                                                          ?.toString() ??
+                                                      'N/A',
+                                                  logoSize: 22,
+                                                  style: TextStyle(
+                                                    color: bankColor,
+                                                    fontSize:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? 12
+                                                        : 10,
+                                                    fontWeight:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w900,
                                                   ),
                                                 ),
+                                                const SizedBox(width: 8),
                                                 Text(
-                                                  '${entry.value.toStringAsFixed(0)} ETB',
+                                                  'REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0, 8)}',
                                                   style: TextStyle(
-                                                    color: bColor,
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 14,
+                                                    color:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? Theme.of(context)
+                                                              .colorScheme
+                                                              .onSurfaceVariant
+                                                        : AppColors.textFaint,
+                                                    fontSize:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? 12
+                                                        : 10,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    )
-                                    .animate()
-                                    .fadeIn(delay: 300.ms)
-                                    .slideY(begin: 0.1, end: 0),
-                            ],
-                          ),
-                        ).animate().fadeIn(duration: 400.ms);
-                      },
-                    ),
-                  ),
-
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0,
-                        vertical: 8.0,
-                      ),
-                      child: Text(
-                        AppVariant.usesIPhoneUi
-                            ? _modernSectionLabel('TRANSACTIONS')
-                            : context.tr('MASTER TRANSACTION LEDGER'),
-                        style: AppVariant.usesIPhoneUi
-                            ? Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -.25,
-                              )
-                            : const TextStyle(
-                                color: AppColors.textFaint,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 11,
-                                letterSpacing: 1.5,
-                              ),
-                      ),
-                    ),
-                  ),
-
-                  StreamBuilder<List<Map<String, dynamic>>>(
-                    stream: _ticketsStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: ErrorBanner(
-                              message: _friendlyStreamError(snapshot.error),
-                            ),
-                          ),
-                        );
-                      }
-                      final visibleTickets = _filteredTickets(
-                        snapshot.data ?? const <Map<String, dynamic>>[],
-                      );
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const SliverToBoxAdapter(
-                          child: Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(32.0),
-                              child: CircularProgressIndicator(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      if (visibleTickets.isEmpty) {
-                        return SliverToBoxAdapter(
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24.0),
-                              child: Text(
-                                context.tr('Ledger is clear.'),
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      return SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final ticket = visibleTickets[index];
-                          final isSettled = ticket['status'] == 'settled';
-                          final isRejected = ticket['status'] == 'rejected';
-                          final bankColor = _getBankColor(ticket['bank'] ?? '');
-                          final statusColor = isSettled
-                              ? const Color(0xFF10B981)
-                              : (isRejected
-                                    ? Colors.redAccent
-                                    : const Color(0xFFF59E0B));
-
-                          return GlassPanel(
-                            margin: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 6,
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            borderRadius: AppVariant.usesIPhoneUi ? 20 : 16,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            AppIcons.receipt,
-                                            color: statusColor,
-                                            size: AppVariant.usesIPhoneUi
-                                                ? 18
-                                                : 16,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            '${ticket['bill_amount']} ETB',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyLarge
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize:
-                                                      AppVariant.usesIPhoneUi
-                                                      ? 18
-                                                      : 16,
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          PaymentBrand(
-                                            provider:
-                                                ticket['bank']?.toString() ??
-                                                'N/A',
-                                            logoSize: 22,
-                                            style: TextStyle(
-                                              color: bankColor,
-                                              fontSize: AppVariant.usesIPhoneUi
-                                                  ? 12
-                                                  : 10,
-                                              fontWeight:
-                                                  AppVariant.usesIPhoneUi
-                                                  ? FontWeight.w700
-                                                  : FontWeight.w900,
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Staff ${ticket['waiter_id']} • ${PaymentContext.display(ticket['table_number'])} • ${_formatLedgerDate(ticket['created_at'])}',
+                                              style: TextStyle(
+                                                color: AppVariant.usesIPhoneUi
+                                                    ? Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant
+                                                          .withValues(
+                                                            alpha: .72,
+                                                          )
+                                                    : AppColors.textDisabled,
+                                                fontSize:
+                                                    AppVariant.usesIPhoneUi
+                                                    ? 11
+                                                    : 10,
+                                                fontWeight: FontWeight.w500,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0, 8)}',
-                                            style: TextStyle(
-                                              color: AppVariant.usesIPhoneUi
-                                                  ? Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant
-                                                  : AppColors.textFaint,
-                                              fontSize: AppVariant.usesIPhoneUi
-                                                  ? 12
-                                                  : 10,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Staff ${ticket['waiter_id']} • ${PaymentContext.display(ticket['table_number'])} • ${_formatLedgerDate(ticket['created_at'])}',
-                                        style: TextStyle(
-                                          color: AppVariant.usesIPhoneUi
-                                              ? Theme.of(context)
-                                                    .colorScheme
-                                                    .onSurfaceVariant
-                                                    .withValues(alpha: .72)
-                                              : AppColors.textDisabled,
-                                          fontSize: AppVariant.usesIPhoneUi
-                                              ? 11
-                                              : 10,
-                                          fontWeight: FontWeight.w500,
+                                          ],
                                         ),
                                       ),
+                                      if (ticket['receipt_image_saved'] == true)
+                                        IconButton(
+                                          tooltip: 'View receipt evidence',
+                                          onPressed: () => _showReceiptEvidence(
+                                            ticket['ticket_id'].toString(),
+                                          ),
+                                          icon: const Icon(
+                                            AppIcons.scanImage,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
                                     ],
                                   ),
-                                ),
-                                if (ticket['receipt_image_saved'] == true)
-                                  IconButton(
-                                    tooltip: 'View receipt evidence',
-                                    onPressed: () => _showReceiptEvidence(
-                                      ticket['ticket_id'].toString(),
-                                    ),
-                                    icon: const Icon(
-                                      AppIcons.scanImage,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          );
-                        }, childCount: visibleTickets.length),
-                      );
-                    },
-                  ),
+                                );
+                              }, childCount: visibleTickets.length),
+                            );
+                          },
+                        ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                ],
+                        const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                      ],
+                    ),
+
+                    // TAB 2: STAFF ROSTER
+                    _buildStaffRosterTab(),
+                    // TAB 3: LARGE ADMIN ACTIONS
+                    _buildAdminToolsTab(),
+                  ],
+                ),
               ),
-
-              // TAB 2: STAFF ROSTER
-              _buildStaffRosterTab(),
-              // TAB 3: LARGE ADMIN ACTIONS
-              _buildAdminToolsTab(),
             ],
           ),
         ),
@@ -2894,5 +3031,174 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
     final lower = translated.toLowerCase();
     return '${lower[0].toUpperCase()}${lower.substring(1)}';
+  }
+}
+
+class _AuditLedgerSheet extends StatefulWidget {
+  const _AuditLedgerSheet();
+
+  @override
+  State<_AuditLedgerSheet> createState() => _AuditLedgerSheetState();
+}
+
+class _AuditLedgerSheetState extends State<_AuditLedgerSheet> {
+  late Future<List<Map<String, dynamic>>> _events;
+  bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _events = ApiService.listBusinessAuditEvents();
+  }
+
+  void _refresh() {
+    setState(() => _events = ApiService.listBusinessAuditEvents());
+  }
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final events = await _events;
+      if (events.isEmpty) {
+        throw Exception('There are no audit events to export.');
+      }
+      final result = await AuditCsvExporter.export(
+        fileName: auditCsvFileName(DateTime.now()),
+        csv: buildAuditCsv(events),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result == AuditCsvExportResult.shared
+                ? 'Choose where to save or share the audit CSV.'
+                : 'Audit CSV copied to the clipboard.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: .9,
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(AppIcons.verifiedList),
+            title: const Text('Business audit ledger'),
+            subtitle: const Text('Security, ticket, and tip payout events'),
+            trailing: Wrap(
+              children: [
+                IconButton(
+                  key: const Key('audit-export-button'),
+                  tooltip: 'Export CSV',
+                  onPressed: _exporting ? null : _export,
+                  icon: _exporting
+                      ? const SizedBox.square(
+                          dimension: 19,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(AppIcons.download),
+                ),
+                IconButton(
+                  tooltip: 'Refresh audit ledger',
+                  onPressed: _refresh,
+                  icon: const Icon(AppIcons.refresh),
+                ),
+                IconButton(
+                  tooltip: 'Close audit ledger',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(AppIcons.close),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _events,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const ErrorBanner(
+                          message: 'The audit ledger could not be loaded.',
+                        ),
+                        TextButton.icon(
+                          onPressed: _refresh,
+                          icon: const Icon(AppIcons.refresh),
+                          label: const Text('RETRY'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final events = snapshot.data ?? const [];
+                if (events.isEmpty) {
+                  return const EmptyView(
+                    icon: AppIcons.history,
+                    message: 'No audit events have been recorded yet.',
+                  );
+                }
+                return ListView.separated(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  itemCount: events.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final event = events[index];
+                    final action = event['action']?.toString() ?? 'event';
+                    final actor = event['actor_staff_number']?.toString();
+                    final subject =
+                        event['subject_type']?.toString() ?? 'record';
+                    return ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(AppIcons.history, size: 18),
+                      ),
+                      title: Text(_auditLabel(action)),
+                      subtitle: Text(
+                        '${actor == null || actor.isEmpty ? 'System' : 'Staff $actor'} · $subject ${event['subject_id'] ?? ''}\n${_auditDate(event['created_at'])}',
+                      ),
+                      isThreeLine: true,
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _auditLabel(String value) => value
+      .split('_')
+      .where((word) => word.isNotEmpty)
+      .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+      .join(' ');
+
+  String _auditDate(Object? value) {
+    final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    if (date == null) return 'Unknown time';
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} ${two(date.hour)}:${two(date.minute)}';
   }
 }

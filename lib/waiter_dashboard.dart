@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -24,6 +25,8 @@ import 'core/widgets/state_views.dart';
 import 'core/widgets/status_pill.dart';
 import 'core/widgets/success_overlay.dart';
 import 'core/widgets/transaction_filter_bar.dart';
+import 'core/widgets/verification_progress.dart';
+import 'core/widgets/dashboard_refresh_status.dart';
 import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
@@ -1386,8 +1389,11 @@ class _WaiterDashboardState extends State<WaiterDashboard>
     bool isSubmitting = false;
     bool submissionSucceeded = false;
     String? errorText;
+    var verificationStage = VerificationProgressStage.checkingProvider;
+    var takingLonger = false;
+    Timer? verificationProgressTimer;
 
-    showModalBottomSheet(
+    final sheet = showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface
@@ -1579,6 +1585,14 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                         ),
                       ),
 
+                    if (isSubmitting) ...[
+                      VerificationProgress(
+                        stage: verificationStage,
+                        takingLonger: takingLonger,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
                     ElevatedButton(
                       onPressed: isSubmitting
                           ? null
@@ -1594,7 +1608,29 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                               setSheetState(() {
                                 isSubmitting = true;
                                 errorText = null;
+                                verificationStage =
+                                    VerificationProgressStage.checkingProvider;
+                                takingLonger = false;
                               });
+                              var elapsedSeconds = 0;
+                              verificationProgressTimer?.cancel();
+                              verificationProgressTimer = Timer.periodic(
+                                const Duration(seconds: 1),
+                                (timer) {
+                                  if (!context.mounted || submissionSucceeded) {
+                                    timer.cancel();
+                                    return;
+                                  }
+                                  elapsedSeconds++;
+                                  setSheetState(() {
+                                    verificationStage = elapsedSeconds >= 2
+                                        ? VerificationProgressStage.savingTicket
+                                        : VerificationProgressStage
+                                              .confirmingPayment;
+                                    takingLonger = elapsedSeconds >= 2;
+                                  });
+                                },
+                              );
                               FocusScope.of(context).unfocus();
 
                               try {
@@ -1635,6 +1671,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
 
                                   if (!mounted || !context.mounted) return;
                                   submissionSucceeded = true;
+                                  verificationProgressTimer?.cancel();
                                   Navigator.pop(context); // Close the sheet
 
                                   // Success animation only ever follows the
@@ -1659,6 +1696,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                   );
                                 }
                               } finally {
+                                verificationProgressTimer?.cancel();
                                 if (!submissionSucceeded && context.mounted) {
                                   setSheetState(() => isSubmitting = false);
                                 }
@@ -1672,7 +1710,14 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                         ),
                       ),
                       child: isSubmitting
-                          ? const CircularProgressIndicator(color: Colors.white)
+                          ? const Text(
+                              'VERIFYING PAYMENT',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.2,
+                              ),
+                            )
                           : Text(
                               AppVariant.usesMinimalCopy
                                   ? 'SUBMIT'
@@ -1692,6 +1737,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
         );
       },
     );
+    unawaited(sheet.whenComplete(() => verificationProgressTimer?.cancel()));
   }
 
   InputDecoration _buildInputDecoration(String label, IconData icon) {
@@ -1771,13 +1817,23 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                 ),
               ),
         body: AppBackdrop(
-          child: DashboardTabView(
-            preserveState: AppVariant.usesIPhoneUi,
-            physics: const NeverScrollableScrollPhysics(),
+          child: Column(
             children: [
-              _buildTicketFeed(),
-              _buildScannerTab(),
-              _buildWalletProfile(),
+              DashboardRefreshStatus(
+                listenable: ApiService.dashboardRefreshState,
+                onRefresh: _refreshData,
+              ),
+              Expanded(
+                child: DashboardTabView(
+                  preserveState: AppVariant.usesIPhoneUi,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildTicketFeed(),
+                    _buildScannerTab(),
+                    _buildWalletProfile(),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

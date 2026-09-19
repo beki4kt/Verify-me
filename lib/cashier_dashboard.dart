@@ -18,6 +18,7 @@ import 'core/widgets/state_views.dart';
 import 'core/widgets/success_overlay.dart';
 import 'core/widgets/segmented_tabs.dart';
 import 'core/widgets/app_shell.dart';
+import 'core/widgets/dashboard_refresh_status.dart';
 import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
@@ -604,6 +605,10 @@ class _CashierDashboardState extends State<CashierDashboard> {
       body: AppBackdrop(
         child: Column(
           children: [
+            DashboardRefreshStatus(
+              listenable: ApiService.dashboardRefreshState,
+              onRefresh: _refreshData,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.xl,

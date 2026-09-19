@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_environment.dart';
@@ -11,6 +12,7 @@ import 'core/models/verification_result.dart';
 import 'core/services/payment_verification_client.dart';
 import 'core/services/dashboard_polling.dart';
 import 'core/session/session_controller.dart';
+import 'core/widgets/dashboard_refresh_status.dart';
 
 export 'core/models/verification_result.dart';
 
@@ -43,11 +45,40 @@ class ApiService {
   static Stream<Map<String, dynamic>>? _businessStream;
   static final StreamController<void> _dashboardRefreshes =
       StreamController<void>.broadcast(sync: true);
+  static final ValueNotifier<DashboardRefreshState> dashboardRefreshState =
+      ValueNotifier(const DashboardRefreshState());
+  static Timer? _refreshTimeout;
+  static bool _appIsForeground = true;
 
   /// Wakes every active dashboard poll immediately without creating duplicate
   /// polling streams or resetting the user's current tab.
   static void refreshDashboardData() {
-    if (_staffSessionToken != null) _dashboardRefreshes.add(null);
+    if (_staffSessionToken == null) return;
+    dashboardRefreshState.value = dashboardRefreshState.value.copyWith(
+      isRefreshing: true,
+    );
+    _refreshTimeout?.cancel();
+    _refreshTimeout = Timer(const Duration(seconds: 18), () {
+      dashboardRefreshState.value = dashboardRefreshState.value.copyWith(
+        isRefreshing: false,
+      );
+    });
+    _dashboardRefreshes.add(null);
+  }
+
+  static void _recordDashboardUpdate() {
+    _refreshTimeout?.cancel();
+    dashboardRefreshState.value = DashboardRefreshState(
+      lastUpdated: DateTime.now(),
+    );
+  }
+
+  static void _recordDashboardFailure() {
+    if (!dashboardRefreshState.value.isRefreshing) return;
+    _refreshTimeout?.cancel();
+    dashboardRefreshState.value = dashboardRefreshState.value.copyWith(
+      isRefreshing: false,
+    );
   }
 
   static Future<void> _waitForRefresh(Duration duration) {
@@ -65,6 +96,19 @@ class ApiService {
     subscription = _dashboardRefreshes.stream.listen((_) => complete());
     timer = Timer(duration, complete);
     return completer.future;
+  }
+
+  static void setAppForeground(bool isForeground) {
+    if (_appIsForeground == isForeground) return;
+    _appIsForeground = isForeground;
+    if (_staffSessionToken != null) _dashboardRefreshes.add(null);
+  }
+
+  static Future<void> _waitForPollingWindow(Duration duration) async {
+    if (_appIsForeground) await _waitForRefresh(duration);
+    while (!_appIsForeground && _staffSessionToken != null) {
+      await _waitForRefresh(const Duration(hours: 12));
+    }
   }
 
   // --- 1. AUTHENTICATION & BUSINESS LAYER ---
@@ -409,7 +453,7 @@ class ApiService {
         params: {'p_token': token},
       );
       return Map<String, dynamic>.from(response as Map);
-    });
+    }, interval: const Duration(seconds: 30));
   }
 
   static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
@@ -497,7 +541,10 @@ class ApiService {
   }
 
   static Stream<List<Map<String, dynamic>>> _pollVerificationAttempts() =>
-      _pollRows('list_my_verification_attempts');
+      _pollRows(
+        'list_my_verification_attempts',
+        interval: const Duration(seconds: 20),
+      );
 
   static String _requireSessionToken() {
     final token = _staffSessionToken;
@@ -536,32 +583,65 @@ class ApiService {
   }
 
   static Stream<List<Map<String, dynamic>>> _pollTickets(String scope) =>
-      _pollRows('list_tickets', parameters: {'p_scope': scope});
+      _pollRows(
+        'list_tickets',
+        parameters: {'p_scope': scope},
+        needsFastRefresh: (row) => row['status'] == 'pending',
+      );
 
   static Stream<List<Map<String, dynamic>>> _pollRows(
     String rpc, {
     Map<String, dynamic> parameters = const {},
-    Duration interval = const Duration(seconds: 5),
-  }) => _pollScoped((token) async {
-    final response = await _supabase.rpc(
-      rpc,
-      params: {'p_token': token, ...parameters},
-    );
-    return (response as List)
-        .map((row) => Map<String, dynamic>.from(row as Map))
-        .toList();
-  }, interval: interval);
+    Duration interval = const Duration(seconds: 15),
+    Duration activeInterval = const Duration(seconds: 5),
+    bool Function(Map<String, dynamic> row)? needsFastRefresh,
+  }) => _pollScoped(
+    (token) async {
+      final response = await _supabase.rpc(
+        rpc,
+        params: {'p_token': token, ...parameters},
+      );
+      return (response as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
+    },
+    interval: interval,
+    intervalFor: needsFastRefresh == null
+        ? null
+        : (rows) => adaptivePollingInterval(
+            rows,
+            needsFastRefresh: needsFastRefresh,
+            active: activeInterval,
+            idle: interval,
+          ),
+  );
 
   static Stream<T> _pollScoped<T>(
     Future<T> Function(String token) fetch, {
-    Duration interval = const Duration(seconds: 5),
+    Duration interval = const Duration(seconds: 15),
+    Duration Function(T value)? intervalFor,
   }) {
     final token = _staffSessionToken;
     if (token == null) return Stream<T>.empty();
+    T? latest;
+    var hasLatest = false;
     return dashboardPolling<T>(
-      fetch: () => fetch(token).timeout(const Duration(seconds: 15)),
+      fetch: () async {
+        try {
+          final value = await fetch(token).timeout(const Duration(seconds: 15));
+          latest = value;
+          hasLatest = true;
+          _recordDashboardUpdate();
+          return value;
+        } catch (_) {
+          _recordDashboardFailure();
+          rethrow;
+        }
+      },
       isActive: () => _staffSessionToken == token,
-      wait: () => _waitForRefresh(interval),
+      wait: () => _waitForPollingWindow(
+        hasLatest && intervalFor != null ? intervalFor(latest as T) : interval,
+      ),
     );
   }
 
@@ -570,10 +650,13 @@ class ApiService {
   static Stream<T> _replayLatest<T>(Stream<T> source) => source;
 
   static void _resetStreamCaches() {
+    _dashboardRefreshes.add(null);
     _ticketStreamCache.clear();
     _withdrawalRequestsStream = null;
     _staffRosterStream = null;
     _businessStream = null;
+    _refreshTimeout?.cancel();
+    dashboardRefreshState.value = const DashboardRefreshState();
   }
 
   static Future<void> requestTipWithdrawal(double amount) async {
@@ -606,7 +689,9 @@ class ApiService {
   static Stream<List<Map<String, dynamic>>> _pollTipWithdrawalRequests() =>
       _pollRows(
         'list_tip_withdrawal_requests',
-        interval: const Duration(seconds: 3),
+        interval: const Duration(seconds: 20),
+        needsFastRefresh: (row) =>
+            row['status'] == 'pending' || row['status'] == 'approved',
       );
 
   static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
@@ -614,7 +699,7 @@ class ApiService {
   }
 
   static Stream<List<Map<String, dynamic>>> _pollStaffRoster() =>
-      _pollRows('list_staff_roster');
+      _pollRows('list_staff_roster', interval: const Duration(seconds: 30));
 
   // --- 4. TENANT & STAFF MANAGEMENT ---
   static Future<void> changeCurrentAdminPassword({
@@ -711,6 +796,28 @@ class ApiService {
         'p_version': version,
       },
     );
+  }
+
+  static Future<List<Map<String, dynamic>>> listMyLegalConsents() async {
+    final response = await _supabase.rpc(
+      'list_my_legal_consents',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> listBusinessAuditEvents({
+    int limit = 200,
+  }) async {
+    final response = await _supabase.rpc(
+      'list_business_audit_events',
+      params: {'p_token': _requireSessionToken(), 'p_limit': limit},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
   }
 
   static Future<void> updateBankAccounts(Map<String, dynamic> accounts) async {

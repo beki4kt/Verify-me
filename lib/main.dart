@@ -49,15 +49,29 @@ class _ChekmiBootstrap extends StatefulWidget {
   State<_ChekmiBootstrap> createState() => _ChekmiBootstrapState();
 }
 
-class _ChekmiBootstrapState extends State<_ChekmiBootstrap> {
+class _ChekmiBootstrapState extends State<_ChekmiBootstrap>
+    with WidgetsBindingObserver {
   late Future<void> _startup;
   late final SessionController _session;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    ApiService.setAppForeground(true);
     _session = SessionController();
     _startup = AppVariant.isUiPreview ? Future<void>.value() : _initialize();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    ApiService.setAppForeground(state == AppLifecycleState.resumed);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _initialize() async {

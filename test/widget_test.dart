@@ -292,6 +292,7 @@ void main() {
           home: SupportPrivacyScreen(
             allowAccountDeletion: true,
             loadCases: () async => [],
+            loadConsents: () async => [],
           ),
         ),
       ),

@@ -1,5 +1,12 @@
 import 'dart:async';
 
+Duration adaptivePollingInterval<T>(
+  Iterable<T> values, {
+  required bool Function(T value) needsFastRefresh,
+  Duration active = const Duration(seconds: 5),
+  Duration idle = const Duration(seconds: 15),
+}) => values.any(needsFastRefresh) ? active : idle;
+
 /// One recoverable poll shared by dashboard listeners, with a replay for every
 /// new subscriber. Session changes and removed listeners discard in-flight data.
 Stream<T> dashboardPolling<T>({

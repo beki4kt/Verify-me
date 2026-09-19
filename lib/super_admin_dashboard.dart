@@ -736,28 +736,122 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
           '${item['business_name'] ?? 'Business'} · ${item['subject'] ?? 'Support case'}',
       subtitle:
           '${_pretty('${item['priority'] ?? 'normal'}')} priority · ${item['description'] ?? ''}',
-      action: DropdownButton<String>(
-        value: ['open', 'in_progress', 'resolved', 'closed'].contains(status)
-            ? status
-            : 'open',
-        items: const [
-          DropdownMenuItem(value: 'open', child: Text('Open')),
-          DropdownMenuItem(value: 'in_progress', child: Text('In progress')),
-          DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
-          DropdownMenuItem(value: 'closed', child: Text('Closed')),
+      action: Wrap(
+        spacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _acting ? null : () => _showSupportReply(item),
+            icon: const Icon(AppIcons.send, size: 17),
+            label: const Text('Reply'),
+          ),
+          DropdownButton<String>(
+            value:
+                ['open', 'in_progress', 'resolved', 'closed'].contains(status)
+                ? status
+                : 'open',
+            items: const [
+              DropdownMenuItem(value: 'open', child: Text('Open')),
+              DropdownMenuItem(
+                value: 'in_progress',
+                child: Text('In progress'),
+              ),
+              DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
+              DropdownMenuItem(value: 'closed', child: Text('Closed')),
+            ],
+            onChanged: _acting
+                ? null
+                : (value) {
+                    if (value == null || value == status) return;
+                    _run(
+                      'Support case updated.',
+                      () => OperatorService.updateSupportCase(
+                        caseId: '${item['case_id']}',
+                        status: value,
+                      ),
+                    );
+                  },
+          ),
         ],
-        onChanged: _acting
-            ? null
-            : (value) {
-                if (value == null || value == status) return;
-                _run(
-                  'Support case updated.',
-                  () => OperatorService.updateSupportCase(
-                    caseId: '${item['case_id']}',
-                    status: value,
+      ),
+    );
+  }
+
+  Future<void> _showSupportReply(Map<String, dynamic> item) async {
+    final controller = TextEditingController(
+      text: item['owner_response']?.toString() ?? '',
+    );
+    var status = item['status'] == 'resolved' ? 'resolved' : 'in_progress';
+    final reply = await showDialog<({String message, String status})>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Reply to ${item['business_name'] ?? 'business'}'),
+          content: SizedBox(
+            width: 560,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  key: const Key('operator-support-reply'),
+                  controller: controller,
+                  minLines: 4,
+                  maxLines: 8,
+                  maxLength: 4000,
+                  decoration: const InputDecoration(
+                    labelText: 'Response visible to the business',
+                    alignLabelWithHint: true,
                   ),
-                );
-              },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: status,
+                  decoration: const InputDecoration(labelText: 'Case status'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'in_progress',
+                      child: Text('In progress'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'resolved',
+                      child: Text('Resolved'),
+                    ),
+                  ],
+                  onChanged: (value) =>
+                      setDialogState(() => status = value ?? status),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, (
+                message: controller.text.trim(),
+                status: status,
+              )),
+              icon: const Icon(AppIcons.send),
+              label: const Text('Send reply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (reply == null) return;
+    if (reply.message.length < 2) {
+      _toast('Enter a support response before sending.', error: true);
+      return;
+    }
+    await _run(
+      'Support reply sent.',
+      () => OperatorService.replyToSupportCase(
+        caseId: '${item['case_id']}',
+        reply: reply.message,
+        status: reply.status,
       ),
     );
   }
