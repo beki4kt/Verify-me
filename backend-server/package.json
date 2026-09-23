@@ -7,13 +7,17 @@
     "dev": "nodemon --exec tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "tsx --test src/*.test.ts",
+    "preflight:host": "node scripts/host-preflight.mjs",
     "operator:setup": "tsx src/scripts/createOperatorCredentials.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.9.0"
+  },
   "dependencies": {
     "axios": "^1.9.0",
     "cheerio": "^1.0.0",

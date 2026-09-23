@@ -10,7 +10,7 @@ import 'operator_service.dart';
 
 enum _ConsoleSection {
   overview('Command center', AppIcons.dashboard),
-  restaurants('Restaurants', AppIcons.storefront),
+  businesses('Businesses', AppIcons.storefront),
   billing('Plans & billing', AppIcons.card),
   support('Support & privacy', AppIcons.support),
   security('Security', AppIcons.shield),
@@ -314,7 +314,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     }
     return switch (_section) {
       _ConsoleSection.overview => _overview(),
-      _ConsoleSection.restaurants => _restaurants(),
+      _ConsoleSection.businesses => _restaurants(),
       _ConsoleSection.billing => _billing(),
       _ConsoleSection.support => _supportAndPrivacy(),
       _ConsoleSection.security => _security(),
@@ -336,7 +336,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       ],
       _sectionTitle(
         'Platform at a glance',
-        'Live operational signals across every restaurant.',
+        'Live operational signals across every business.',
       ),
       const SizedBox(height: AppSpacing.md),
       GridView.count(
@@ -348,7 +348,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         crossAxisSpacing: AppSpacing.md,
         children: [
           _metricCard(
-            'Restaurants',
+            'Businesses',
             _number('businesses'),
             AppIcons.storefront,
             AppColors.primary,
@@ -391,7 +391,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
               .take(5)
               .toList();
           final first = _dataPanel(
-            'Recent restaurants',
+            'Recent businesses',
             'Newest tenant workspaces',
             recent,
             _businessSummary,
@@ -453,12 +453,12 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _sectionTitle(
-          'Restaurant portfolio',
+          'Business portfolio',
           'Provision workspaces, control access, plans, staff limits, and sessions.',
           action: FilledButton.icon(
             onPressed: _acting ? null : _showCreateBusiness,
             icon: const Icon(AppIcons.addBusiness),
-            label: const Text('New restaurant'),
+            label: const Text('New business'),
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -497,10 +497,10 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         if (filtered.isEmpty)
           _empty(
             AppIcons.storefront,
-            'No restaurants here yet',
+            'No businesses here yet',
             _businesses.isEmpty
-                ? 'Provision the first restaurant to start managing the platform.'
-                : 'No restaurant matches this filter.',
+                ? 'Provision the first business to start managing the platform.'
+                : 'No business matches this filter.',
           )
         else
           ...filtered.map(_businessCard),
@@ -534,7 +534,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     children: [
                       CircleAvatar(
                         backgroundColor: color.withValues(alpha: .14),
-                        child: Icon(AppIcons.restaurant, color: color),
+                        child: Icon(AppIcons.business, color: color),
                       ),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
@@ -542,7 +542,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${business['name'] ?? 'Unnamed restaurant'}',
+                              '${business['name'] ?? 'Unnamed business'}',
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             Text(
@@ -672,7 +672,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             icon: AppIcons.receipt,
             color: _statusColor('${invoice['status']}'),
             title:
-                '${invoice['business_name'] ?? 'Restaurant'} · ${invoice['invoice_number'] ?? ''}',
+                '${invoice['business_name'] ?? 'Business'} · ${invoice['invoice_number'] ?? ''}',
             subtitle:
                 '${_pretty('${invoice['plan_tier'] ?? ''}')} · due ${_date(invoice['due_at'])}',
             trailing:
@@ -715,7 +715,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             icon: AppIcons.delete,
             color: AppColors.danger,
             title:
-                '${request['business_name'] ?? 'Restaurant'} · ${_pretty('${request['status'] ?? ''}')}',
+                '${request['business_name'] ?? 'Business'} · ${_pretty('${request['status'] ?? ''}')}',
             subtitle:
                 '${request['reason'] ?? 'No reason supplied'} · ${_date(request['requested_at'])}',
             action: OutlinedButton(
@@ -733,31 +733,125 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       icon: AppIcons.support,
       color: _statusColor(status),
       title:
-          '${item['business_name'] ?? 'Restaurant'} · ${item['subject'] ?? 'Support case'}',
+          '${item['business_name'] ?? 'Business'} · ${item['subject'] ?? 'Support case'}',
       subtitle:
           '${_pretty('${item['priority'] ?? 'normal'}')} priority · ${item['description'] ?? ''}',
-      action: DropdownButton<String>(
-        value: ['open', 'in_progress', 'resolved', 'closed'].contains(status)
-            ? status
-            : 'open',
-        items: const [
-          DropdownMenuItem(value: 'open', child: Text('Open')),
-          DropdownMenuItem(value: 'in_progress', child: Text('In progress')),
-          DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
-          DropdownMenuItem(value: 'closed', child: Text('Closed')),
+      action: Wrap(
+        spacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _acting ? null : () => _showSupportReply(item),
+            icon: const Icon(AppIcons.send, size: 17),
+            label: const Text('Reply'),
+          ),
+          DropdownButton<String>(
+            value:
+                ['open', 'in_progress', 'resolved', 'closed'].contains(status)
+                ? status
+                : 'open',
+            items: const [
+              DropdownMenuItem(value: 'open', child: Text('Open')),
+              DropdownMenuItem(
+                value: 'in_progress',
+                child: Text('In progress'),
+              ),
+              DropdownMenuItem(value: 'resolved', child: Text('Resolved')),
+              DropdownMenuItem(value: 'closed', child: Text('Closed')),
+            ],
+            onChanged: _acting
+                ? null
+                : (value) {
+                    if (value == null || value == status) return;
+                    _run(
+                      'Support case updated.',
+                      () => OperatorService.updateSupportCase(
+                        caseId: '${item['case_id']}',
+                        status: value,
+                      ),
+                    );
+                  },
+          ),
         ],
-        onChanged: _acting
-            ? null
-            : (value) {
-                if (value == null || value == status) return;
-                _run(
-                  'Support case updated.',
-                  () => OperatorService.updateSupportCase(
-                    caseId: '${item['case_id']}',
-                    status: value,
+      ),
+    );
+  }
+
+  Future<void> _showSupportReply(Map<String, dynamic> item) async {
+    final controller = TextEditingController(
+      text: item['owner_response']?.toString() ?? '',
+    );
+    var status = item['status'] == 'resolved' ? 'resolved' : 'in_progress';
+    final reply = await showDialog<({String message, String status})>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Reply to ${item['business_name'] ?? 'business'}'),
+          content: SizedBox(
+            width: 560,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  key: const Key('operator-support-reply'),
+                  controller: controller,
+                  minLines: 4,
+                  maxLines: 8,
+                  maxLength: 4000,
+                  decoration: const InputDecoration(
+                    labelText: 'Response visible to the business',
+                    alignLabelWithHint: true,
                   ),
-                );
-              },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: status,
+                  decoration: const InputDecoration(labelText: 'Case status'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'in_progress',
+                      child: Text('In progress'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'resolved',
+                      child: Text('Resolved'),
+                    ),
+                  ],
+                  onChanged: (value) =>
+                      setDialogState(() => status = value ?? status),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, (
+                message: controller.text.trim(),
+                status: status,
+              )),
+              icon: const Icon(AppIcons.send),
+              label: const Text('Send reply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (reply == null) return;
+    if (reply.message.length < 2) {
+      _toast('Enter a support response before sending.', error: true);
+      return;
+    }
+    await _run(
+      'Support reply sent.',
+      () => OperatorService.replyToSupportCase(
+        caseId: '${item['case_id']}',
+        reply: reply.message,
+        status: reply.status,
       ),
     );
   }
@@ -795,7 +889,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             _securityCard(
               AppIcons.verifiedList,
               'Audited controls',
-              'Restaurant, subscription, session, privacy, and support changes are logged.',
+              'Business, subscription, session, privacy, and support changes are logged.',
               AppColors.pink,
             ),
           ];
@@ -926,7 +1020,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Provision restaurant'),
+          title: const Text('Provision business'),
           content: SizedBox(
             width: 620,
             child: SingleChildScrollView(
@@ -935,7 +1029,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                   TextField(
                     controller: name,
                     decoration: const InputDecoration(
-                      labelText: 'Restaurant name',
+                      labelText: 'Business name',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1075,7 +1169,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     }
     if (values != null) {
       await _run(
-        'Restaurant provisioned.',
+        'Business provisioned.',
         () => OperatorService.createBusiness(values),
       );
     }
@@ -1186,7 +1280,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   Future<void> _confirmStatus(Map<String, dynamic> business) async {
     final active = business['is_active'] == true;
     final confirmed = await _confirm(
-      active ? 'Suspend restaurant?' : 'Activate restaurant?',
+      active ? 'Suspend business?' : 'Activate business?',
       active
           ? 'This blocks the workspace and immediately revokes its active staff sessions.'
           : 'This restores workspace access. Subscription rules still apply.',
@@ -1194,7 +1288,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     );
     if (confirmed) {
       await _run(
-        active ? 'Restaurant suspended.' : 'Restaurant activated.',
+        active ? 'Business suspended.' : 'Business activated.',
         () => OperatorService.setBusinessStatus(
           businessId: '${business['business_id']}',
           active: !active,

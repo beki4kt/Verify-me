@@ -5,6 +5,7 @@ const express_1 = require("express");
 const ownedVerifier_1 = require("../ownedVerifier");
 const paymentSecurity_1 = require("../paymentSecurity");
 const supabaseRpc_1 = require("../supabaseRpc");
+const veritasVerifier_1 = require("../veritasVerifier");
 const verificationFixtures_1 = require("../verificationFixtures");
 // Node 20.12+ can load local environment files without an extra dependency.
 // The development server previously ignored `.env`, leaving the upstream key
@@ -137,7 +138,12 @@ async function dispatch(provider, body) {
             // Exhaustiveness guard – should never be reached.
             throw new ClientError(`Unsupported provider: ${provider}`, 400, "INVALID_PROVIDER");
     }
-    return (0, ownedVerifier_1.verifyWithOwnedRoute)(provider, body);
+    const engine = (0, veritasVerifier_1.verifierConfiguration)().engine;
+    if (engine === "veritas")
+        return (0, veritasVerifier_1.verifyWithVeritas)(provider, body);
+    if (engine === "owned")
+        return (0, ownedVerifier_1.verifyWithOwnedRoute)(provider, body);
+    throw new ownedVerifier_1.OwnedVerifierError("Invalid verification engine configuration.", "VERIFIER_CONFIGURATION_ERROR", 503, false);
 }
 // ---------------------------------------------------------------------------
 // Shared handler – used by both the canonical route and the per-provider alias.
@@ -270,7 +276,7 @@ async function handleVerifyAndCreate(req, res) {
             throw new ClientError(`Invalid provider. Must be one of: ${KNOWN_PROVIDERS.join(", ")}`, 400, "INVALID_PROVIDER");
         }
         if (!reference || !tableNumber || expected === null) {
-            throw new ClientError("Reference, table number, and a positive expected amount are required.", 400, "INVALID_TICKET");
+            throw new ClientError("Bank reference, business reference, and a positive amount due are required.", 400, "INVALID_TICKET");
         }
         if (body.receiptImageBase64 &&
             Buffer.byteLength(body.receiptImageBase64, "base64") > 1500000) {
@@ -422,7 +428,9 @@ async function handleVerifyAndCreate(req, res) {
         }
         else if (!(provider === "cbe"
             ? (0, paymentSecurity_1.matchesCbeReceivingAccount)(context.receiving_account, receiverAccount)
-            : (0, paymentSecurity_1.matchesReceivingAccount)(context.receiving_account, receiverAccount))) {
+            : provider === "telebirr"
+                ? (0, paymentSecurity_1.matchesTelebirrReceivingAccount)(context.receiving_account, receiverAccount)
+                : (0, paymentSecurity_1.matchesReceivingAccount)(context.receiving_account, receiverAccount))) {
             await rejectVerifiedPayment(res, {
                 token,
                 provider,
@@ -454,7 +462,7 @@ async function handleVerifyAndCreate(req, res) {
         }
         const providerPayload = {
             ...data,
-            verificationRequest: { submittedReference: reference },
+            verificationRequest: { submittedReference: reference, engine: (0, veritasVerifier_1.verifierConfiguration)().engine, method: "transaction-id" },
             ...(destinationProof ? { destinationProof } : {}),
         };
         canonicalReference = String(data.reference ?? lookupReference).toUpperCase();

@@ -21,10 +21,8 @@ import {
   OwnedVerifierError,
 } from "./types";
 
-const LEGACY_REFERENCE = /^FT[A-Z0-9]{10}$/i;
-const LEGACY_COMBINED_ID = /^(FT[A-Z0-9]{10})(\d{8})$/i;
-const NEW_CBE_URL = /^https?:\/\/mbreciept\.cbe\.com\.et\/([A-Za-z0-9-]+)\/?$/i;
-const NEW_CBE_TOKEN = /^[A-Za-z0-9-]{15,80}$/;
+import { extractNewCbeToken, isLegacyCbeReference, extractLegacyCbeUrlData } from "../receiptFormat";
+export { extractNewCbeToken, isLegacyCbeReference, extractLegacyCbeUrlData } from "../receiptFormat";
 
 interface CbeReceipt {
   payerName: string | null;
@@ -36,35 +34,6 @@ interface CbeReceipt {
   reference: string | null;
   reason: string | null;
   raw: Record<string, unknown>;
-}
-
-export function extractNewCbeToken(input: string): string | null {
-  const trimmed = input.trim();
-  const urlMatch = trimmed.match(NEW_CBE_URL);
-  if (urlMatch) return urlMatch[1] ?? null;
-  if (!trimmed.toUpperCase().startsWith("FT") && NEW_CBE_TOKEN.test(trimmed)) {
-    return trimmed;
-  }
-  return null;
-}
-
-export function isLegacyCbeReference(input: string): boolean {
-  return LEGACY_REFERENCE.test(input.trim());
-}
-
-export function extractLegacyCbeUrlData(
-  input: string,
-): { reference: string; suffix: string } | null {
-  try {
-    const url = new URL(input.trim());
-    if (url.hostname.toLowerCase() !== "apps.cbe.com.et") return null;
-    if (url.port && url.port !== "100") return null;
-    const match = url.searchParams.get("id")?.trim().match(LEGACY_COMBINED_ID);
-    if (!match) return null;
-    return { reference: (match[1] ?? "").toUpperCase(), suffix: match[2] ?? "" };
-  } catch {
-    return null;
-  }
 }
 
 export function parseCbeText(rawText: string): CbeReceipt {
@@ -285,13 +254,22 @@ export async function verifyCbeOwned(
   const newToken = extractNewCbeToken(submittedReference);
   const reference = embeddedLegacy?.reference ?? submittedReference.toUpperCase();
   const suffix = (rawSuffix?.trim() || embeddedLegacy?.suffix || "").trim();
-  if (!newToken && (!LEGACY_REFERENCE.test(reference) || !/^\d{8}$/.test(suffix))) {
+  if (!newToken && (!isLegacyCbeReference(reference) || !/^\d{8}$/.test(suffix))) {
     return {
       ok: false,
       provider: "cbe",
       error: "Legacy CBE verification requires an FT reference and 8-digit account suffix.",
       code: "INVALID_REFERENCE",
     };
+  }
+
+  if (!newToken && process.env.CBE_LEGACY_ENABLED?.trim().toLowerCase() === "false") {
+    throw new OwnedVerifierError(
+      "Legacy CBE receipt verification is temporarily unavailable. Use a new-format CBE receipt or another payment method.",
+      "PROVIDER_UNAVAILABLE",
+      503,
+      true,
+    );
   }
 
   let lastError: OwnedVerifierError | null = null;

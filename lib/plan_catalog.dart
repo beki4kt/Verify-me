@@ -61,7 +61,7 @@ class PlanCatalog {
   static const basic = PlanDefinition(
     id: 'basic',
     name: 'Basic',
-    tagline: 'Everything a small restaurant needs to verify payments safely.',
+    tagline: 'Everything a small business needs to verify payments safely.',
     verificationLimit: 2500,
     staffLimit: 1,
     monthlyPriceEtb: 1200,

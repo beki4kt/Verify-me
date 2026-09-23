@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'dart:math';
+
 import 'package:hive_flutter/hive_flutter.dart';
 
 part 'offline_storage.g.dart';
@@ -88,6 +91,23 @@ class SyncManager {
 // --- PHASE 1: BUSINESS LAYER DEVICE LOCKING ---
 class DeviceStorage {
   static const String _boxName = 'device_settings';
+  static Future<String>? _demoTokenFuture;
+
+  static Future<String> demoInstallationToken() =>
+      _demoTokenFuture ??= _loadDemoToken();
+  static Future<String> _loadDemoToken() async {
+    if (!Hive.isBoxOpen(_boxName)) await init();
+    final box = Hive.box(_boxName);
+    final existing = box.get('demo_installation_token');
+    if (existing is String && existing.length == 64) return existing;
+    final random = Random.secure();
+    final token = List.generate(
+      32,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    await box.put('demo_installation_token', token);
+    return token;
+  }
 
   static Future<void> init() async {
     await Hive.openBox(_boxName);
@@ -112,8 +132,10 @@ class DeviceStorage {
   }
 
   static Map<String, String?> getLockedBusiness() {
+    if (!Hive.isBoxOpen(_boxName)) {
+      return {'id': null, 'name': null, 'code': null};
+    }
     final box = Hive.box(_boxName);
-    if (!box.isOpen) return {'id': null, 'name': null, 'code': null};
     return {
       'id': box.get('locked_business_id'),
       'name': box.get('locked_business_name'),
@@ -128,6 +150,10 @@ class DeviceStorage {
   }
 
   static Future<void> saveThemeMode(ThemeMode mode) async {
+    // The read-side guards against a closed box; the write-side must too, or
+    // UI-preview builds (which skip Hive initialization) throw uncaught
+    // async errors whenever the theme is toggled.
+    if (!Hive.isBoxOpen(_boxName)) return;
     final box = Hive.box(_boxName);
     await box.put('theme_mode', mode == ThemeMode.light ? 'light' : 'dark');
   }
@@ -139,6 +165,7 @@ class DeviceStorage {
   }
 
   static Future<void> saveLanguageCode(String languageCode) async {
+    if (!Hive.isBoxOpen(_boxName)) return;
     final box = Hive.box(_boxName);
     await box.put('language_code', languageCode == 'am' ? 'am' : 'en');
   }
@@ -150,6 +177,7 @@ class DeviceStorage {
   }
 
   static Future<void> saveHideTipBalance(bool hidden) async {
+    if (!Hive.isBoxOpen(_boxName)) return;
     await Hive.box(_boxName).put('hide_tip_balance', hidden);
   }
 }

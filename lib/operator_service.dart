@@ -125,6 +125,18 @@ class OperatorService {
     );
   }
 
+  static Future<void> replyToSupportCase({
+    required String caseId,
+    required String reply,
+    String status = 'in_progress',
+  }) async {
+    await _request(
+      'PATCH',
+      '/operator/support/$caseId',
+      body: {'status': status, 'reply': reply.trim()},
+    );
+  }
+
   static Future<void> reviewDeletionRequest({
     required String requestId,
     required String status,

@@ -24,6 +24,14 @@ class AppEnvironment {
   static const String _configuredApiUrl = String.fromEnvironment(
     'VERIFY_ME_API_URL',
   );
+  static const String _configuredVerificationUrl = String.fromEnvironment(
+    'CHEKMI_VERIFICATION_URL',
+  );
+  static bool get usesEdgeVerification =>
+      _configuredVerificationUrl.trim().isNotEmpty;
+  static String get verificationUrl => usesEdgeVerification
+      ? _normalizeUrl(_configuredVerificationUrl)
+      : '$apiBaseUrl/verify-and-create';
   static const String _configuredSupabaseUrl = String.fromEnvironment(
     'CHEKMI_SUPABASE_URL',
   );
@@ -37,9 +45,13 @@ class AppEnvironment {
   static const String _developmentSupabaseKey =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwYmR4dHp5emxhaW9nZ2Vmc2NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTMyMDUsImV4cCI6MjA5Nzg2OTIwNX0.X9d4_FkisQRQXYFhyVJ_-5XSsbkS1VCHMLLybfGfpzs';
 
-  static String get apiBaseUrl => _normalizeUrl(
-    _configuredApiUrl.trim().isEmpty ? _developmentApiUrl : _configuredApiUrl,
-  );
+  static String get apiBaseUrl {
+    final configured = _configuredApiUrl.trim();
+    if (configured.isNotEmpty) return _normalizeUrl(configured);
+    return isProduction || environmentName.trim().toLowerCase() == 'staging'
+        ? ''
+        : _developmentApiUrl;
+  }
 
   static String get supabaseUrl => _normalizeUrl(
     _configuredSupabaseUrl.trim().isEmpty
@@ -64,6 +76,7 @@ class AppEnvironment {
       apiUrlWasProvided: _configuredApiUrl.trim().isNotEmpty,
       supabaseUrlWasProvided: _configuredSupabaseUrl.trim().isNotEmpty,
       supabaseKeyWasProvided: _configuredSupabaseKey.trim().isNotEmpty,
+      verificationUrl: _configuredVerificationUrl,
     );
     if (problems.isNotEmpty) throw AppConfigurationException(problems);
   }
@@ -77,16 +90,34 @@ class AppEnvironment {
     bool apiUrlWasProvided = true,
     bool supabaseUrlWasProvided = true,
     bool supabaseKeyWasProvided = true,
+    String verificationUrl = '',
   }) {
     final problems = <String>[];
     final mode = environment.trim().toLowerCase();
     final protectedMode = mode == 'production' || mode == 'staging';
+    if (verificationUrl.trim().isNotEmpty) {
+      _validateEndpoint(
+        value: verificationUrl,
+        label: 'CHEKMI_VERIFICATION_URL',
+        requireHttps: true,
+        problems: problems,
+      );
+      final uri = Uri.tryParse(verificationUrl);
+      final project = Uri.tryParse(supabaseUrl);
+      if (uri?.host != project?.host ||
+          uri?.path != '/functions/v1/chekmi-verify') {
+        problems.add(
+          'CHEKMI_VERIFICATION_URL must use this Supabase project’s chekmi-verify function.',
+        );
+      }
+    }
     if (!const {'development', 'staging', 'production'}.contains(mode)) {
       problems.add('CHEKMI_ENV must be development, staging, or production.');
     }
 
+    final usesDedicatedVerification = verificationUrl.trim().isNotEmpty;
     if (protectedMode) {
-      if (!apiUrlWasProvided) {
+      if (!apiUrlWasProvided && !usesDedicatedVerification) {
         problems.add('VERIFY_ME_API_URL is required for $mode builds.');
       }
       if (!supabaseUrlWasProvided) {
@@ -99,13 +130,15 @@ class AppEnvironment {
       }
     }
 
-    _validateEndpoint(
-      value: apiUrl,
-      label: 'VERIFY_ME_API_URL',
-      requireHttps: protectedMode,
-      problems: problems,
-      requireApiPath: true,
-    );
+    if (apiUrlWasProvided || !usesDedicatedVerification) {
+      _validateEndpoint(
+        value: apiUrl,
+        label: 'VERIFY_ME_API_URL',
+        requireHttps: protectedMode,
+        problems: problems,
+        requireApiPath: true,
+      );
+    }
     _validateEndpoint(
       value: supabaseUrl,
       label: 'CHEKMI_SUPABASE_URL',

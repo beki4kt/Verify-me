@@ -32,6 +32,18 @@ export function matchesReceivingAccount(
   );
 }
 
+/** Telebirr hides the middle of wallet numbers with four literal asterisks.
+ * This checks the provider's visible prefix and final four digits, not the
+ * hidden digits. Never apply this rule to other providers or merchant IDs.
+ */
+export function matchesTelebirrReceivingAccount(configuredAccount: unknown, verifiedAccount: unknown): boolean {
+  const raw = String(verifiedAccount ?? "").trim().replace(/[\s()+-]/g, "");
+  if (!raw.includes("*")) return matchesReceivingAccount(configuredAccount, verifiedAccount);
+  const mask = /^251([79])\*{4}([0-9]{4})$/.exec(raw);
+  const configured = authoritativeEthiopianPhone(configuredAccount);
+  return Boolean(mask && configured && configured.startsWith(`251${mask[1]}`) && configured.endsWith(mask[2]!));
+}
+
 /** Match CBE's first-character plus final-four account mask. */
 export function matchesCbeReceivingAccount(
   configuredAccount: unknown,

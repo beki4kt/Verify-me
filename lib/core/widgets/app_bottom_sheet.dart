@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 
-import '../theme/app_colors.dart';
+import '../config/app_variant.dart';
 import '../theme/app_spacing.dart';
 
 /// Standardized modal bottom sheet shell (rounded top, padded body via [AppSheetBody]).
@@ -62,31 +62,40 @@ class AppSheetHeader extends StatelessWidget {
   const AppSheetHeader({
     super.key,
     required this.title,
-    this.color = AppColors.primary,
+    this.color,
     this.onClose,
   });
 
   final String title;
-  final Color color;
+  final Color? color;
   final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final effectiveColor = color ?? scheme.primary;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           title,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2,
-            fontSize: 12,
-          ),
+          style: AppVariant.usesIPhoneUi
+              ? Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: effectiveColor,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .2,
+                )
+              : TextStyle(
+                  color: effectiveColor,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                  fontSize: 12,
+                ),
         ),
         if (onClose != null)
           IconButton(
-            icon: const Icon(AppIcons.close, color: Color(0x88FFFFFF)),
+            tooltip: 'Close',
+            icon: Icon(AppIcons.close, color: scheme.onSurfaceVariant),
             onPressed: onClose,
           ),
       ],

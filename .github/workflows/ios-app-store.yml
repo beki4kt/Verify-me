@@ -1,0 +1,100 @@
+name: iOS App Store release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+      - name: Import Apple signing assets
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$CERTIFICATE_BASE64"
+          test -n "$PROVISIONING_PROFILE_BASE64"
+          KEYCHAIN="$RUNNER_TEMP/chekmi-signing.keychain-db"
+          CERTIFICATE="$RUNNER_TEMP/distribution.p12"
+          PROFILE="$RUNNER_TEMP/profile.mobileprovision"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE"
+          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERTIFICATE" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          PROFILE_PLIST="$RUNNER_TEMP/profile.plist"
+          security cms -D -i "$PROFILE" > "$PROFILE_PLIST"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+      - name: Configure Apple team
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_TEAM_ID"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = com.chekmi.app;/PRODUCT_BUNDLE_IDENTIFIER = com.chekmi.app; DEVELOPMENT_TEAM = $APPLE_TEAM_ID;/g" ios/Runner.xcodeproj/project.pbxproj
+      - name: Write export options
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+      - name: Build signed IPA with Xcode 26
+        env:
+          SUPABASE_URL: ${{ vars.CHEKMI_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
+        run: >-
+          flutter build ipa --release
+          --build-number=${{ github.run_number }}
+          --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+          --dart-define=CHEKMI_ENV=production
+          --dart-define=CHEKMI_SUPABASE_URL="$SUPABASE_URL"
+          --dart-define=CHEKMI_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          --dart-define=CHEKMI_VERIFICATION_URL=https://lpbdxtzyzlaioggefscc.supabase.co/functions/v1/chekmi-verify
+          --dart-define=CHEKMI_ALLOWED_VERIFIER_HOSTS=lpbdxtzyzlaioggefscc.supabase.co
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chekmi-ios-${{ github.run_number }}
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload to App Store Connect
+        if: ${{ vars.UPLOAD_TO_TESTFLIGHT == 'true' }}
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          API_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$API_PRIVATE_KEY_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8"
+          xcrun altool --upload-app --type ios --file build/ios/ipa/*.ipa --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"

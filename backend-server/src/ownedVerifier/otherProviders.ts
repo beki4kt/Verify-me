@@ -1,5 +1,9 @@
 import axios from "axios";
 import pdfParse from "pdf-parse";
+import type { Agent } from "node:https";
+
+const { providerHttpsAgent }: { providerHttpsAgent(url: URL): Agent | undefined } =
+  require("../../scripts/provider-tls.cjs");
 
 import {
   completedStatus,
@@ -565,6 +569,7 @@ async function fetchMpesaPayload(
   const response = await axios.get<unknown>(url.toString(), {
     timeout: configuredTimeout(),
     maxContentLength: MAX_PROVIDER_RESPONSE_BYTES,
+    httpsAgent: useRelay ? undefined : providerHttpsAgent(url),
     headers: {
       Accept: "application/json",
       Referer: "https://m-pesabusiness.safaricom.et/",

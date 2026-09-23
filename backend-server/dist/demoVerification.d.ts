@@ -1,0 +1,2 @@
+export declare function createDemoVerificationHandler(env: Record<string, string | undefined>, transport?: typeof fetch): (req: Request) => Promise<import("undici-types").Response>;
+//# sourceMappingURL=demoVerification.d.ts.map

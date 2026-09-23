@@ -3,12 +3,50 @@ import 'package:verify_me/core/config/app_environment.dart';
 
 void main() {
   group('AppEnvironment validation', () {
+    test(
+      'verification endpoint stays within the configured Supabase project',
+      () {
+        List<String> validate(String url) => AppEnvironment.validationErrors(
+          environment: 'production',
+          apiUrl: 'https://api.chekmi.example/api',
+          supabaseUrl: 'https://project.supabase.co',
+          supabasePublishableKey: 'sb_publishable_valid_public_client_key',
+          verificationUrl: url,
+        );
+        expect(
+          validate('https://project.supabase.co/functions/v1/chekmi-verify'),
+          isEmpty,
+        );
+        expect(
+          validate('https://other.supabase.co/functions/v1/chekmi-verify'),
+          isNotEmpty,
+        );
+        expect(
+          validate('http://project.supabase.co/functions/v1/chekmi-verify'),
+          isNotEmpty,
+        );
+      },
+    );
     test('accepts a complete HTTPS production configuration', () {
       final problems = AppEnvironment.validationErrors(
         environment: 'production',
         apiUrl: 'https://api.chekmi.example/api',
         supabaseUrl: 'https://project.supabase.co',
         supabasePublishableKey: 'sb_publishable_valid_public_client_key',
+      );
+
+      expect(problems, isEmpty);
+    });
+
+    test('accepts an edge-only production configuration', () {
+      final problems = AppEnvironment.validationErrors(
+        environment: 'production',
+        apiUrl: '',
+        supabaseUrl: 'https://project.supabase.co',
+        supabasePublishableKey: 'sb_publishable_valid_public_client_key',
+        apiUrlWasProvided: false,
+        verificationUrl:
+            'https://project.supabase.co/functions/v1/chekmi-verify',
       );
 
       expect(problems, isEmpty);

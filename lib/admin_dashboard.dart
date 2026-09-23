@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'api_service.dart';
 import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_motion.dart';
 import 'core/theme/app_spacing.dart';
 import 'core/theme/app_typography.dart';
 import 'core/widgets/app_shell.dart';
@@ -16,11 +18,17 @@ import 'core/widgets/metric_card.dart';
 import 'core/widgets/payment_brand.dart';
 import 'core/widgets/state_views.dart';
 import 'core/widgets/transaction_filter_bar.dart';
+import 'core/widgets/dashboard_refresh_status.dart';
 import 'localization_service.dart';
 import 'plan_catalog.dart';
 import 'pricing_screen.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
+import 'core/config/payment_context.dart';
+import 'core/models/ethiopian_phone.dart';
+import 'core/models/audit_export.dart';
+import 'core/services/audit_csv_exporter.dart';
+import 'iphone/iphone_dashboard_shell.dart';
 
 class _PaymentAccountProvider {
   const _PaymentAccountProvider({
@@ -54,7 +62,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
   ),
   _PaymentAccountProvider(
     name: 'Commercial Bank of Ethiopia',
-    description: 'Official CBE account used for restaurant transfers.',
+    description: 'Official CBE account used for business transfers.',
     numberLabel: 'CBE account number',
     numberKey: 'cbe_number',
     nameKey: 'cbe_name',
@@ -63,7 +71,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
   ),
   _PaymentAccountProvider(
     name: 'CBE Birr',
-    description: 'Wallet or phone number registered to the restaurant.',
+    description: 'Wallet or phone number registered to the business.',
     numberLabel: 'CBE Birr wallet number',
     numberKey: 'cbebirr_number',
     nameKey: 'cbebirr_name',
@@ -90,7 +98,7 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
   ),
   _PaymentAccountProvider(
     name: 'M-Pesa',
-    description: 'Restaurant mobile wallet, paybill, or till number.',
+    description: 'Business mobile wallet, paybill, or till number.',
     numberLabel: 'M-Pesa number / till',
     numberKey: 'mpesa_number',
     nameKey: 'mpesa_name',
@@ -98,6 +106,11 @@ const _paymentAccountProviders = <_PaymentAccountProvider>[
     color: Color(0xFF22C55E),
   ),
 ];
+
+List<_PaymentAccountProvider> get _enabledPaymentAccountProviders =>
+    _paymentAccountProviders
+        .where((provider) => AppVariant.isPaymentProviderEnabled(provider.name))
+        .toList(growable: false);
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -114,6 +127,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   StreamSubscription<List<Map<String, dynamic>>>? _staffCacheSubscription;
   StreamSubscription<Map<String, dynamic>>? _businessPlanSubscription;
   final Map<String, String> _staffLabels = {};
+  final Set<String> _staffStatusUpdates = <String>{};
+  final Set<String> _withdrawalUpdates = <String>{};
+  List<Map<String, dynamic>> _staffRoster = const [];
+  Object? _staffRosterError;
+  bool _staffRosterLoaded = false;
   PlanDefinition _activePlan = PlanCatalog.basic;
   TransactionPeriod _ledgerPeriod = TransactionPeriod.daily;
   DateTimeRange? _ledgerCustomRange;
@@ -124,21 +142,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void initState() {
     super.initState();
     _setDataStreams();
-    _staffCacheSubscription = _staffStream.listen((staff) {
-      if (!mounted) return;
-      setState(() {
-        _staffLabels
-          ..clear()
-          ..addEntries(
-            staff.map(
-              (member) => MapEntry(
-                member['staff_number'].toString(),
-                member['name']?.toString() ?? 'Staff ${member['staff_number']}',
-              ),
-            ),
+    _staffCacheSubscription = _staffStream.listen(
+      (staff) {
+        if (!mounted) return;
+        setState(() {
+          _staffRoster = List<Map<String, dynamic>>.unmodifiable(
+            staff.map((member) => Map<String, dynamic>.from(member)),
           );
-      });
-    });
+          _staffRosterLoaded = true;
+          _staffRosterError = null;
+          _staffLabels
+            ..clear()
+            ..addEntries(
+              staff.map(
+                (member) => MapEntry(
+                  member['staff_number'].toString(),
+                  member['name']?.toString() ??
+                      'Staff ${member['staff_number']}',
+                ),
+              ),
+            );
+        });
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _staffRosterLoaded = true;
+          _staffRosterError = error;
+        });
+      },
+      onDone: () {
+        if (!mounted || _staffRosterLoaded) return;
+        setState(() => _staffRosterLoaded = true);
+      },
+    );
     _businessPlanSubscription = _businessStream.listen((business) {
       if (!mounted) return;
       final plan = PlanCatalog.fromTier(
@@ -157,6 +194,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildProInsightsLock() {
+    if (!AppVariant.showsPlanMarketing) {
+      return const GlassPanel(
+        padding: EdgeInsets.all(AppSpacing.xl),
+        child: Row(
+          children: [
+            Icon(AppIcons.lock, color: AppColors.textMuted),
+            SizedBox(width: AppSpacing.md),
+            Expanded(child: Text('Not included for this workspace.')),
+          ],
+        ),
+      );
+    }
     return GlassPanel(
       accent: AppColors.primary,
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -248,6 +297,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   void _refreshData() {
+    ApiService.refreshDashboardData();
     setState(() => _ticketsStream = _serverTicketReport());
   }
 
@@ -358,7 +408,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   List<DropdownMenuItem<String>> _getAvailableRoles() {
     List<DropdownMenuItem<String>> roles = [
-      const DropdownMenuItem(value: 'waiter', child: Text('Waiter')),
+      const DropdownMenuItem(value: 'waiter', child: Text('Staff')),
     ];
     if (ApiService.currentBusinessHasCashier == true) {
       roles.insert(
@@ -380,18 +430,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
     Map<String, dynamic> currentAccounts,
   ) async {
     final numberControllers = {
-      for (final provider in _paymentAccountProviders)
+      for (final provider in _enabledPaymentAccountProviders)
         provider.numberKey: TextEditingController(
           text: currentAccounts[provider.numberKey]?.toString() ?? '',
         ),
     };
     final nameControllers = {
-      for (final provider in _paymentAccountProviders)
+      for (final provider in _enabledPaymentAccountProviders)
         provider.nameKey: TextEditingController(
           text: currentAccounts[provider.nameKey]?.toString() ?? '',
         ),
     };
-    var selectedProvider = _paymentAccountProviders.first;
+    var selectedProvider = _enabledPaymentAccountProviders.first;
     bool isSubmitting = false;
     String? errorText;
 
@@ -407,7 +457,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
             final theme = Theme.of(sheetContext);
-            final configuredCount = _paymentAccountProviders.where((provider) {
+            final configuredCount = _enabledPaymentAccountProviders.where((
+              provider,
+            ) {
               return numberControllers[provider.numberKey]!.text
                   .trim()
                   .isNotEmpty;
@@ -473,7 +525,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                         if (!AppVariant.usesMinimalCopy) ...[
                                           const SizedBox(height: 4),
                                           Text(
-                                            'Add the official receiving account for every provider your restaurant accepts.',
+                                            'Add the official receiving account for every provider your business accepts.',
                                             style: theme.textTheme.bodySmall
                                                 ?.copyWith(
                                                   color: theme
@@ -498,7 +550,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       borderRadius: BorderRadius.circular(99),
                                     ),
                                     child: Text(
-                                      '$configuredCount / ${_paymentAccountProviders.length}',
+                                      '$configuredCount / ${_enabledPaymentAccountProviders.length}',
                                       style: const TextStyle(
                                         color: AppColors.success,
                                         fontSize: 12,
@@ -535,7 +587,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: Text(
-                                          'Receipt destinations are checked against these values. Leave a provider blank only when the restaurant does not accept it.',
+                                          'Receipt destinations are checked against these values. Leave a provider blank only when the business does not accept it.',
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(height: 1.45),
                                         ),
@@ -551,7 +603,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   labelText: 'Payment method',
                                   prefixIcon: Icon(AppIcons.money),
                                 ),
-                                items: _paymentAccountProviders
+                                items: _enabledPaymentAccountProviders
                                     .map(
                                       (provider) => DropdownMenuItem(
                                         value: provider.numberKey,
@@ -565,16 +617,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 onChanged: (value) {
                                   if (value == null) return;
                                   setSheetState(() {
-                                    selectedProvider = _paymentAccountProviders
-                                        .firstWhere(
-                                          (provider) =>
-                                              provider.numberKey == value,
-                                        );
+                                    selectedProvider =
+                                        _enabledPaymentAccountProviders
+                                            .firstWhere(
+                                              (provider) =>
+                                                  provider.numberKey == value,
+                                            );
                                   });
                                 },
                               ),
                               const SizedBox(height: 14),
-                              ..._paymentAccountProviders
+                              ..._enabledPaymentAccountProviders
                                   .where(
                                     (provider) =>
                                         provider.numberKey ==
@@ -759,8 +812,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 onPressed: isSubmitting
                                     ? null
                                     : () async {
+                                        if (_enabledPaymentAccountProviders
+                                            .every(
+                                              (provider) =>
+                                                  numberControllers[provider
+                                                          .numberKey]!
+                                                      .text
+                                                      .trim()
+                                                      .isEmpty,
+                                            )) {
+                                          setSheetState(() {
+                                            errorText = 'Configure at least one payment account before saving.';
+                                          });
+                                          return;
+                                        }
                                         for (final provider
-                                            in _paymentAccountProviders) {
+                                            in _enabledPaymentAccountProviders) {
                                           final number =
                                               numberControllers[provider
                                                       .numberKey]!
@@ -798,7 +865,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                                 currentAccounts,
                                               );
                                           for (final provider
-                                              in _paymentAccountProviders) {
+                                              in _enabledPaymentAccountProviders) {
                                             final number =
                                                 numberControllers[provider
                                                         .numberKey]!
@@ -1189,16 +1256,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
     confirmPasswordController.dispose();
   }
 
-  void _showAddStaffSheet() {
+  Future<void> _showAddStaffSheet() async {
     final pinController = TextEditingController();
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
     final passwordController = TextEditingController();
+    String phonePrefix = '9';
     String selectedRole = 'waiter';
     bool isSubmitting = false;
+    bool submissionSucceeded = false;
+    bool obscurePassword = true;
     String? errorText;
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface
@@ -1256,6 +1326,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         'PHONE NUMBER',
                         AppIcons.phone,
                         isPhone: true,
+                        phonePrefix: phonePrefix,
+                        onPhonePrefixChanged: (value) =>
+                            setSheetState(() => phonePrefix = value),
                       ),
                     ),
 
@@ -1266,11 +1339,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           flex: 2,
                           child: TextField(
                             controller: passwordController,
+                            obscureText: obscurePassword,
+                            enableSuggestions: false,
+                            autocorrect: false,
                             style: Theme.of(context).textTheme.bodyLarge,
-                            decoration: _buildInputDecoration(
-                              'PASSWORD',
-                              AppIcons.lock,
-                            ),
+                            decoration:
+                                _buildInputDecoration(
+                                  'PASSWORD',
+                                  AppIcons.lock,
+                                ).copyWith(
+                                  suffixIcon: IconButton(
+                                    tooltip: obscurePassword
+                                        ? 'Show password'
+                                        : 'Hide password',
+                                    onPressed: () => setSheetState(
+                                      () => obscurePassword = !obscurePassword,
+                                    ),
+                                    icon: Icon(
+                                      obscurePassword
+                                          ? AppIcons.visible
+                                          : AppIcons.hidden,
+                                    ),
+                                  ),
+                                ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -1334,9 +1425,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           : () async {
                               if (nameController.text.isEmpty ||
                                   phoneController.text.length != 8 ||
-                                  passwordController.text.isEmpty) {
+                                  passwordController.text.length < 8) {
                                 setSheetState(
-                                  () => errorText = 'Please fill out all fields and ensure phone is 8 digits.',
+                                  () => errorText = 'Enter a name, an 8-digit phone number, and a password of at least 8 characters.',
                                 );
                                 return;
                               }
@@ -1356,20 +1447,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 await ApiService.createStaffMember(
                                   pin: pinController.text.trim(),
                                   name: nameController.text.trim(),
-                                  phone: '+2519${phoneController.text.trim()}',
+                                  phone: formatEthiopianPhone(
+                                    phonePrefix,
+                                    phoneController.text,
+                                  ),
                                   password: passwordController.text.trim(),
                                   role: selectedRole,
                                 );
+                                submissionSucceeded = true;
                                 if (context.mounted) Navigator.pop(context);
                               } catch (e) {
-                                setSheetState(
-                                  () => errorText = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
-                                  ),
-                                );
+                                if (context.mounted) {
+                                  setSheetState(
+                                    () => errorText = e.toString().replaceAll(
+                                      'Exception: ',
+                                      '',
+                                    ),
+                                  );
+                                }
                               } finally {
-                                setSheetState(() => isSubmitting = false);
+                                if (!submissionSucceeded && context.mounted) {
+                                  setSheetState(() => isSubmitting = false);
+                                }
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -1398,19 +1497,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       },
     );
+    pinController.dispose();
+    nameController.dispose();
+    phoneController.dispose();
+    passwordController.dispose();
   }
 
-  void _showEditStaffSheet(Map<String, dynamic> staffMember) {
+  Future<void> _showEditStaffSheet(Map<String, dynamic> staffMember) async {
     final dbPhone = staffMember['phone_number']?.toString() ?? '';
-    final displayPhone = dbPhone.startsWith('+2519')
-        ? dbPhone.replaceFirst('+2519', '')
-        : dbPhone;
+    final parsedPhone = splitEthiopianPhone(dbPhone);
+    final displayPhone = parsedPhone.subscriber;
 
     final nameController = TextEditingController(
       text: staffMember['name']?.toString() ?? '',
     );
     final phoneController = TextEditingController(text: displayPhone);
     final passwordController = TextEditingController();
+    String phonePrefix = parsedPhone.prefix;
 
     String selectedRole = staffMember['role'];
     if (selectedRole == 'cashier' &&
@@ -1418,9 +1521,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       selectedRole = 'waiter';
     }
     bool isSubmitting = false;
+    bool submissionSucceeded = false;
     String? errorText;
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface
@@ -1478,6 +1582,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         'PHONE NUMBER',
                         AppIcons.phone,
                         isPhone: true,
+                        phonePrefix: phonePrefix,
+                        onPhonePrefixChanged: (value) =>
+                            setSheetState(() => phonePrefix = value),
                       ),
                     ),
 
@@ -1552,20 +1659,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 await ApiService.updateStaffProfile(
                                   staffMember['staff_number'].toString(),
                                   nameController.text.trim(),
-                                  '+2519${phoneController.text.trim()}',
+                                  formatEthiopianPhone(
+                                    phonePrefix,
+                                    phoneController.text,
+                                  ),
                                   passwordController.text.trim(),
                                   selectedRole,
                                 );
+                                submissionSucceeded = true;
                                 if (context.mounted) Navigator.pop(context);
                               } catch (e) {
-                                setSheetState(
-                                  () => errorText = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
-                                  ),
-                                );
+                                if (context.mounted) {
+                                  setSheetState(
+                                    () => errorText = e.toString().replaceAll(
+                                      'Exception: ',
+                                      '',
+                                    ),
+                                  );
+                                }
                               } finally {
-                                setSheetState(() => isSubmitting = false);
+                                if (!submissionSucceeded && context.mounted) {
+                                  setSheetState(() => isSubmitting = false);
+                                }
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -1594,12 +1709,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       },
     );
+    nameController.dispose();
+    phoneController.dispose();
+    passwordController.dispose();
   }
 
   InputDecoration _buildInputDecoration(
     String label,
     IconData icon, {
     bool isPhone = false,
+    String phonePrefix = '9',
+    ValueChanged<String>? onPhonePrefixChanged,
   }) {
     return InputDecoration(
       labelText: label,
@@ -1611,13 +1731,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 children: [
                   Icon(icon, color: AppColors.primary),
                   const SizedBox(width: 12),
-                  Text(
-                    '+2519',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                      letterSpacing: 1,
+                  PopupMenuButton<String>(
+                    tooltip: 'Phone prefix',
+                    onSelected: onPhonePrefixChanged,
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: '9', child: Text('+2519')),
+                      PopupMenuItem(value: '7', child: Text('+2517')),
+                    ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '+251$phonePrefix',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(Icons.arrow_drop_down, size: 15),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1634,127 +1769,201 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // PHASE 3: THE STAFF ROSTER TAB WIDGET
+  Future<void> _updateStaffStatus(
+    Map<String, dynamic> staff,
+    bool isActive,
+  ) async {
+    final staffNumber = staff['staff_number']?.toString() ?? '';
+    if (staffNumber.isEmpty || _staffStatusUpdates.contains(staffNumber)) {
+      return;
+    }
+
+    setState(() => _staffStatusUpdates.add(staffNumber));
+    try {
+      await ApiService.toggleStaffStatus(staffNumber, isActive);
+      if (!mounted) return;
+      setState(() {
+        _staffRoster = _staffRoster
+            .map(
+              (member) => member['staff_number']?.toString() == staffNumber
+                  ? <String, dynamic>{...member, 'is_active': isActive}
+                  : member,
+            )
+            .toList(growable: false);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isActive
+                ? '${staff['name']} can sign in again.'
+                : '${staff['name']} has been paused.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update ${staff['name']}: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _staffStatusUpdates.remove(staffNumber));
+      }
+    }
+  }
+
+  // Uses the route's single roster subscription so returning to this tab never
+  // replaces useful content with a new full-screen loading state.
   Widget _buildStaffRosterTab() {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _staffStream,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return ErrorBanner(message: _friendlyStreamError(snapshot.error));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          );
-        }
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(
-            child: Text(
-              'No staff members found.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          );
-        }
+    if (!_staffRosterLoaded) {
+      return const LoadingView(message: 'Loading team');
+    }
 
-        // Filter out Admins to ensure only single admin view applies
-        final staffList = snapshot.data!
-            .where((s) => s['role'] != 'admin')
-            .toList();
+    final staffList = _staffRoster
+        .where((staff) => staff['role'] != 'admin')
+        .toList(growable: false);
 
-        if (staffList.isEmpty) {
-          return Center(
-            child: Text(
-              'No active floor staff.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: staffList.length,
-          itemBuilder: (context, index) {
-            final staff = staffList[index];
-            final isActive = staff['is_active'] as bool? ?? true;
-            final roleName =
-                staff['role']?.toString().toUpperCase() ?? 'UNKNOWN';
-            final roleColor = roleName == 'CASHIER'
-                ? const Color(0xFFF59E0B)
-                : const Color(0xFF10B981);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface
-                    .withValues(alpha: .68),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-              child: Row(
+    return ListView(
+      key: const PageStorageKey<String>('admin-team-list'),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    backgroundColor: roleColor.withValues(alpha: 0.1),
-                    child: Icon(
-                      roleName == 'CASHIER'
-                          ? AppIcons.pointOfSale
-                          : AppIcons.menu,
-                      color: roleColor,
-                      size: 18,
-                    ),
+                  Text(
+                    'Team',
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          staff['name'] ?? 'Unknown',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'ID: ${staff['staff_number']}  •  $roleName',
-                          style: const TextStyle(
-                            color: AppColors.textFaint,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      AppIcons.edit,
-                      color: AppColors.textFaint,
-                      size: 20,
-                    ),
-                    onPressed: () => _showEditStaffSheet(staff),
-                  ),
-                  Switch.adaptive(
-                    value: isActive,
-                    activeTrackColor: const Color(0xFF10B981),
-                    onChanged: (val) async {
-                      await ApiService.toggleStaffStatus(
-                        staff['staff_number'],
-                        val,
-                      );
-                    },
+                  const SizedBox(height: 3),
+                  Text(
+                    '${staffList.length} floor ${staffList.length == 1 ? 'member' : 'members'}',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
+            ),
+            FilledButton.icon(
+              onPressed: _showAddStaffSheet,
+              icon: const Icon(AppIcons.addUser, size: 18),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        if (_staffRosterError != null)
+          ErrorBanner(message: _friendlyStreamError(_staffRosterError)),
+        if (staffList.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 72),
+            child: EmptyView(
+              message: 'No payment staff yet. Add the first team member.',
+              icon: AppIcons.team,
+            ),
+          )
+        else
+          for (final staff in staffList) _buildStaffMemberCard(staff),
+      ],
+    );
+  }
+
+  Widget _buildStaffMemberCard(Map<String, dynamic> staff) {
+    final staffNumber = staff['staff_number']?.toString() ?? '';
+    final isActive = staff['is_active'] as bool? ?? true;
+    final isUpdating = _staffStatusUpdates.contains(staffNumber);
+    final roleName = PaymentContext.roleLabel(staff['role']).toUpperCase();
+    final roleDisplay = roleName.isEmpty
+        ? roleName
+        : '${roleName[0]}${roleName.substring(1).toLowerCase()}';
+    final roleColor = roleName == 'CASHIER'
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFF10B981);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppVariant.usesIPhoneUi
+            ? Theme.of(context).colorScheme.surfaceContainerHigh
+            : Theme.of(context).colorScheme.surface.withValues(alpha: .82),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            AppVariant.usesIPhoneUi ? 20 : 16,
+          ),
+          side: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant
+                .withValues(alpha: AppVariant.usesIPhoneUi ? .42 : 1),
+            width: AppVariant.usesIPhoneUi ? .6 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: isUpdating ? null : () => _showEditStaffSheet(staff),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: roleColor.withValues(alpha: .12),
+                  child: Icon(
+                    roleName == 'CASHIER'
+                        ? AppIcons.pointOfSale
+                        : AppIcons.staffBadge,
+                    color: roleColor,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        staff['name']?.toString() ?? 'Unknown',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '$staffNumber  •  $roleDisplay  •  ${isActive ? 'Active' : 'Paused'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: isActive
+                              ? roleColor
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isUpdating)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 15),
+                    child: SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  Switch.adaptive(
+                    value: isActive,
+                    activeTrackColor: AppColors.success,
+                    onChanged: (value) => _updateStaffStatus(staff, value),
+                  ),
+                const Icon(AppIcons.chevronRight, size: 17),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1785,6 +1994,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     '${data?['byte_size'] ?? bytes.length} bytes • SHA-256 protected',
                   ),
                   trailing: IconButton(
+                    tooltip: 'Close receipt evidence',
                     onPressed: () => Navigator.pop(dialogContext),
                     icon: const Icon(AppIcons.close),
                   ),
@@ -1809,6 +2019,105 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  Future<void> _resolveWithdrawal(
+    Map<String, dynamic> request,
+    String status,
+  ) async {
+    final requestId = request['request_id']?.toString() ?? '';
+    if (requestId.isEmpty || _withdrawalUpdates.contains(requestId)) return;
+
+    setState(() => _withdrawalUpdates.add(requestId));
+    try {
+      await ApiService.resolveTipWithdrawal(requestId, status);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Withdrawal marked ${status.toLowerCase()}.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update withdrawal: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _withdrawalUpdates.remove(requestId));
+      }
+    }
+  }
+
+  Future<void> _confirmWithdrawalChange(
+    Map<String, dynamic> request,
+    String status,
+  ) async {
+    final amount = (request['amount'] as num?)?.toDouble() ?? 0;
+    final staffNumber = request['staff_number']?.toString() ?? 'Unknown';
+    final (title, action, detail, isDestructive) = switch (status) {
+      'approved' => (
+        'Approve withdrawal?',
+        'APPROVE',
+        'This reserves the request for payment. You can mark it paid after the transfer is complete.',
+        false,
+      ),
+      'rejected' => (
+        'Reject withdrawal?',
+        'REJECT',
+        'The request will close and the reserved tip balance will return to the staff member.',
+        true,
+      ),
+      'paid' => (
+        'Mark withdrawal paid?',
+        'MARK PAID',
+        'Confirm only after sending the money. A paid withdrawal cannot be reopened.',
+        false,
+      ),
+      _ => throw ArgumentError.value(status, 'status'),
+    };
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${amount.toStringAsFixed(2)} ETB',
+              style: Theme.of(dialogContext).textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text('Staff $staffNumber'),
+            const SizedBox(height: 16),
+            Text(detail),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            key: Key('confirm-withdrawal-$status'),
+            style: isDestructive
+                ? FilledButton.styleFrom(backgroundColor: AppColors.danger)
+                : null,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _resolveWithdrawal(request, status);
+    }
+  }
+
   void _showWithdrawalRequests() {
     showModalBottomSheet<void>(
       context: context,
@@ -1827,6 +2136,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   title: const Text('Tip withdrawal requests'),
                   subtitle: Text('${requests.length} recent requests'),
                   trailing: IconButton(
+                    tooltip: 'Close withdrawal requests',
                     onPressed: () => Navigator.pop(sheetContext),
                     icon: const Icon(AppIcons.close),
                   ),
@@ -1847,6 +2157,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             final request = requests[index];
                             final pending = request['status'] == 'pending';
                             final approved = request['status'] == 'approved';
+                            final requestId = request['request_id']?.toString();
+                            final isUpdating =
+                                requestId != null &&
+                                _withdrawalUpdates.contains(requestId);
                             final amount =
                                 (request['amount'] as num?)?.toDouble() ?? 0;
                             return GlassPanel(
@@ -1878,33 +2192,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                       ],
                                     ),
                                   ),
-                                  if (pending) ...[
+                                  if (isUpdating)
+                                    const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: SizedBox.square(
+                                        dimension: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    )
+                                  else if (pending) ...[
                                     IconButton.filledTonal(
                                       tooltip: 'Reject',
-                                      onPressed: () =>
-                                          ApiService.resolveTipWithdrawal(
-                                            request['request_id'].toString(),
-                                            'rejected',
-                                          ),
+                                      onPressed: () => _confirmWithdrawalChange(
+                                        request,
+                                        'rejected',
+                                      ),
                                       icon: const Icon(AppIcons.close),
                                     ),
                                     const SizedBox(width: 6),
                                     IconButton.filled(
                                       tooltip: 'Approve',
-                                      onPressed: () =>
-                                          ApiService.resolveTipWithdrawal(
-                                            request['request_id'].toString(),
-                                            'approved',
-                                          ),
+                                      onPressed: () => _confirmWithdrawalChange(
+                                        request,
+                                        'approved',
+                                      ),
                                       icon: const Icon(AppIcons.check),
                                     ),
                                   ] else if (approved) ...[
                                     FilledButton.icon(
-                                      onPressed: () =>
-                                          ApiService.resolveTipWithdrawal(
-                                            request['request_id'].toString(),
-                                            'paid',
-                                          ),
+                                      onPressed: () => _confirmWithdrawalChange(
+                                        request,
+                                        'paid',
+                                      ),
                                       icon: const Icon(AppIcons.money),
                                       label: const Text('Mark paid'),
                                     ),
@@ -1923,6 +2244,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  void _showAuditLedger() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _AuditLedgerSheet(),
+    );
+  }
+
   Widget _buildAdminToolsTab() {
     return StreamBuilder<Map<String, dynamic>>(
       stream: _businessStream,
@@ -1931,7 +2261,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         final accounts = rawAccounts is Map
             ? Map<String, dynamic>.from(rawAccounts)
             : <String, dynamic>{};
-        final configuredAccounts = _paymentAccountProviders.where((provider) {
+        final configuredAccounts = _enabledPaymentAccountProviders.where((
+          provider,
+        ) {
           return accounts[provider.numberKey]?.toString().trim().isNotEmpty ==
               true;
         }).length;
@@ -1944,7 +2276,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     .where((request) => request['status'] == 'pending')
                     .length;
             return ListView(
-              padding: const EdgeInsets.all(AppSpacing.xl),
+              padding: EdgeInsets.all(
+                AppVariant.usesIPhoneUi ? 16 : AppSpacing.xl,
+              ),
               children: [
                 Row(
                   children: [
@@ -1964,7 +2298,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: Text(
-                        'Admin tools',
+                        AppVariant.usesIPhoneUi
+                            ? context.tr('Manage')
+                            : 'Admin tools',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
@@ -1988,6 +2324,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           title: 'Add staff',
                           detail: 'Create account',
                           onTap: _showAddStaffSheet,
+                          index: 0,
                         ),
                         _adminToolCard(
                           width: width,
@@ -1997,8 +2334,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               : AppColors.success,
                           title: 'Payment accounts',
                           detail:
-                              '$configuredAccounts / ${_paymentAccountProviders.length} set',
+                              '$configuredAccounts / ${_enabledPaymentAccountProviders.length} set',
                           onTap: () => _showBankConfigSheet(accounts),
+                          index: 1,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2011,6 +2349,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               ? '$pendingWithdrawals pending'
                               : 'All clear',
                           onTap: _showWithdrawalRequests,
+                          index: 2,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2019,6 +2358,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           title: 'Password',
                           detail: 'Change password',
                           onTap: _showChangePasswordSheet,
+                          index: 3,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2033,6 +2373,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               ),
                             ),
                           ),
+                          index: 4,
+                        ),
+                        _adminToolCard(
+                          width: width,
+                          icon: AppIcons.verifiedList,
+                          color: AppColors.pink,
+                          title: 'Audit ledger',
+                          detail: 'Review and export CSV',
+                          onTap: _showAuditLedger,
+                          index: 5,
                         ),
                         _adminToolCard(
                           width: width,
@@ -2041,6 +2391,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           title: 'Refresh',
                           detail: 'Reload transactions',
                           onTap: _refreshData,
+                          index: 6,
                         ),
                       ],
                     );
@@ -2061,50 +2412,75 @@ class _AdminDashboardState extends State<AdminDashboard> {
     required String title,
     required String detail,
     required VoidCallback onTap,
+    int index = 0,
   }) {
-    return SizedBox(
-      width: width,
-      child: Semantics(
-        button: true,
-        label: title,
-        child: HoverSurface(
-          onTap: onTap,
-          accent: color,
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: .13),
-                  borderRadius: BorderRadius.circular(18),
+    return FadeSlideIn(
+      index: index.clamp(0, 5),
+      child: SizedBox(
+        width: width,
+        child: Semantics(
+          button: true,
+          label: title,
+          child: HoverSurface(
+            onTap: onTap,
+            accent: color,
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Row(
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .13),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(icon, color: color, size: 27),
                 ),
-                child: Icon(icon, color: color, size: 27),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(detail, style: Theme.of(context).textTheme.bodySmall),
-                  ],
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        detail,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Icon(AppIcons.chevronRight, color: color),
-            ],
+                const SizedBox(width: AppSpacing.sm),
+                Icon(AppIcons.chevronRight, color: color),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _signOut() async {
+    await ApiService.logoutStaff();
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      CupertinoPageRoute<void>(builder: (_) => const StaffLoginScreen()),
+    );
+  }
+
+  void _openHelpAndPrivacy() {
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(builder: (_) => const SupportPrivacyScreen()),
+    );
+  }
+
+  Widget _buildIPhoneBusinessTitle() {
+    return Text(context.tr('Admin'));
   }
 
   @override
@@ -2112,413 +2488,527 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
-          title: StreamBuilder<Map<String, dynamic>>(
-            stream: _businessStream,
-            builder: (context, snapshot) {
-              final business = snapshot.data;
-              final name = business?['name']?.toString() ?? 'Business';
-              final type =
-                  business?['business_type']?.toString() ??
-                  business?['subscription_tier']?.toString() ??
-                  'Restaurant';
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (!AppVariant.usesMinimalCopy)
-                    Text(
-                      type,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-          titleTextStyle: AppTypography.appBarTitle(),
-          leading: IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(AppIcons.logout, color: AppColors.danger),
-            onPressed: () {
-              ApiService.logoutStaff();
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const StaffLoginScreen()),
-              );
-            },
-          ),
-          actions: [
-            const GlassLanguageToggleButton(),
-            const GlassThemeToggleButton(),
-          ],
-          bottom: TabBar(
-            dividerHeight: 0,
-            tabs: [
-              Tab(
-                icon: const Icon(AppIcons.analytics, size: 18),
-                text: context.tr('Overview'),
-              ),
-              Tab(
-                icon: const Icon(AppIcons.team, size: 18),
-                text: context.tr('Team'),
-              ),
-              const Tab(
-                icon: Icon(AppIcons.settings, size: 18),
-                text: 'Manage',
-              ),
-            ],
-          ),
-        ),
-        body: AppBackdrop(
-          child: TabBarView(
-            children: [
-              // TAB 1: FINANCIALS AND LEDGER
-              CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: StreamBuilder<List<Map<String, dynamic>>>(
-                      stream: _ticketsStream,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: ErrorBanner(
-                              message: _friendlyStreamError(snapshot.error),
-                            ),
-                          );
-                        }
-                        if (!_activePlan.includes(
-                          PlanFeature.dailyRevenueReport,
-                        )) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: _buildProInsightsLock(),
-                          );
-                        }
-                        final allTickets =
-                            snapshot.data ?? const <Map<String, dynamic>>[];
-                        final visibleTickets = _filteredTickets(allTickets);
-                        double totalRevenue = 0;
-                        int pendingCount = 0;
-                        Map<String, double> bankTotals = {};
-                        Map<String, int> bankCounts = {};
-
-                        if (snapshot.hasData) {
-                          for (var ticket in visibleTickets) {
-                            if (ticket['status'] == 'settled') {
-                              double amount = (ticket['bill_amount'] ?? 0)
-                                  .toDouble();
-                              totalRevenue += amount;
-                              String bankName = ticket['bank'] ?? 'Unknown';
-                              bankTotals[bankName] =
-                                  (bankTotals[bankName] ?? 0) + amount;
-                              bankCounts[bankName] =
-                                  (bankCounts[bankName] ?? 0) + 1;
-                            } else if (ticket['status'] == 'pending') {
-                              pendingCount++;
-                            }
-                          }
-                        }
-
-                        return Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildLedgerFilters(allTickets),
-                              const SizedBox(height: 18),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildMetricCard(
-                                      context.tr('TOTAL REVENUE'),
-                                      '${totalRevenue.toStringAsFixed(0)} ETB',
-                                      const Color(0xFF10B981),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildMetricCard(
-                                      context.tr('ACTIVE BILLS'),
-                                      '$pendingCount',
-                                      const Color(0xFFF59E0B),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 24),
-                              Text(
-                                context.tr('BANK DEPOSIT BREAKDOWN'),
-                                style: const TextStyle(
-                                  color: AppColors.textFaint,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 11,
-                                  letterSpacing: 1.5,
+        appBar: AppVariant.usesIPhoneUi
+            ? IPhoneDashboardNavigationBar(
+                title: _buildIPhoneBusinessTitle(),
+                onSignOut: _signOut,
+                onHelp: _openHelpAndPrivacy,
+                onRefresh: _refreshData,
+              )
+            : AppBar(
+                title: StreamBuilder<Map<String, dynamic>>(
+                  stream: _businessStream,
+                  builder: (context, snapshot) {
+                    final business = snapshot.data;
+                    final name = business?['name']?.toString() ?? 'Business';
+                    final type =
+                        business?['business_type']?.toString() ??
+                        business?['subscription_tier']?.toString() ??
+                        'Business';
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (!AppVariant.usesMinimalCopy)
+                          Text(
+                            type,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
-                              ),
-                              const SizedBox(height: 16),
-                              if (bankTotals.isEmpty)
-                                GlassPanel(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Center(
-                                    child: Text(
-                                      context.tr(
-                                        'No verified transactions yet.',
-                                      ),
-                                      style: const TextStyle(
-                                        color: AppColors.textFaint,
-                                      ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                titleTextStyle: AppTypography.appBarTitle(),
+                leading: IconButton(
+                  tooltip: 'Sign out',
+                  icon: const Icon(AppIcons.logout, color: AppColors.danger),
+                  onPressed: _signOut,
+                ),
+                actions: [
+                  const GlassLanguageToggleButton(),
+                  const GlassThemeToggleButton(),
+                ],
+                bottom: TabBar(
+                  dividerHeight: 0,
+                  tabs: [
+                    Tab(
+                      icon: const Icon(AppIcons.analytics, size: 18),
+                      text: context.tr('Overview'),
+                    ),
+                    Tab(
+                      icon: const Icon(AppIcons.team, size: 18),
+                      text: context.tr('Team'),
+                    ),
+                    const Tab(
+                      icon: Icon(AppIcons.settings, size: 18),
+                      text: 'Manage',
+                    ),
+                  ],
+                ),
+              ),
+        body: AppBackdrop(
+          child: Column(
+            children: [
+              DashboardRefreshStatus(
+                listenable: ApiService.dashboardRefreshState,
+                onRefresh: _refreshData,
+              ),
+              Expanded(
+                child: DashboardTabView(
+                  preserveState: AppVariant.usesIPhoneUi,
+                  physics: AppVariant.usesIPhoneUi
+                      ? const NeverScrollableScrollPhysics()
+                      : null,
+                  children: [
+                    // TAB 1: FINANCIALS AND LEDGER
+                    CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: StreamBuilder<List<Map<String, dynamic>>>(
+                            stream: _ticketsStream,
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: ErrorBanner(
+                                    message: _friendlyStreamError(
+                                      snapshot.error,
                                     ),
                                   ),
-                                )
-                              else
-                                GlassPanel(
-                                      padding: const EdgeInsets.all(20),
-                                      child: Column(
-                                        children: bankTotals.entries.map((
-                                          entry,
-                                        ) {
-                                          Color bColor = _getBankColor(
-                                            entry.key,
-                                          );
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 16.0,
+                                );
+                              }
+                              if (!_activePlan.includes(
+                                PlanFeature.dailyRevenueReport,
+                              )) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: _buildProInsightsLock(),
+                                );
+                              }
+                              final allTickets =
+                                  snapshot.data ??
+                                  const <Map<String, dynamic>>[];
+                              final visibleTickets = _filteredTickets(
+                                allTickets,
+                              );
+                              double totalRevenue = 0;
+                              int pendingCount = 0;
+                              Map<String, double> bankTotals = {};
+                              Map<String, int> bankCounts = {};
+
+                              if (snapshot.hasData) {
+                                for (var ticket in visibleTickets) {
+                                  if (ticket['status'] == 'settled') {
+                                    double amount = (ticket['bill_amount'] ?? 0)
+                                        .toDouble();
+                                    totalRevenue += amount;
+                                    String bankName =
+                                        ticket['bank'] ?? 'Unknown';
+                                    bankTotals[bankName] =
+                                        (bankTotals[bankName] ?? 0) + amount;
+                                    bankCounts[bankName] =
+                                        (bankCounts[bankName] ?? 0) + 1;
+                                  } else if (ticket['status'] == 'pending') {
+                                    pendingCount++;
+                                  }
+                                }
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildLedgerFilters(allTickets),
+                                    const SizedBox(height: 18),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _buildMetricCard(
+                                            context.tr('TOTAL REVENUE'),
+                                            '${totalRevenue.toStringAsFixed(0)} ETB',
+                                            const Color(0xFF10B981),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: _buildMetricCard(
+                                            context.tr('OPEN PAYMENTS'),
+                                            '$pendingCount',
+                                            const Color(0xFFF59E0B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 24),
+                                    Text(
+                                      AppVariant.usesIPhoneUi
+                                          ? _modernSectionLabel(
+                                              'PAYMENT METHODS',
+                                            )
+                                          : context.tr(
+                                              'BANK DEPOSIT BREAKDOWN',
                                             ),
-                                            child: Row(
+                                      style: AppVariant.usesIPhoneUi
+                                          ? Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  fontSize: 17,
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: -.25,
+                                                )
+                                          : const TextStyle(
+                                              color: AppColors.textFaint,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11,
+                                              letterSpacing: 1.5,
+                                            ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    if (bankTotals.isEmpty)
+                                      GlassPanel(
+                                        padding: const EdgeInsets.all(24),
+                                        child: Center(
+                                          child: Text(
+                                            context.tr(
+                                              'No verified transactions yet.',
+                                            ),
+                                            style: const TextStyle(
+                                              color: AppColors.textFaint,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      GlassPanel(
+                                        padding: const EdgeInsets.all(20),
+                                        child: Column(
+                                          children: bankTotals.entries.map((
+                                            entry,
+                                          ) {
+                                            Color bColor = _getBankColor(
+                                              entry.key,
+                                            );
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 16.0,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  PaymentLogo(
+                                                    provider: entry.key,
+                                                    size: 34,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          entry.key,
+                                                          style:
+                                                              Theme.of(context)
+                                                                  .textTheme
+                                                                  .bodyMedium
+                                                                  ?.copyWith(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                    fontSize:
+                                                                        14,
+                                                                  ),
+                                                        ),
+                                                        Text(
+                                                          '${bankCounts[entry.key] ?? 0} payments • ${totalRevenue == 0 ? '0' : (entry.value / totalRevenue * 100).toStringAsFixed(1)}%',
+                                                          style: Theme.of(
+                                                            context,
+                                                          ).textTheme.bodySmall,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '${entry.value.toStringAsFixed(0)} ETB',
+                                                    style: TextStyle(
+                                                      color: bColor,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 14,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1, end: 0),
+                                  ],
+                                ),
+                              ).animate().fadeIn(duration: 400.ms);
+                            },
+                          ),
+                        ),
+
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                              vertical: 8.0,
+                            ),
+                            child: Text(
+                              AppVariant.usesIPhoneUi
+                                  ? _modernSectionLabel('TRANSACTIONS')
+                                  : context.tr('MASTER TRANSACTION LEDGER'),
+                              style: AppVariant.usesIPhoneUi
+                                  ? Theme.of(context).textTheme.titleMedium
+                                        ?.copyWith(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: -.25,
+                                        )
+                                  : const TextStyle(
+                                      color: AppColors.textFaint,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11,
+                                      letterSpacing: 1.5,
+                                    ),
+                            ),
+                          ),
+                        ),
+
+                        StreamBuilder<List<Map<String, dynamic>>>(
+                          stream: _ticketsStream,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: ErrorBanner(
+                                    message: _friendlyStreamError(
+                                      snapshot.error,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            final visibleTickets = _filteredTickets(
+                              snapshot.data ?? const <Map<String, dynamic>>[],
+                            );
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const SliverToBoxAdapter(
+                                child: Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32.0),
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            if (visibleTickets.isEmpty) {
+                              return SliverToBoxAdapter(
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Text(
+                                      context.tr('Ledger is clear.'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return SliverList(
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
+                                final ticket = visibleTickets[index];
+                                final isSettled = ticket['status'] == 'settled';
+                                final isRejected =
+                                    ticket['status'] == 'rejected';
+                                final bankColor = _getBankColor(
+                                  ticket['bank'] ?? '',
+                                );
+                                final statusColor = isSettled
+                                    ? const Color(0xFF10B981)
+                                    : (isRejected
+                                          ? Colors.redAccent
+                                          : const Color(0xFFF59E0B));
+
+                                return GlassPanel(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 6,
+                                  ),
+                                  padding: const EdgeInsets.all(16),
+                                  borderRadius: AppVariant.usesIPhoneUi
+                                      ? 20
+                                      : 16,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
                                               children: [
-                                                PaymentLogo(
-                                                  provider: entry.key,
-                                                  size: 34,
+                                                Icon(
+                                                  AppIcons.receipt,
+                                                  color: statusColor,
+                                                  size: AppVariant.usesIPhoneUi
+                                                      ? 18
+                                                      : 16,
                                                 ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        entry.key,
-                                                        style: Theme.of(context)
-                                                            .textTheme
-                                                            .bodyMedium
-                                                            ?.copyWith(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              fontSize: 14,
-                                                            ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  '${ticket['bill_amount']} ETB',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyLarge
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize:
+                                                            AppVariant
+                                                                .usesIPhoneUi
+                                                            ? 18
+                                                            : 16,
                                                       ),
-                                                      Text(
-                                                        '${bankCounts[entry.key] ?? 0} payments • ${totalRevenue == 0 ? '0' : (entry.value / totalRevenue * 100).toStringAsFixed(1)}%',
-                                                        style: Theme.of(context)
-                                                            .textTheme
-                                                            .bodySmall,
-                                                      ),
-                                                    ],
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                PaymentBrand(
+                                                  provider:
+                                                      ticket['bank']
+                                                          ?.toString() ??
+                                                      'N/A',
+                                                  logoSize: 22,
+                                                  style: TextStyle(
+                                                    color: bankColor,
+                                                    fontSize:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? 12
+                                                        : 10,
+                                                    fontWeight:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w900,
                                                   ),
                                                 ),
+                                                const SizedBox(width: 8),
                                                 Text(
-                                                  '${entry.value.toStringAsFixed(0)} ETB',
+                                                  'REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0, 8)}',
                                                   style: TextStyle(
-                                                    color: bColor,
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 14,
+                                                    color:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? Theme.of(context)
+                                                              .colorScheme
+                                                              .onSurfaceVariant
+                                                        : AppColors.textFaint,
+                                                    fontSize:
+                                                        AppVariant.usesIPhoneUi
+                                                        ? 12
+                                                        : 10,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    )
-                                    .animate()
-                                    .fadeIn(delay: 300.ms)
-                                    .slideY(begin: 0.1, end: 0),
-                            ],
-                          ),
-                        ).animate().fadeIn(duration: 400.ms);
-                      },
-                    ),
-                  ),
-
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0,
-                        vertical: 8.0,
-                      ),
-                      child: Text(
-                        context.tr('MASTER TRANSACTION LEDGER'),
-                        style: const TextStyle(
-                          color: AppColors.textFaint,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 11,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  StreamBuilder<List<Map<String, dynamic>>>(
-                    stream: _ticketsStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: ErrorBanner(
-                              message: _friendlyStreamError(snapshot.error),
-                            ),
-                          ),
-                        );
-                      }
-                      final visibleTickets = _filteredTickets(
-                        snapshot.data ?? const <Map<String, dynamic>>[],
-                      );
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const SliverToBoxAdapter(
-                          child: Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(32.0),
-                              child: CircularProgressIndicator(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      if (visibleTickets.isEmpty) {
-                        return SliverToBoxAdapter(
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24.0),
-                              child: Text(
-                                context.tr('Ledger is clear.'),
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      return SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final ticket = visibleTickets[index];
-                          final isSettled = ticket['status'] == 'settled';
-                          final isRejected = ticket['status'] == 'rejected';
-                          final bankColor = _getBankColor(ticket['bank'] ?? '');
-                          final statusColor = isSettled
-                              ? const Color(0xFF10B981)
-                              : (isRejected
-                                    ? Colors.redAccent
-                                    : const Color(0xFFF59E0B));
-
-                          return GlassPanel(
-                            margin: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 6,
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            borderRadius: 16,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            AppIcons.receipt,
-                                            color: statusColor,
-                                            size: 16,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            '${ticket['bill_amount']} ETB',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyLarge
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          PaymentBrand(
-                                            provider:
-                                                ticket['bank']?.toString() ??
-                                                'N/A',
-                                            logoSize: 22,
-                                            style: TextStyle(
-                                              color: bankColor,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w900,
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Staff ${ticket['waiter_id']} • ${PaymentContext.display(ticket['table_number'])} • ${_formatLedgerDate(ticket['created_at'])}',
+                                              style: TextStyle(
+                                                color: AppVariant.usesIPhoneUi
+                                                    ? Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant
+                                                          .withValues(
+                                                            alpha: .72,
+                                                          )
+                                                    : AppColors.textDisabled,
+                                                fontSize:
+                                                    AppVariant.usesIPhoneUi
+                                                    ? 11
+                                                    : 10,
+                                                fontWeight: FontWeight.w500,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'REF: ${ticket['transaction_ref'] ?? ticket['ticket_id'].toString().substring(0, 8)}',
-                                            style: const TextStyle(
-                                              color: AppColors.textFaint,
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Staff ${ticket['waiter_id']} • Table ${ticket['table_number'] ?? '—'} • ${_formatLedgerDate(ticket['created_at'])}',
-                                        style: const TextStyle(
-                                          color: AppColors.textDisabled,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
+                                          ],
                                         ),
                                       ),
+                                      if (ticket['receipt_image_saved'] == true)
+                                        IconButton(
+                                          tooltip: 'View receipt evidence',
+                                          onPressed: () => _showReceiptEvidence(
+                                            ticket['ticket_id'].toString(),
+                                          ),
+                                          icon: const Icon(
+                                            AppIcons.scanImage,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
                                     ],
                                   ),
-                                ),
-                                if (ticket['receipt_image_saved'] == true)
-                                  IconButton(
-                                    tooltip: 'View receipt evidence',
-                                    onPressed: () => _showReceiptEvidence(
-                                      ticket['ticket_id'].toString(),
-                                    ),
-                                    icon: const Icon(
-                                      AppIcons.scanImage,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          );
-                        }, childCount: visibleTickets.length),
-                      );
-                    },
-                  ),
+                                );
+                              }, childCount: visibleTickets.length),
+                            );
+                          },
+                        ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                ],
+                        const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                      ],
+                    ),
+
+                    // TAB 2: STAFF ROSTER
+                    _buildStaffRosterTab(),
+                    // TAB 3: LARGE ADMIN ACTIONS
+                    _buildAdminToolsTab(),
+                  ],
+                ),
               ),
-
-              // TAB 2: STAFF ROSTER
-              _buildStaffRosterTab(),
-              // TAB 3: LARGE ADMIN ACTIONS
-              _buildAdminToolsTab(),
             ],
           ),
         ),
+        bottomNavigationBar: AppVariant.usesIPhoneUi
+            ? IPhoneBottomTabBar(
+                items: [
+                  IPhoneTabItem(
+                    label: context.tr('Overview'),
+                    icon: AppIcons.analytics,
+                  ),
+                  IPhoneTabItem(label: context.tr('Team'), icon: AppIcons.team),
+                  IPhoneTabItem(
+                    label: context.tr('Manage'),
+                    icon: AppIcons.settings,
+                  ),
+                ],
+              )
+            : null,
       ),
     );
   }
@@ -2532,5 +3022,183 @@ class _AdminDashboardState extends State<AdminDashboard> {
         error?.toString().replaceFirst('Exception: ', '') ??
         'Unable to load dashboard data.';
     return 'Dashboard data could not be loaded. $message';
+  }
+
+  String _modernSectionLabel(String value) {
+    final translated = context.tr(value);
+    if (translated.isEmpty || translated != translated.toUpperCase()) {
+      return translated;
+    }
+    final lower = translated.toLowerCase();
+    return '${lower[0].toUpperCase()}${lower.substring(1)}';
+  }
+}
+
+class _AuditLedgerSheet extends StatefulWidget {
+  const _AuditLedgerSheet();
+
+  @override
+  State<_AuditLedgerSheet> createState() => _AuditLedgerSheetState();
+}
+
+class _AuditLedgerSheetState extends State<_AuditLedgerSheet> {
+  late Future<List<Map<String, dynamic>>> _events;
+  bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _events = ApiService.listBusinessAuditEvents();
+  }
+
+  void _refresh() {
+    setState(() => _events = ApiService.listBusinessAuditEvents());
+  }
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final events = await _events;
+      if (events.isEmpty) {
+        throw Exception('There are no audit events to export.');
+      }
+      final result = await AuditCsvExporter.export(
+        fileName: auditCsvFileName(DateTime.now()),
+        csv: buildAuditCsv(events),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result == AuditCsvExportResult.shared
+                ? 'Choose where to save or share the audit CSV.'
+                : 'Audit CSV copied to the clipboard.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: .9,
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(AppIcons.verifiedList),
+            title: const Text('Business audit ledger'),
+            subtitle: const Text('Security, ticket, and tip payout events'),
+            trailing: Wrap(
+              children: [
+                IconButton(
+                  key: const Key('audit-export-button'),
+                  tooltip: 'Export CSV',
+                  onPressed: _exporting ? null : _export,
+                  icon: _exporting
+                      ? const SizedBox.square(
+                          dimension: 19,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(AppIcons.download),
+                ),
+                IconButton(
+                  tooltip: 'Refresh audit ledger',
+                  onPressed: _refresh,
+                  icon: const Icon(AppIcons.refresh),
+                ),
+                IconButton(
+                  tooltip: 'Close audit ledger',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(AppIcons.close),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _events,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const ErrorBanner(
+                          message: 'The audit ledger could not be loaded.',
+                        ),
+                        TextButton.icon(
+                          onPressed: _refresh,
+                          icon: const Icon(AppIcons.refresh),
+                          label: const Text('RETRY'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final events = snapshot.data ?? const [];
+                if (events.isEmpty) {
+                  return const EmptyView(
+                    icon: AppIcons.history,
+                    message: 'No audit events have been recorded yet.',
+                  );
+                }
+                return ListView.separated(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  itemCount: events.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final event = events[index];
+                    final action = event['action']?.toString() ?? 'event';
+                    final actor = event['actor_staff_number']?.toString();
+                    final subject =
+                        event['subject_type']?.toString() ?? 'record';
+                    return ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(AppIcons.history, size: 18),
+                      ),
+                      title: Text(_auditLabel(action)),
+                      subtitle: Text(
+                        '${actor == null || actor.isEmpty ? 'System' : 'Staff $actor'} · $subject ${event['subject_id'] ?? ''}\n${_auditDate(event['created_at'])}',
+                      ),
+                      isThreeLine: true,
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _auditLabel(String value) => value
+      .split('_')
+      .where((word) => word.isNotEmpty)
+      .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+      .join(' ');
+
+  String _auditDate(Object? value) {
+    final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    if (date == null) return 'Unknown time';
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} ${two(date.hour)}:${two(date.minute)}';
   }
 }

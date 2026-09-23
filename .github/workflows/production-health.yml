@@ -1,0 +1,54 @@
+name: Production health
+
+on:
+  push:
+    branches: ['release/**']
+    paths:
+      - .github/workflows/production-health.yml
+      - scripts/check_production_health.mjs
+      - legal-site/**
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check customer-facing services
+        id: health
+        continue-on-error: true
+        env:
+          CHEKMI_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
+        run: node scripts/check_production_health.mjs
+      - name: Open or update incident
+        if: ${{ steps.health.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh label create incident --color D73A4A --description 'Production service incident' --force
+          TITLE='[production-monitor] CHEKMI service check failed'
+          EXISTING=$(gh issue list --state open --search '"[production-monitor]" in:title' --json number --jq '.[0].number // empty')
+          BODY="Automated production checks failed in workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label incident
+          fi
+          exit 1
+      - name: Close recovered incident
+        if: ${{ steps.health.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh issue list --state open --search '"[production-monitor]" in:title' --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --comment "All automated checks recovered in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi

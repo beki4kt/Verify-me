@@ -225,6 +225,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                         ),
                       ).animate().fadeIn().slideX(),
                       IconButton(
+                        tooltip: 'Close result',
                         icon: const Icon(AppIcons.close, color: Colors.white54),
                         onPressed: () {
                           Navigator.pop(context);
@@ -443,6 +444,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                       child: Row(
                         children: [
                           IconButton(
+                            tooltip: 'Back',
                             icon: const Icon(
                               AppIcons.back,
                               color: Colors.white,

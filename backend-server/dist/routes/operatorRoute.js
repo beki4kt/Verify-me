@@ -178,7 +178,19 @@ exports.operatorRouter.get("/operator/overview", requireOperator, async (_req, r
     }
     try {
         const snapshot = await (0, supabaseRpc_1.callServiceRpc)("service_operator_snapshot", {});
-        res.json({ success: true, snapshot, system });
+        let supportCases = snapshot.support_cases;
+        try {
+            supportCases = await (0, supabaseRpc_1.callServiceRpc)("service_operator_list_support_cases", {});
+        }
+        catch (error) {
+            if (!(error instanceof supabaseRpc_1.SupabaseRpcError && error.code === "PGRST202"))
+                throw error;
+        }
+        res.json({
+            success: true,
+            snapshot: { ...snapshot, support_cases: supportCases },
+            system,
+        });
     }
     catch (error) {
         sendOperatorError(res, error);
@@ -280,11 +292,22 @@ exports.operatorRouter.patch("/operator/support/:id", requireOperator, async (re
         if (!["open", "in_progress", "resolved", "closed"].includes(status)) {
             throw new Error("Choose a valid support status.");
         }
-        await (0, supabaseRpc_1.callServiceRpc)("service_operator_update_support_case", {
-            p_operator_email: claims.sub,
-            p_case_id: req.params.id,
-            p_status: status,
-        });
+        const reply = text(req.body?.reply, 4000);
+        if (reply) {
+            await (0, supabaseRpc_1.callServiceRpc)("service_operator_reply_support_case", {
+                p_operator_email: claims.sub,
+                p_case_id: req.params.id,
+                p_response: reply,
+                p_status: status,
+            });
+        }
+        else {
+            await (0, supabaseRpc_1.callServiceRpc)("service_operator_update_support_case", {
+                p_operator_email: claims.sub,
+                p_case_id: req.params.id,
+                p_status: status,
+            });
+        }
         res.json({ success: true });
     }
     catch (error) {

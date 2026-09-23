@@ -97,8 +97,61 @@ production deployment.
 ## Validation
 
 - Flutter: `flutter analyze --no-pub` and `flutter test --no-pub`
+- iPhone layout suite: `flutter test --dart-define=CHEKMI_IPHONE_UI=true test/iphone_layout_test.dart`
+  (skips automatically during a plain `flutter test`, which stays green)
 - Backend: `npx tsc --noEmit` and `npm test`
 - Owned verifier deployment and acceptance: `docs/owned-verifier-deployment.md`
+- iPhone and App Store readiness: `docs/app-store-readiness.md`
+- Test on an iPhone without an App Store upload: `docs/iphone-device-testing.md`
+
+## Motion and interaction design
+
+The motion language lives in `lib/core/theme/app_motion.dart` and is shared by
+both presentations:
+
+- `Pressable` gives custom rows/cards a spring scale-press with a selection
+  haptic (Motor physics), so non-Button widgets feel like the app's buttons.
+- `FadeThroughSwitcher` swaps related content (scanner states, cashier tabs)
+  with a fade-through so the outgoing surface leaves first.
+- `FadeSlideIn` provides capped entrance stagger; `AppMotion.stagger` keeps
+  lists readable without long delays.
+- State views (`LoadingView`, `EmptyView`, `ErrorView`, `OfflineView`,
+  `ErrorBanner`) are theme-aware and calm: empty states offer a doorway
+  action, failures offer retry, and the error banner shakes once.
+- Success feedback (`SuccessOverlay`) only ever follows the backend's
+  authoritative verified/settled result; pending and failed results never
+  render success motion. Amounts in its message are the backend's values.
+- Perpetual loops (skeleton shimmer, breathing empty states) are gated by
+  `AppMotion.loopingAnimationsAllowed`, so `pumpAndSettle` still settles under
+  `flutter test` and reduced-motion users are respected everywhere.
+
+## iPhone development
+
+Chekmi automatically uses its Cupertino presentation on iOS. To review that
+presentation on an iPhone from this Windows PC, first run the firewall helper
+once in an Administrator PowerShell, then start the preview normally:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\allow_iphone_preview_firewall.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\start_iphone_preview.ps1
+```
+
+Open the local-network URL printed by the second command in iPhone Safari. See
+`docs/iphone-device-testing.md` for functional staging mode and native Xcode
+installation without TestFlight or an App Store upload. The default preview is
+an optimized release runtime, is interactive, and initializes Hive. Add
+`-Development` while actively coding when hot reload is more important than realistic
+Safari performance. Use `-VisualOnly` only for deterministic
+screenshots that do not exercise data-changing actions.
+
+`CHEKMI_UI_PREVIEW` skips device-storage startup for deterministic visual
+captures, so data-changing actions are not part of that preview. The browser
+preview validates layout and shared Dart behavior, but it cannot
+validate the camera permission prompt, iOS lifecycle, signing, StoreKit,
+TestFlight, or an App Store archive. Those checks require macOS, Xcode 26 or
+later, and an iPhone or iOS simulator.
 
 ## Repeatable staging bootstrap
 
@@ -159,16 +212,21 @@ dashboards, trial mode, and API integration can be tested in a browser.
 Android Play Store bundle:
 
 ```powershell
-flutter build appbundle --release --no-pub `
-  --dart-define-from-file=config/production.json
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\build_android_release.ps1
 ```
 
-Production and staging builds require an HTTPS CHEKMI API URL plus the public
-Supabase URL and publishable/anon key. Missing, HTTP, bind-address, and
-placeholder values stop the app before local storage or network access begins.
+Production builds require the deployed Supabase URL, publishable key, and the
+project's HTTPS `chekmi-verify` Edge Function URL. An additional CHEKMI API URL
+is required only for builds that expose the protected operator service. Missing,
+HTTP, bind-address, and placeholder values stop the app before local storage or
+network access begins.
 The Supabase service-role key remains backend-only and must never appear in this
 file. Android release signing must also be configured through
 `android/key.properties` using `android/key.properties.example` as the template.
+
+Store metadata, policy URLs, review notes, and the final deployment order are in
+`docs/store-release.md` and `docs/release-status-20260910.md`.
 
 For phone development on the same Wi-Fi, replace the API address with the
 computer's current LAN IPv4 address and use `flutter run` instead.

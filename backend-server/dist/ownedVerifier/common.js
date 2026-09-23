@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_PROVIDER_RESPONSE_BYTES = exports.DEFAULT_TIMEOUT_MS = void 0;
+exports.safeRaw = exports.referencesMatch = exports.completedStatus = exports.ethiopianLocalDate = exports.titleCase = exports.nonEmpty = exports.MAX_PROVIDER_RESPONSE_BYTES = exports.DEFAULT_TIMEOUT_MS = void 0;
 exports.configuredTimeout = configuredTimeout;
 exports.envFlag = envFlag;
 exports.ownedVerifierConfiguration = ownedVerifierConfiguration;
@@ -14,12 +14,6 @@ exports.validateProviderUrl = validateProviderUrl;
 exports.appendPath = appendPath;
 exports.relayUrl = relayUrl;
 exports.numberFrom = numberFrom;
-exports.nonEmpty = nonEmpty;
-exports.titleCase = titleCase;
-exports.ethiopianLocalDate = ethiopianLocalDate;
-exports.completedStatus = completedStatus;
-exports.referencesMatch = referencesMatch;
-exports.safeRaw = safeRaw;
 exports.toOwnedVerifierError = toOwnedVerifierError;
 const axios_1 = __importDefault(require("axios"));
 const types_1 = require("./types");
@@ -57,6 +51,7 @@ function ownedVerifierConfiguration(env = process.env) {
             mpesa: Boolean(env.MPESA_PROXY_URL?.trim() && env.MPESA_PROXY_KEY?.trim()),
         },
         newCbeDirectConfigured: Boolean(env.CBE_APP_ID?.trim() && env.CBE_APP_VERSION?.trim()),
+        legacyCbeEnabled: env.CBE_LEGACY_ENABLED?.trim().toLowerCase() !== "false",
     };
 }
 function shouldUseDirectProvider() {
@@ -109,85 +104,13 @@ function numberFrom(value) {
     const parsed = Number(cleaned);
     return Number.isFinite(parsed) ? parsed : null;
 }
-function nonEmpty(value) {
-    const text = String(value ?? "").replace(/\s+/g, " ").trim();
-    return text ? text : null;
-}
-function titleCase(value) {
-    if (!value)
-        return null;
-    return value
-        .toLowerCase()
-        .replace(/\b\p{L}/gu, (character) => character.toUpperCase());
-}
-/** Provider timestamps without offsets are Ethiopian local time (UTC+3). */
-function ethiopianLocalDate(value) {
-    const text = nonEmpty(value);
-    if (!text)
-        return null;
-    let match = text.match(/^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
-    if (match) {
-        const [, day, month, year, hour, minute, second = "00"] = match;
-        return validIso(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
-    }
-    match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[, ]+\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
-    if (match) {
-        const [, year, month, day, rawHour, minute, second = "00", meridiem] = match;
-        let hour = Number(rawHour);
-        if (meridiem) {
-            hour %= 12;
-            if (meridiem.toUpperCase() === "PM")
-                hour += 12;
-        }
-        return validIso(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${String(hour).padStart(2, "0")}:${minute}:${second}+03:00`);
-    }
-    // ISO-shaped provider values without an explicit offset are Ethiopian local
-    // time, regardless of the operating system timezone of the CHEKMI server.
-    match = text.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/);
-    if (match) {
-        const [, year, month, day, hour, minute, second = "00"] = match;
-        return validIso(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
-    }
-    return validIso(text);
-}
-function validIso(value) {
-    const date = new Date(value);
-    return Number.isNaN(date.valueOf()) ? null : date.toISOString();
-}
-function completedStatus(value) {
-    const normalized = String(value ?? "")
-        .toLowerCase()
-        .replace(/[^a-z]+/g, " ")
-        .trim();
-    return new Set([
-        "success",
-        "successful",
-        "completed",
-        "complete",
-        "settled",
-        "paid",
-        "transaction successful",
-        "transaction completed",
-        "transaction completed successfully",
-        "payment successful",
-        "payment completed",
-    ]).has(normalized);
-}
-function referencesMatch(left, right) {
-    const normalize = (value) => String(value ?? "")
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, "");
-    const normalizedLeft = normalize(left);
-    const normalizedRight = normalize(right);
-    return Boolean(normalizedLeft && normalizedLeft === normalizedRight);
-}
-/** Keep evidence useful without storing multi-megabyte PDF/base64 fields. */
-function safeRaw(raw) {
-    const copy = { ...raw };
-    delete copy.base64Data;
-    delete copy.pdf;
-    return copy;
-}
+var receiptFormat_1 = require("../receiptFormat");
+Object.defineProperty(exports, "nonEmpty", { enumerable: true, get: function () { return receiptFormat_1.nonEmpty; } });
+Object.defineProperty(exports, "titleCase", { enumerable: true, get: function () { return receiptFormat_1.titleCase; } });
+Object.defineProperty(exports, "ethiopianLocalDate", { enumerable: true, get: function () { return receiptFormat_1.ethiopianLocalDate; } });
+Object.defineProperty(exports, "completedStatus", { enumerable: true, get: function () { return receiptFormat_1.completedStatus; } });
+Object.defineProperty(exports, "referencesMatch", { enumerable: true, get: function () { return receiptFormat_1.referencesMatch; } });
+Object.defineProperty(exports, "safeRaw", { enumerable: true, get: function () { return receiptFormat_1.safeRaw; } });
 function toOwnedVerifierError(error, providerLabel) {
     if (error instanceof types_1.OwnedVerifierError)
         return error;
