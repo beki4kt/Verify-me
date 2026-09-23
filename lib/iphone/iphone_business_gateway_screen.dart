@@ -169,19 +169,21 @@ class _IPhoneBusinessGatewayScreenState
                         const SizedBox(height: 32),
                         FadeSlideIn(index: 3, child: const _ProviderStrip()),
                       ],
-                      if (!AppVariant.isPublicRelease) ...[
+                      if (!AppVariant.isPublicRelease ||
+                          AppVariant.showsPlanMarketing) ...[
                         const SizedBox(height: 32),
                         FadeSlideIn(
                           index: 4,
                           child: _IPhoneSection(
                             children: [
-                              _ActionRow(
-                                icon: CupertinoIcons.play_circle_fill,
-                                color: AppColors.primary,
-                                title: 'Try the live demo',
-                                subtitle: 'Explore Chekmi without connecting',
-                                onTap: () => _open(const TrialModeScreen()),
-                              ),
+                              if (!AppVariant.isPublicRelease)
+                                _ActionRow(
+                                  icon: CupertinoIcons.play_circle_fill,
+                                  color: AppColors.primary,
+                                  title: 'Try the live demo',
+                                  subtitle: 'Explore Chekmi without connecting',
+                                  onTap: () => _open(const TrialModeScreen()),
+                                ),
                               if (AppVariant.showsPlanMarketing)
                                 _ActionRow(
                                   icon: CupertinoIcons.layers_alt_fill,

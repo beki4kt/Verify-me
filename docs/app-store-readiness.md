@@ -53,9 +53,10 @@ practice, and reviewer experience together.
 
 Version 1.0 is organization-only. Restaurants contract with CHEKMI outside the
 app, and the app signs existing restaurant staff into an active workspace. The
-production binary hides pricing, plan requests, trial entry, and consumer
-purchase calls to action. The review notes in `store-release.md` document this
-model.
+production binary shows an informational Basic/Pro comparison and lets signed-in
+administrators send a plan request to CHEKMI support. It hides trial entry and
+consumer checkout, and a request does not immediately unlock digital features.
+The review notes in `store-release.md` document this model.
 
 ### Privacy policy and deletion
 

@@ -162,6 +162,18 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                     GlassThemeToggleButton(),
                   ],
                 ),
+                if (AppVariant.showsPlanMarketing && width < 720) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      key: const Key('gateway-mobile-pricing'),
+                      onPressed: _openPricing,
+                      icon: const Icon(AppIcons.premium),
+                      label: const Text('PRICING'),
+                    ),
+                  ),
+                ],
                 SizedBox(
                   height: AppVariant.isPublicRelease
                       ? (compact ? 30 : 46)

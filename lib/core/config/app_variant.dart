@@ -17,12 +17,12 @@ abstract final class AppVariant {
     defaultValue: true,
   );
 
-  /// Public store builds are organization-only clients. Platform operations,
-  /// plan sales, and providers that have not passed live acceptance stay out
-  /// of the customer binary while remaining available in development.
+  /// Public store builds are organization-only clients. Platform operations
+  /// and providers that have not passed live acceptance stay out of the
+  /// customer binary while plan comparison remains available to customers.
   static bool get isPublicRelease => AppEnvironment.isProduction && !isTest2;
   static bool get exposesOperatorConsole => !isPublicRelease;
-  static bool get showsPlanMarketing => !isPublicRelease;
+  static bool get showsPlanMarketing => true;
 
   static const allPaymentProviders = <({String id, String label})>[
     (id: 'telebirr', label: 'Telebirr'),

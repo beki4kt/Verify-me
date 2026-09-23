@@ -1,20 +1,20 @@
-# CHEKMI functionality and response-speed audit — 18 September 2026
+# CHEKMI functionality and response-speed audit — updated 23 September 2026
 
 ## Scope and evidence
 
 This audit covers the customer-facing production path: workspace connection,
 staff login, waiter verification and wallet, cashier settlement, tenant admin,
-support, legal consent, and account deletion. Demo, pricing, and owner-console
-controls are excluded from the production binary, but their existing automated
-tests and the protected backend tests were still run.
+support, legal consent, account deletion, and plan comparison. Demo and
+owner-console controls are excluded from the production binary. Pricing is
+visible, while plan changes remain authenticated billing/support requests.
 
 - `flutter analyze --no-pub`: clean.
-- Flutter tests: 70 passed; one iPhone-only suite is skipped by the normal
-  Android build flag.
-- iPhone layout suite with `CHEKMI_IPHONE_UI=true`: 8 passed.
+- Flutter tests: 76 passed; two production-only pricing/release checks are
+  skipped by the normal development test run and pass with production defines.
+- Production iPhone layout suite with `CHEKMI_IPHONE_UI=true`: 8 passed.
 - Backend verification/security tests: 52 passed.
 - Production Android APK: compiled, package `com.chekmi.app`, version
-  `1.0.0+1`, target API 36, zip-aligned, and verified with APK Signature v2.
+  `1.0.0+3`, target API 36, zip-aligned, and verified with APK Signature v2.
 - Production health: verifier, legal versions, required publishability RPCs,
   and four public legal/support pages passed.
 - Production RPC compatibility: all 25 customer RPCs used by the app are

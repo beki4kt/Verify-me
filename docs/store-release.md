@@ -4,8 +4,10 @@
 
 Version 1.0 is an organization-only business client. Restaurants contract with
 CHEKMI outside the mobile app and provide workspace access to their staff. The
-public production binary does not create consumer accounts, advertise plans,
-sell subscriptions, or unlock digital features through an external purchase.
+public production binary does not create consumer accounts or sell subscriptions.
+It displays an informational Basic/Pro comparison; an authenticated administrator
+can send a plan request to CHEKMI's protected billing/support queue. That request
+does not collect payment or immediately unlock digital features.
 
 Category: Business. Audience: authorized restaurant staff aged 18 or older.
 Production package identifiers are `com.chekmi.app` on Android and iOS.
@@ -46,7 +48,10 @@ https://beki4kt.github.io/Verify-me/delete-account.html
 ## App review notes
 
 CHEKMI is licensed to organizations. There are no consumer purchases or account
-creation in the app. A reviewer needs a production review workspace and staff
+creation in the app. The Plans screen is informational; its signed-in action
+creates a billing/support request for manual organization review and does not
+collect payment or immediately unlock features. A reviewer needs a production
+review workspace and staff
 credentials supplied privately in App Store Connect and Play Console. The
 review account must expose waiter, cashier, and administrator workflows or the
 submission must include one account for each role. Keep the review workspace

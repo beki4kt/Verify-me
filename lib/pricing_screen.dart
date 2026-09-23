@@ -57,35 +57,42 @@ class _PricingScreenState extends State<PricingScreen> {
     );
   }
 
-  Widget _header() => FloatingNavIsland(
-    leading: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          tooltip: 'Back',
-          onPressed: () => Navigator.maybePop(context),
-          icon: const Icon(AppIcons.back),
-        ),
-        const SizedBox(width: 2),
-        const BrandLockup(compact: true),
-      ],
-    ),
-    navigation: [
-      TextButton(onPressed: _openTrial, child: const Text('LIVE DEMO')),
-      TextButton(
-        onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const BusinessGatewayScreen()),
-          (_) => false,
-        ),
-        child: const Text('WORKSPACE'),
+  Widget _header() {
+    final compact = MediaQuery.sizeOf(context).width < 480;
+    return FloatingNavIsland(
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Back',
+            onPressed: () => Navigator.maybePop(context),
+            icon: const Icon(AppIcons.back),
+          ),
+          const SizedBox(width: 2),
+          if (compact)
+            const BrandMark(size: 34)
+          else
+            const BrandLockup(compact: true),
+        ],
       ),
-    ],
-    trailing: const [
-      GlassLanguageToggleButton(),
-      SizedBox(width: 7),
-      GlassThemeToggleButton(),
-    ],
-  );
+      navigation: [
+        if (!AppVariant.isPublicRelease)
+          TextButton(onPressed: _openTrial, child: const Text('LIVE DEMO')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const BusinessGatewayScreen()),
+            (_) => false,
+          ),
+          child: const Text('WORKSPACE'),
+        ),
+      ],
+      trailing: const [
+        GlassLanguageToggleButton(),
+        SizedBox(width: 7),
+        GlassThemeToggleButton(),
+      ],
+    );
+  }
 
   Widget _decisionSurface() => GlassPanel(
     accent: _selectedPlan.recommended ? AppColors.primary : AppColors.aqua,
@@ -255,21 +262,22 @@ class _PricingScreenState extends State<PricingScreen> {
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
             children: [
-              TextButton.icon(
-                onPressed: _openTrial,
-                icon: Icon(
-                  widget.openedFromTrial
-                      ? AppIcons.refresh
-                      : AppIcons.playCircle,
+              if (!AppVariant.isPublicRelease)
+                TextButton.icon(
+                  onPressed: _openTrial,
+                  icon: Icon(
+                    widget.openedFromTrial
+                        ? AppIcons.refresh
+                        : AppIcons.playCircle,
+                  ),
+                  label: Text(
+                    AppVariant.usesMinimalCopy
+                        ? 'DEMO'
+                        : (widget.openedFromTrial
+                              ? 'REPLAY TRIAL'
+                              : 'TRY IT FREE'),
+                  ),
                 ),
-                label: Text(
-                  AppVariant.usesMinimalCopy
-                      ? 'DEMO'
-                      : (widget.openedFromTrial
-                            ? 'REPLAY TRIAL'
-                            : 'TRY IT FREE'),
-                ),
-              ),
               PrimaryGlow(
                 child: FilledButton.icon(
                   onPressed: _submitting ? null : _continueWithPlan,
