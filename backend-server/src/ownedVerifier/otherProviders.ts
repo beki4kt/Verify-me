@@ -569,6 +569,7 @@ async function fetchMpesaPayload(
   const response = await axios.get<unknown>(url.toString(), {
     timeout: configuredTimeout(),
     maxContentLength: MAX_PROVIDER_RESPONSE_BYTES,
+    maxRedirects: 0,
     httpsAgent: useRelay ? undefined : providerHttpsAgent(url),
     headers: {
       Accept: "application/json",

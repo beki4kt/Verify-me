@@ -1,7 +1,6 @@
-import { normalizeVeritas, veritasRequest } from "./veritasProtocol";
 import { extractLegacyCbeUrlData, extractNewCbeToken, isLegacyCbeReference } from "./receiptFormat";
 import { authoritativeAccountSuffix, authoritativeEthiopianPhone, matchesCbeReceivingAccount, matchesTelebirrReceivingAccount, matchesReceivingAccount, positiveAmount, validateTransactionFreshness } from "./paymentSecurity";
-import type { Provider } from "./ownedVerifier/types";
+import type { OwnedVerificationData, Provider } from "./ownedVerifier/types";
 
 type Json = Record<string, unknown>;
 type Env = Record<string, string | undefined>;
@@ -33,7 +32,9 @@ async function readJson(body: Request | Response, limit: number): Promise<unknow
 export function createEdgeVerificationHandler(env: Env, transport: typeof fetch = fetch) {
   const limits = new Map<string, { count: number; until: number }>();
   const inFlight = new Set<string>();
-  const configured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.VERITAS_API_KEY?.trim());
+  const backend = env.CHEKMI_BACKEND_URL?.trim() || "";
+  const configured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY &&
+    env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() && /^https:\/\/[^/?#]+\/api$/.test(backend));
   return async (req: Request): Promise<Response> => {
     const requestId = crypto.randomUUID();
     const origin = req.headers.get("origin");
@@ -51,13 +52,13 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
     if (req.method === "GET") return respond(configured ? 200 : 503, {
       status: configured ? "ready" : "not_ready", verifierMode: "live",
-      verifier: { engine: "veritas", mode: "transaction-id", configured, imageVerification: false },
-      service: "chekmi-verify", version: "2026-09-08.2",
+      verifier: { engine: "owned", mode: "transaction-id", configured, imageVerification: false },
+      service: "chekmi-verify", version: "2026-10-15.1",
     });
     if (req.method !== "POST") return respond(405, { success: false, code: "METHOD_NOT_ALLOWED", error: "Use POST." });
     const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
     if (!token || token.length < 32) return respond(401, { success: false, code: "SESSION_REQUIRED", error: "Sign in before verifying a payment." });
-    if (!configured) return respond(503, { success: false, code: "VERITAS_NOT_CONFIGURED", error: "Payment verification is not configured. Ask the administrator to complete Supabase function setup." });
+    if (!configured) return respond(503, { success: false, code: "VERIFIER_CONFIGURATION_ERROR", error: "Payment verification is not configured. Ask the administrator to complete the Chekmi backend setup." });
     const startedAt = Date.now();
     const deadline = AbortSignal.timeout(45_000);
     let context: Json | null = null;
@@ -132,11 +133,10 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
         if (!phone) throw new Failure("RECEIVING_ACCOUNT_INVALID", "Configure a valid CBE Birr receiving phone in Admin.");
         lookup.phoneNumber = phone;
       }
-      const outgoing = veritasRequest(provider, lookup);
+      const outgoing = { provider, ...lookup };
       let upstream: Response | undefined; let payload: unknown;
       // One bounded retry of the read-only provider lookup absorbs short
-      // outages. Never retry a database commit, invalid receipt, access/credit
-      // error or rate limit. Each provider attempt can consume a Veritas credit.
+      // outages. Never retry a database commit or a rejected receipt.
       for (let attempt = 1; attempt <= 2; attempt++) {
         const timeout = Math.min(20_000, 45_000 - (Date.now() - startedAt) - 10_000);
         if (timeout < 1000) break; // Reserve time to validate and save a result.
@@ -144,39 +144,38 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
         upstream = undefined;
         let failed = false;
         try {
-          upstream = await transport(`https://verifyapi.leulzenebe.pro${outgoing.path}`, {
-            method: "POST", headers: { "x-api-key": env.VERITAS_API_KEY!.trim(), "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(outgoing.body), redirect: "error", signal: AbortSignal.any([deadline, AbortSignal.timeout(timeout)]),
+          upstream = await transport(`${backend}/internal/provider-lookup`, {
+            method: "POST", headers: { "x-chekmi-lookup-key": env.CHEKMI_INTERNAL_LOOKUP_KEY!.trim(), "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(outgoing), redirect: "error", signal: AbortSignal.any([deadline, AbortSignal.timeout(timeout)]),
           });
           // Check status before JSON parsing: a gateway may return an HTML
           // access/credit/rate-limit error, which must keep its real category.
           if ([500, 502, 503, 504].includes(upstream.status)) {
             failed = true;
             await upstream.body?.cancel();
-          } else if (upstream.ok) {
-            payload = await readJson(upstream, 1_000_000);
-          } else {
+          } else if ([401, 403, 429].includes(upstream.status)) {
             await upstream.body?.cancel();
+          } else {
+            payload = await readJson(upstream, 1_000_000);
           }
         } catch { failed = true; }
         // Structured operational evidence only: no key, token, account,
         // reference, receipt body or raw transport exception in logs.
-        console.info(JSON.stringify({ event: "veritas_lookup", requestId, provider,
+        console.info(JSON.stringify({ event: "owned_provider_lookup", requestId, provider,
           attempt, httpStatus: upstream?.status ?? null, elapsedMs: Date.now() - attemptStart,
           outcome: failed ? "transient_failure" : "response" }));
         if (!failed) break;
         upstream = undefined;
         if (attempt < 2 && !deadline.aborted) await new Promise(resolve => setTimeout(resolve, 400));
       }
-      if (!upstream) throw new Failure("VERITAS_UNAVAILABLE", "The payment provider did not respond after a second check. Keep this receipt and try again shortly; this attempt did not save a payment.", 503, true);
-      if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERITAS_ACCESS_DENIED", "The Veritas key or subscription access needs attention in Supabase function secrets.", 503);
-      if (upstream.status === 402) throw new Failure("VERITAS_CREDITS_EXHAUSTED", "The Veritas verification credit balance is exhausted.", 503);
-      if (upstream.status === 429) throw new Failure("VERITAS_RATE_LIMIT", "Veritas is rate limiting requests. Wait a minute.", 429, true);
-      if (upstream.status >= 500) throw new Failure("VERITAS_UNAVAILABLE", "The payment provider is temporarily unavailable. Keep this receipt and try again shortly.", 503, true);
-      if (!upstream.ok) throw new Failure("NOT_VERIFIED", "Veritas could not verify this reference.");
-      const verified = normalizeVeritas(provider, reference, payload);
-      if (!verified.ok) throw new Failure("NOT_VERIFIED", verified.error);
-      const data = verified.data;
+      if (!upstream) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider did not respond after a second check. Keep this receipt and try again shortly.", 503, true);
+      if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The Chekmi backend lookup key needs attention.", 503);
+      if (upstream.status === 429) throw new Failure("PROVIDER_RATE_LIMIT", "The provider is busy. Wait a minute.", 429, true);
+      if (upstream.status >= 500) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider is temporarily unavailable. Keep this receipt and try again shortly.", 503, true);
+      const verified = json(payload);
+      if (!upstream.ok || verified?.ok !== true) throw new Failure("NOT_VERIFIED", String(verified?.error ?? "The provider could not verify this reference."));
+      const data = json(verified.data) as (Json & OwnedVerificationData) | null;
+      if (!data || typeof data.reference !== "string" || typeof data.amount !== "number" || typeof data.currency !== "string") throw new Failure("INVALID_SERVICE_RESPONSE", "The Chekmi backend returned an incomplete receipt.", 503, true);
       if (data.amount + .001 < expected!) throw new Failure("UNDERPAID", `Payment is ${data.amount} ETB; amount due is ${expected} ETB.`);
       const destinationMatches = provider === "cbe" ? matchesCbeReceivingAccount(account, data.receiverAccount)
         : provider === "telebirr" ? matchesTelebirrReceivingAccount(account, data.receiverAccount)
@@ -195,7 +194,7 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
         p_currency: data.currency, p_receiver_account: suffixProof ? account : data.receiverAccount,
         p_receiver_name: data.receiverName ?? null, p_payer_account: data.payerAccount ?? null, p_payer_name: data.payerName ?? null,
         p_provider_transaction_at: freshness.transactionDate.toISOString(), p_provider_status: data.status,
-        p_provider_payload: { ...data, verificationRequest: { submittedReference: inputReference, engine: "veritas", host: "supabase-edge", method: "transaction-id" }, ...(suffixProof ? { destinationProof: { method: "server_configured_account_suffix" } } : {}) },
+        p_provider_payload: { ...data, verificationRequest: { submittedReference: inputReference, engine: "owned", host: "supabase-edge", method: "transaction-id" }, ...(suffixProof ? { destinationProof: { method: "server_configured_account_suffix" } } : {}) },
         p_receipt_image_base64: photo ?? null,
       }));
       if (!committed?.ticket_id) throw new Failure("COMMIT_NOT_CONFIRMED", "No saved payment confirmation was returned. Check payment history before retrying.", 503, true);

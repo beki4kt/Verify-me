@@ -73,3 +73,44 @@ test("disabled legacy CBE fails closed while new-format CBE still uses its own r
     await new Promise<void>((done, reject) => upstream.close((error) => error ? reject(error) : done()));
   }
 });
+
+test("legacy CBE relay accepts normalized JSON and rejects incomplete receipts", async () => {
+  let invalid = false;
+  const relay = createServer((request, response) => {
+    assert.equal(request.url?.startsWith("/verifyCbe.php?"), true);
+    const url = new URL(request.url!, "http://localhost");
+    assert.equal(url.searchParams.get("type"), "legacy");
+    assert.equal(url.searchParams.get("id"), "FT123456789012345678");
+    assert.equal(url.searchParams.get("key"), "private-test-key");
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify(invalid ? {success:false,error:"Receipt not found"} : {
+      success:true,data:{payerName:"Test Sender",payerAccount:"1000000000001",
+        receiverName:"Test Business",receiverAccount:"1000000000002",amount:150,
+        date:"2026-10-15 12:00:00",reference:"FT1234567890",reason:"Test"},
+    }));
+  });
+  await new Promise<void>((done) => relay.listen(0, "127.0.0.1", done));
+  const address = relay.address();
+  assert.ok(address && typeof address !== "string");
+  const values = {NODE_ENV:"test",CHEKMI_PROVIDER_EGRESS:"proxy",
+    CBE_LEGACY_ENABLED:"true",CBE_PROXY_URL:`http://127.0.0.1:${address.port}/verifyCbe.php`,
+    CBE_PROXY_KEY:"private-test-key"};
+  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, values);
+  try {
+    const result = await verifyCbeOwned("FT1234567890", "12345678");
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.receiverAccount, "1000000000002");
+    invalid = true;
+    await assert.rejects(verifyCbeOwned("FT1234567890", "12345678"), (error: unknown) => {
+      assert.ok(error instanceof OwnedVerifierError);
+      assert.equal(error.code, "PROVIDER_UNAVAILABLE");
+      return true;
+    });
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await new Promise<void>((done) => relay.close(() => done()));
+  }
+});

@@ -25,7 +25,8 @@ const checks = [
     validate: (body, response) =>
       response.ok &&
       body?.status === "ready" &&
-      (body?.verifier?.engine === "veritas" || body?.verifier === "veritas"),
+      body?.verifier?.engine === "owned" &&
+      body?.verifier?.configured === true,
   },
   {
     name: "current legal versions",

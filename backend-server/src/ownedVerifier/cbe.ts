@@ -111,6 +111,25 @@ function mapNewReceipt(payload: unknown): CbeReceipt | null {
   };
 }
 
+function mapLegacyRelayReceipt(payload: unknown): CbeReceipt | null {
+  if (!payload || typeof payload !== "object") return null;
+  const envelope = payload as Record<string, unknown>;
+  if (envelope.success === false) return null;
+  const raw = envelope.data && typeof envelope.data === "object"
+    ? envelope.data as Record<string, unknown> : envelope;
+  return {
+    payerName: nonEmpty(raw.payerName),
+    payerAccount: nonEmpty(raw.payerAccount),
+    receiverName: nonEmpty(raw.receiverName),
+    receiverAccount: nonEmpty(raw.receiverAccount),
+    amount: numberFrom(raw.amount ?? raw.transferredAmount),
+    date: ethiopianLocalDate(raw.date ?? raw.paymentDate),
+    reference: nonEmpty(raw.reference ?? raw.receiptNo),
+    reason: nonEmpty(raw.reason),
+    raw: safeRaw(raw),
+  };
+}
+
 function normalizeCbe(
   submittedReference: string,
   receipt: CbeReceipt,
@@ -188,13 +207,20 @@ async function fetchLegacyRelay(combinedId: string): Promise<CbeReceipt> {
     { type: "legacy", id: combinedId, key: relay.key },
     "CBE_PROXY_URL",
   );
-  const response = await axios.get<ArrayBuffer>(url, {
+  const response = await axios.get<unknown>(url, {
     responseType: "arraybuffer",
     timeout: configuredTimeout(),
     maxContentLength: MAX_PROVIDER_RESPONSE_BYTES,
-    headers: { Accept: "application/pdf", "User-Agent": "CHEKMI-Verifier/1.0" },
+    maxRedirects: 0,
+    headers: { Accept: "application/json,application/pdf", "User-Agent": "CHEKMI-Verifier/1.0" },
   });
-  return parseCbePdf(Buffer.from(response.data));
+  const bytes = Buffer.from(response.data as ArrayBuffer);
+  if (bytes.subarray(0, 5).toString() === "%PDF-") return parseCbePdf(bytes);
+  try {
+    const receipt = mapLegacyRelayReceipt(JSON.parse(bytes.toString("utf8")));
+    if (receipt) return receipt;
+  } catch { /* A non-JSON relay response is invalid. */ }
+  throw new OwnedVerifierError("CBE relay returned an invalid legacy receipt.", "PROVIDER_UNAVAILABLE", 502, true);
 }
 
 async function fetchNewDirect(token: string): Promise<CbeReceipt | null> {
@@ -240,6 +266,7 @@ async function fetchNewRelay(token: string): Promise<CbeReceipt | null> {
   const response = await axios.get<unknown>(url, {
     timeout: configuredTimeout(),
     maxContentLength: MAX_PROVIDER_RESPONSE_BYTES,
+    maxRedirects: 0,
     headers: { Accept: "application/json", "User-Agent": "CHEKMI-Verifier/1.0" },
   });
   return mapNewReceipt(response.data);

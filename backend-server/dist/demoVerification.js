@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createDemoVerificationHandler = createDemoVerificationHandler;
-const veritasProtocol_1 = require("./veritasProtocol");
 const paymentSecurity_1 = require("./paymentSecurity");
 const providers = new Set(['telebirr', 'cbe', 'cbebirr', 'dashen', 'abyssinia', 'mpesa']);
 const hash = async (value) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))).map(x => x.toString(16).padStart(2, '0')).join('');
@@ -34,7 +33,8 @@ async function boundedJson(value, limit = 500000) {
     return result;
 }
 function createDemoVerificationHandler(env, transport = fetch) {
-    const ready = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.VERITAS_API_KEY);
+    const backend = env.CHEKMI_BACKEND_URL?.trim() || '';
+    const ready = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() && /^https:\/\/[^/?#]+\/api$/.test(backend));
     return async (req) => {
         const requestId = crypto.randomUUID();
         const origin = req.headers.get('origin');
@@ -51,7 +51,7 @@ function createDemoVerificationHandler(env, transport = fetch) {
         if (req.method === 'OPTIONS')
             return new Response(null, { status: 204, headers });
         if (req.method === 'GET')
-            return reply(ready ? 200 : 503, { status: ready ? 'ready' : 'not_ready', service: 'chekmi-demo', version: '2026-09-08.1', allowance: 10 });
+            return reply(ready ? 200 : 503, { status: ready ? 'ready' : 'not_ready', service: 'chekmi-demo', version: '2026-10-15.1', allowance: 10 });
         if (req.method !== 'POST')
             return reply(405, { success: false, error: 'Use POST.' });
         if (!ready)
@@ -90,9 +90,9 @@ function createDemoVerificationHandler(env, transport = fetch) {
                     return reply(400, { success: false, error: 'Enter the receiving CBE Birr phone number.' });
                 input.phoneNumber = phone;
             }
-            const outgoing = (0, veritasProtocol_1.veritasRequest)(provider, input);
+            const outgoing = { provider, ...input };
             const cap = Number(env.DEMO_DAILY_LIMIT || 100);
-            const reservation = await rpc('reserve_demo_lookup', { p_token_hash: tokenHash, p_request_id: body.lookupId, p_fingerprint: await hash(JSON.stringify({ provider, ...outgoing.body })), p_daily_limit: Number.isInteger(cap) && cap > 0 && cap <= 10000 ? cap : 100 });
+            const reservation = await rpc('reserve_demo_lookup', { p_token_hash: tokenHash, p_request_id: body.lookupId, p_fingerprint: await hash(JSON.stringify(outgoing)), p_daily_limit: Number.isInteger(cap) && cap > 0 && cap <= 10000 ? cap : 100 });
             const remaining = reservation.remaining;
             if (reservation.state === 'existing')
                 return reply(200, { success: false, code: 'DEMO_PENDING', error: 'This demo check is still pending. Check its result shortly.', ...reservation.result, remaining });
@@ -100,14 +100,17 @@ function createDemoVerificationHandler(env, transport = fetch) {
                 return reply(429, { success: false, remaining, code: reservation.state === 'exhausted' ? 'DEMO_LIMIT_REACHED' : 'DEMO_LIMIT', error: reservation.state === 'exhausted' ? 'You have used your 10 free checks. Connect a business to continue.' : reservation.state === 'conflict' ? 'This request ID was already used for another receipt.' : 'The demo has reached its daily capacity. Try again tomorrow.' });
             let result;
             try {
-                const upstream = await transport(`https://verifyapi.leulzenebe.pro${outgoing.path}`, { method: 'POST', headers: { 'x-api-key': env.VERITAS_API_KEY.trim(), 'Content-Type': 'application/json' }, body: JSON.stringify(outgoing.body), signal: AbortSignal.timeout(25000), redirect: 'error' });
-                if (!upstream.ok) {
-                    await upstream.body?.cancel();
-                    result = { success: false, error: upstream.status === 429 ? 'The provider is busy. Try again later.' : upstream.status >= 500 ? 'The provider could not be reached. Try again later.' : 'The provider could not verify this reference.' };
+                const upstream = await transport(`${backend}/internal/provider-lookup`, { method: 'POST', headers: { 'x-chekmi-lookup-key': env.CHEKMI_INTERNAL_LOOKUP_KEY.trim(), 'Content-Type': 'application/json' }, body: JSON.stringify(outgoing), signal: AbortSignal.timeout(30000), redirect: 'error' });
+                const verified = await boundedJson(upstream);
+                if (!upstream.ok || verified.ok !== true) {
+                    result = { success: false, error: upstream.status >= 500 ? 'The provider could not be reached. Try again later.' : String(verified.error || 'The provider could not verify this reference.') };
                 }
                 else {
-                    const normalized = (0, veritasProtocol_1.normalizeVeritas)(provider, outgoing.reference, await boundedJson(upstream));
-                    result = normalized.ok ? { success: true, receipt: { provider, reference: normalized.data.reference, amount: normalized.data.amount, currency: normalized.data.currency, date: normalized.data.txnDate, receiverName: normalized.data.receiverName, receiverAccount: normalized.data.receiverAccount } } : { success: false, error: normalized.error };
+                    const data = verified.data;
+                    if (!data || typeof data.reference !== 'string' || typeof data.amount !== 'number' || data.amount <= 0 || typeof data.currency !== 'string' || typeof data.txnDate !== 'string')
+                        result = { success: false, error: 'The provider returned an incomplete receipt.' };
+                    else
+                        result = { success: true, receipt: { provider, reference: data.reference, amount: data.amount, currency: data.currency, date: data.txnDate, receiverName: data.receiverName, receiverAccount: data.receiverAccount } };
                 }
             }
             catch {

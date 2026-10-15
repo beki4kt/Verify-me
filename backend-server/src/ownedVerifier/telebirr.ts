@@ -271,6 +271,7 @@ async function relayReceipt(
   const response = await axios.get<unknown>(url, {
     timeout: configuredTimeout(),
     maxContentLength: MAX_PROVIDER_RESPONSE_BYTES,
+    maxRedirects: 0,
     headers: { Accept: "application/json", "User-Agent": "CHEKMI-Verifier/1.0" },
   });
   if (typeof response.data === "string") {

@@ -20,7 +20,8 @@ verifies transfers through the TypeScript API, and records waiter/cashier ticket
 3. Copy `backend-server/.env.example` to `backend-server/.env` when present and
    configure CHEKMI's owned provider route plus `SUPABASE_URL` and the
    backend-only `SUPABASE_SERVICE_ROLE_KEY`. Never put service or relay secrets
-   in Flutter. See `docs/owned-verifier-deployment.md`.
+   in Flutter. See `docs/owned-relay-connection.md` for the Ethiopian relay
+   settings and Supabase function connection.
 4. Apply the Supabase migrations in filename order before testing staff login:
    `202608040001_restore_verifier.sql`, then
    `202608040002_secure_ticket_tenants.sql`, then

@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { ACTIVE_VERIFIER_MODE, verifyRouter } from "./routes/verifyRoute";
 import { operatorRouter } from "./routes/operatorRoute";
+import { providerLookupRouter } from "./routes/providerLookupRoute";
 import { requestLogger, requireProductionHttps, verificationRateLimit } from "./productionMiddleware";
 import { verifierConfiguration } from "./veritasVerifier";
 import { hostDiagnostics, startHostDiagnostics } from "./hostDiagnostics";
@@ -33,6 +34,7 @@ app.use(express.json({ limit: "3mb" }));
 
 // Verification routes (mounted at /api → /api/verify, /api/verify/:provider)
 app.use("/api", operatorRouter);
+app.use("/api", providerLookupRouter);
 app.use("/api", verificationRateLimit, verifyRouter);
 
 app.get("/ready", (_req, res) => {

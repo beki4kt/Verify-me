@@ -33,18 +33,25 @@ export function ownedVerifierConfiguration(env: NodeJS.ProcessEnv = process.env)
   const rawMode = (env.CHEKMI_PROVIDER_EGRESS || "direct").trim().toLowerCase();
   const validMode = rawMode === "direct" || rawMode === "auto" || rawMode === "proxy";
   const mode = validMode ? rawMode : "invalid";
+  const validRelay = (raw: string | undefined, key: string | undefined) => {
+    if (!raw?.trim() || !key?.trim()) return false;
+    return raw.split(",").every((value) => {
+      try {
+        const url = new URL(value.trim());
+        return url.protocol === "https:" && !url.username && !url.password && !url.hash;
+      } catch { return false; }
+    });
+  };
+  const relays = {
+    telebirr: validRelay(env.TELEBIRR_PROXY_URLS || env.FALLBACK_PROXIES, env.TELEBIRR_PROXY_KEY),
+    cbe: validRelay(env.CBE_PROXY_URL, env.CBE_PROXY_KEY),
+    mpesa: validRelay(env.MPESA_PROXY_URL, env.MPESA_PROXY_KEY),
+  };
   return {
-    configured: validMode,
+    configured: validMode && (mode !== "proxy" || Object.values(relays).every(Boolean)),
     mode,
     directEthiopianEgressRequired: rawMode !== "proxy",
-    relays: {
-      telebirr: Boolean(
-        (env.TELEBIRR_PROXY_URLS || env.FALLBACK_PROXIES)?.trim() &&
-          env.TELEBIRR_PROXY_KEY?.trim(),
-      ),
-      cbe: Boolean(env.CBE_PROXY_URL?.trim() && env.CBE_PROXY_KEY?.trim()),
-      mpesa: Boolean(env.MPESA_PROXY_URL?.trim() && env.MPESA_PROXY_KEY?.trim()),
-    },
+    relays,
     newCbeDirectConfigured: Boolean(
       env.CBE_APP_ID?.trim() && env.CBE_APP_VERSION?.trim(),
     ),

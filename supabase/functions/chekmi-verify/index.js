@@ -2,75 +2,6 @@
 // Deploy with verify_jwt=false: this handler validates Chekmi staff sessions through its trusted database RPC.
 
 // src/receiptFormat.ts
-function nonEmpty(value) {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
-  return text ? text : null;
-}
-function ethiopianLocalDate(value) {
-  const text = nonEmpty(value);
-  if (!text) return null;
-  let match = text.match(
-    /^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
-  );
-  if (match) {
-    const [, day, month, year, hour, minute, second = "00"] = match;
-    return validIso(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
-  }
-  match = text.match(
-    /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[, ]+\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i
-  );
-  if (match) {
-    const [, year, month, day, rawHour, minute, second = "00", meridiem] = match;
-    let hour = Number(rawHour);
-    if (meridiem) {
-      hour %= 12;
-      if (meridiem.toUpperCase() === "PM") hour += 12;
-    }
-    return validIso(
-      `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${String(hour).padStart(2, "0")}:${minute}:${second}+03:00`
-    );
-  }
-  match = text.match(
-    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/
-  );
-  if (match) {
-    const [, year, month, day, hour, minute, second = "00"] = match;
-    return validIso(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
-  }
-  return validIso(text);
-}
-function validIso(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? null : date.toISOString();
-}
-function completedStatus(value) {
-  const normalized = String(value ?? "").toLowerCase().replace(/[^a-z]+/g, " ").trim();
-  return (/* @__PURE__ */ new Set([
-    "success",
-    "successful",
-    "completed",
-    "complete",
-    "settled",
-    "paid",
-    "transaction successful",
-    "transaction completed",
-    "transaction completed successfully",
-    "payment successful",
-    "payment completed"
-  ])).has(normalized);
-}
-function referencesMatch(left, right) {
-  const normalize = (value) => String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const normalizedLeft = normalize(left);
-  const normalizedRight = normalize(right);
-  return Boolean(normalizedLeft && normalizedLeft === normalizedRight);
-}
-function safeRaw(raw) {
-  const copy = { ...raw };
-  delete copy.base64Data;
-  delete copy.pdf;
-  return copy;
-}
 var LEGACY_REFERENCE = /^FT[A-Z0-9]{10}$/i;
 var LEGACY_COMBINED_ID = /^(FT[A-Z0-9]{10})(\d{8})$/i;
 var NEW_CBE_URL = /^https?:\/\/mbreciept\.cbe\.com\.et\/([A-Za-z0-9-]+)\/?$/i;
@@ -98,85 +29,6 @@ function extractLegacyCbeUrlData(input) {
   } catch {
     return null;
   }
-}
-
-// src/veritasProtocol.ts
-var object = (value) => value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
-function veritasRequest(provider, input) {
-  let reference = (input.reference ?? input.receiptNumber ?? "").trim();
-  if (provider === "cbe") reference = extractLegacyCbeUrlData(reference)?.reference ?? reference;
-  if (provider !== "cbe" || !extractNewCbeToken(reference)) reference = reference.toUpperCase();
-  const body = provider === "cbebirr" ? { receiptNumber: reference, phoneNumber: (input.phoneNumber ?? "").replace(/[\s()+-]/g, "").replace(/^0/, "251") } : { reference };
-  if (provider === "cbe" && input.suffix) body.accountSuffix = input.suffix;
-  if (provider === "abyssinia") body.suffix = input.suffix ?? "";
-  return { path: `/verify-${provider}`, body, reference };
-}
-function field(raw, ...keys) {
-  for (const key of keys) if (raw[key] !== null && raw[key] !== void 0) return raw[key];
-  return null;
-}
-function money(value) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value !== "string") return null;
-  const text = value.trim().replace(/^(?:ETB|Birr)\s*/i, "").replace(/\s*(?:ETB|Birr)$/i, "").trim();
-  if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(text)) return null;
-  const amount = Number(text.replace(/,/g, ""));
-  return Number.isFinite(amount) ? amount : null;
-}
-function normalizeVeritas(provider, submitted, payload) {
-  const fail = (error) => ({ ok: false, provider, error, code: "NOT_VERIFIED" });
-  let raw = object(payload);
-  if (!raw) return fail("Veritas returned an invalid receipt response.");
-  let explicitSuccess = false;
-  for (let depth = 0; depth < 4; depth++) {
-    if (raw.success === false || raw.verified === false || raw.ok === false || raw.error) {
-      return fail("Veritas could not verify this transaction. Check the reference and provider.");
-    }
-    explicitSuccess ||= raw.success === true || raw.verified === true;
-    const nested = object(raw.data);
-    if (!nested) break;
-    raw = nested;
-  }
-  const header = object(raw.header);
-  if (header) {
-    if (!completedStatus(header.status)) return fail("Veritas returned an unsuccessful bank response.");
-    const row = Array.isArray(raw.body) ? object(raw.body[0]) : null;
-    if (!row) return fail("Veritas returned no receipt details.");
-    raw = row;
-    explicitSuccess = true;
-  }
-  const reference = nonEmpty(provider === "cbebirr" ? raw.receiptNumber : provider === "mpesa" ? field(raw, "transactionId", "receiptNo", "receiptNumber") : field(raw, "reference", "receiptNo", "receiptNumber", "transactionReference", "id", "Transaction Reference", "Payment Reference"));
-  const amount = money(field(raw, "settledAmount", "transferredAmount", "transactionAmount", "amountCredited", "amount", "Transferred Amount"));
-  const dateTimes = Array.isArray(raw.dateTimes) ? raw.dateTimes : [];
-  const txnDate = ethiopianLocalDate(field(raw, "txnDate", "paymentDate", "transactionDate", "date", "Transaction Date") ?? dateTimes[0]);
-  const status = nonEmpty(field(raw, "transactionStatus", "status", "statusText"));
-  if (status && !completedStatus(status) || provider === "telebirr" && !completedStatus(status)) {
-    return fail("The provider has not confirmed a completed payment.");
-  }
-  if (!explicitSuccess && !completedStatus(status)) return fail("Veritas did not confirm verification.");
-  const lookupReference = provider === "cbe" ? extractLegacyCbeUrlData(submitted)?.reference ?? submitted : submitted;
-  const matchesReference = referencesMatch(lookupReference, reference) || provider === "mpesa" && referencesMatch(lookupReference, raw.receiptNo);
-  if (!reference || !(provider === "cbe" && extractNewCbeToken(lookupReference)) && !matchesReference) {
-    return fail("The returned bank reference does not match this payment.");
-  }
-  if (amount === null || amount <= 0 || !txnDate) return fail("Veritas returned incomplete payment amount or date details.");
-  const currency = nonEmpty(raw.currency)?.toUpperCase() ?? "ETB";
-  if (currency !== "ETB" && currency !== "BIRR") return fail("This payment is not denominated in ETB.");
-  return { ok: true, provider, data: {
-    reference,
-    amount,
-    currency: "ETB",
-    txnDate,
-    status: "completed",
-    statusText: status,
-    receiverAccount: nonEmpty(field(raw, "receiverAccount", "receiverAccountNumber", "creditedPartyAccountNo", "creditAccount", "creditAccountNo", "phoneNo", "Receiver's Account", "Beneficiary Account")),
-    receiverName: nonEmpty(field(raw, "receiverName", "receiver", "creditedPartyName", "creditAccountHolder", "Receiver's Name", "Beneficiary Name")),
-    payerAccount: nonEmpty(field(raw, "payerAccount", "payerTelebirrNo", "senderAccountNumber", "senderAccount", "debitAccount", "debitAccountNo", "Source Account", "Payer's Account")),
-    payerName: nonEmpty(field(raw, "payerName", "payer", "customerName", "senderName", "debitAccountHolder", "Payer's Name", "Source Account Name")),
-    totalAmount: money(field(raw, "totalPaidAmount", "totalAmount", "total")),
-    serviceFee: money(field(raw, "serviceFee", "serviceCharge")),
-    raw: safeRaw(raw)
-  } };
 }
 
 // src/paymentSecurity.ts
@@ -302,7 +154,8 @@ async function readJson(body, limit) {
 function createEdgeVerificationHandler(env, transport = fetch) {
   const limits = /* @__PURE__ */ new Map();
   const inFlight = /* @__PURE__ */ new Set();
-  const configured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.VERITAS_API_KEY?.trim());
+  const backend = env.CHEKMI_BACKEND_URL?.trim() || "";
+  const configured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() && /^https:\/\/[^/?#]+\/api$/.test(backend));
   return async (req) => {
     const requestId = crypto.randomUUID();
     const origin = req.headers.get("origin");
@@ -321,14 +174,14 @@ function createEdgeVerificationHandler(env, transport = fetch) {
     if (req.method === "GET") return respond(configured ? 200 : 503, {
       status: configured ? "ready" : "not_ready",
       verifierMode: "live",
-      verifier: { engine: "veritas", mode: "transaction-id", configured, imageVerification: false },
+      verifier: { engine: "owned", mode: "transaction-id", configured, imageVerification: false },
       service: "chekmi-verify",
-      version: "2026-09-08.2"
+      version: "2026-10-15.1"
     });
     if (req.method !== "POST") return respond(405, { success: false, code: "METHOD_NOT_ALLOWED", error: "Use POST." });
     const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
     if (!token || token.length < 32) return respond(401, { success: false, code: "SESSION_REQUIRED", error: "Sign in before verifying a payment." });
-    if (!configured) return respond(503, { success: false, code: "VERITAS_NOT_CONFIGURED", error: "Payment verification is not configured. Ask the administrator to complete Supabase function setup." });
+    if (!configured) return respond(503, { success: false, code: "VERIFIER_CONFIGURATION_ERROR", error: "Payment verification is not configured. Ask the administrator to complete the Chekmi backend setup." });
     const startedAt = Date.now();
     const deadline = AbortSignal.timeout(45e3);
     let context = null;
@@ -409,7 +262,7 @@ function createEdgeVerificationHandler(env, transport = fetch) {
         if (!phone) throw new Failure("RECEIVING_ACCOUNT_INVALID", "Configure a valid CBE Birr receiving phone in Admin.");
         lookup.phoneNumber = phone;
       }
-      const outgoing = veritasRequest(provider, lookup);
+      const outgoing = { provider, ...lookup };
       let upstream;
       let payload;
       for (let attempt = 1; attempt <= 2; attempt++) {
@@ -419,26 +272,26 @@ function createEdgeVerificationHandler(env, transport = fetch) {
         upstream = void 0;
         let failed = false;
         try {
-          upstream = await transport(`https://verifyapi.leulzenebe.pro${outgoing.path}`, {
+          upstream = await transport(`${backend}/internal/provider-lookup`, {
             method: "POST",
-            headers: { "x-api-key": env.VERITAS_API_KEY.trim(), "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(outgoing.body),
+            headers: { "x-chekmi-lookup-key": env.CHEKMI_INTERNAL_LOOKUP_KEY.trim(), "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(outgoing),
             redirect: "error",
             signal: AbortSignal.any([deadline, AbortSignal.timeout(timeout)])
           });
           if ([500, 502, 503, 504].includes(upstream.status)) {
             failed = true;
             await upstream.body?.cancel();
-          } else if (upstream.ok) {
-            payload = await readJson(upstream, 1e6);
-          } else {
+          } else if ([401, 403, 429].includes(upstream.status)) {
             await upstream.body?.cancel();
+          } else {
+            payload = await readJson(upstream, 1e6);
           }
         } catch {
           failed = true;
         }
         console.info(JSON.stringify({
-          event: "veritas_lookup",
+          event: "owned_provider_lookup",
           requestId,
           provider,
           attempt,
@@ -450,15 +303,14 @@ function createEdgeVerificationHandler(env, transport = fetch) {
         upstream = void 0;
         if (attempt < 2 && !deadline.aborted) await new Promise((resolve) => setTimeout(resolve, 400));
       }
-      if (!upstream) throw new Failure("VERITAS_UNAVAILABLE", "The payment provider did not respond after a second check. Keep this receipt and try again shortly; this attempt did not save a payment.", 503, true);
-      if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERITAS_ACCESS_DENIED", "The Veritas key or subscription access needs attention in Supabase function secrets.", 503);
-      if (upstream.status === 402) throw new Failure("VERITAS_CREDITS_EXHAUSTED", "The Veritas verification credit balance is exhausted.", 503);
-      if (upstream.status === 429) throw new Failure("VERITAS_RATE_LIMIT", "Veritas is rate limiting requests. Wait a minute.", 429, true);
-      if (upstream.status >= 500) throw new Failure("VERITAS_UNAVAILABLE", "The payment provider is temporarily unavailable. Keep this receipt and try again shortly.", 503, true);
-      if (!upstream.ok) throw new Failure("NOT_VERIFIED", "Veritas could not verify this reference.");
-      const verified = normalizeVeritas(provider, reference, payload);
-      if (!verified.ok) throw new Failure("NOT_VERIFIED", verified.error);
-      const data = verified.data;
+      if (!upstream) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider did not respond after a second check. Keep this receipt and try again shortly.", 503, true);
+      if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The Chekmi backend lookup key needs attention.", 503);
+      if (upstream.status === 429) throw new Failure("PROVIDER_RATE_LIMIT", "The provider is busy. Wait a minute.", 429, true);
+      if (upstream.status >= 500) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider is temporarily unavailable. Keep this receipt and try again shortly.", 503, true);
+      const verified = json(payload);
+      if (!upstream.ok || verified?.ok !== true) throw new Failure("NOT_VERIFIED", String(verified?.error ?? "The provider could not verify this reference."));
+      const data = json(verified.data);
+      if (!data || typeof data.reference !== "string" || typeof data.amount !== "number" || typeof data.currency !== "string") throw new Failure("INVALID_SERVICE_RESPONSE", "The Chekmi backend returned an incomplete receipt.", 503, true);
       if (data.amount + 1e-3 < expected) throw new Failure("UNDERPAID", `Payment is ${data.amount} ETB; amount due is ${expected} ETB.`);
       const destinationMatches = provider === "cbe" ? matchesCbeReceivingAccount(account, data.receiverAccount) : provider === "telebirr" ? matchesTelebirrReceivingAccount(account, data.receiverAccount) : matchesReceivingAccount(account, data.receiverAccount);
       const returned = String(data.receiverAccount ?? "");
@@ -481,7 +333,7 @@ function createEdgeVerificationHandler(env, transport = fetch) {
         p_payer_name: data.payerName ?? null,
         p_provider_transaction_at: freshness.transactionDate.toISOString(),
         p_provider_status: data.status,
-        p_provider_payload: { ...data, verificationRequest: { submittedReference: inputReference, engine: "veritas", host: "supabase-edge", method: "transaction-id" }, ...suffixProof ? { destinationProof: { method: "server_configured_account_suffix" } } : {} },
+        p_provider_payload: { ...data, verificationRequest: { submittedReference: inputReference, engine: "owned", host: "supabase-edge", method: "transaction-id" }, ...suffixProof ? { destinationProof: { method: "server_configured_account_suffix" } } : {} },
         p_receipt_image_base64: photo ?? null
       }));
       if (!committed?.ticket_id) throw new Failure("COMMIT_NOT_CONFIRMED", "No saved payment confirmation was returned. Check payment history before retrying.", 503, true);
@@ -507,6 +359,7 @@ function createEdgeVerificationHandler(env, transport = fetch) {
     }
   };
 }
-
-// <stdin>
+export {
+  createEdgeVerificationHandler
+};
 Deno.serve(createEdgeVerificationHandler(Deno.env.toObject()));

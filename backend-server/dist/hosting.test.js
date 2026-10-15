@@ -75,4 +75,49 @@ const { providerTlsOptions, providerHttpsAgent } = require("../scripts/provider-
         await new Promise((done, reject) => upstream.close((error) => error ? reject(error) : done()));
     }
 });
+(0, node_test_1.default)("legacy CBE relay accepts normalized JSON and rejects incomplete receipts", async () => {
+    let invalid = false;
+    const relay = (0, node_http_1.createServer)((request, response) => {
+        strict_1.default.equal(request.url?.startsWith("/verifyCbe.php?"), true);
+        const url = new URL(request.url, "http://localhost");
+        strict_1.default.equal(url.searchParams.get("type"), "legacy");
+        strict_1.default.equal(url.searchParams.get("id"), "FT123456789012345678");
+        strict_1.default.equal(url.searchParams.get("key"), "private-test-key");
+        response.setHeader("Content-Type", "application/json");
+        response.end(JSON.stringify(invalid ? { success: false, error: "Receipt not found" } : {
+            success: true, data: { payerName: "Test Sender", payerAccount: "1000000000001",
+                receiverName: "Test Business", receiverAccount: "1000000000002", amount: 150,
+                date: "2026-10-15 12:00:00", reference: "FT1234567890", reason: "Test" },
+        }));
+    });
+    await new Promise((done) => relay.listen(0, "127.0.0.1", done));
+    const address = relay.address();
+    strict_1.default.ok(address && typeof address !== "string");
+    const values = { NODE_ENV: "test", CHEKMI_PROVIDER_EGRESS: "proxy",
+        CBE_LEGACY_ENABLED: "true", CBE_PROXY_URL: `http://127.0.0.1:${address.port}/verifyCbe.php`,
+        CBE_PROXY_KEY: "private-test-key" };
+    const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, values);
+    try {
+        const result = await (0, ownedVerifier_1.verifyCbeOwned)("FT1234567890", "12345678");
+        strict_1.default.equal(result.ok, true);
+        if (result.ok)
+            strict_1.default.equal(result.data.receiverAccount, "1000000000002");
+        invalid = true;
+        await strict_1.default.rejects((0, ownedVerifier_1.verifyCbeOwned)("FT1234567890", "12345678"), (error) => {
+            strict_1.default.ok(error instanceof ownedVerifier_1.OwnedVerifierError);
+            strict_1.default.equal(error.code, "PROVIDER_UNAVAILABLE");
+            return true;
+        });
+    }
+    finally {
+        for (const [key, value] of Object.entries(previous)) {
+            if (value === undefined)
+                delete process.env[key];
+            else
+                process.env[key] = value;
+        }
+        await new Promise((done) => relay.close(() => done()));
+    }
+});
 //# sourceMappingURL=hosting.test.js.map

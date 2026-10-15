@@ -5,12 +5,13 @@ function setup(){
   const state={used:0,lookups:0,fail:false,capacity:false};
   const requests=new Map<string,{fingerprint:string,result:unknown}>();
   const calls:string[]=[];
-  const handler=createDemoVerificationHandler({SUPABASE_URL:'https://db.example',SUPABASE_SERVICE_ROLE_KEY:'secret-db',VERITAS_API_KEY:'secret-veritas'},(async(url,init)=>{
+  const handler=createDemoVerificationHandler({SUPABASE_URL:'https://db.example',SUPABASE_SERVICE_ROLE_KEY:'secret-db',CHEKMI_BACKEND_URL:'https://backend.example/api',CHEKMI_INTERNAL_LOOKUP_KEY:'secret-lookup'},(async(url,init)=>{
     const path=String(url);const body=JSON.parse(String(init?.body));calls.push(path);
     let result:unknown;
-    if(path.includes('/verify-telebirr')){state.lookups++;if(state.fail)throw Error('private transport details');
-      assert.deepEqual(body,{reference:'DI82JQ406M'});
-      result={success:true,data:{receiptNo:'DI82JQ406M',transactionStatus:'Completed',settledAmount:'100 Birr',paymentDate:'08-09-2026 12:21:32',creditedPartyAccountNo:'2519****7175'}};
+    if(path.endsWith('/internal/provider-lookup')){state.lookups++;if(state.fail)throw Error('private transport details');
+      assert.equal(new Headers(init?.headers).get('x-chekmi-lookup-key'),'secret-lookup');
+      assert.deepEqual(body,{provider:'telebirr',reference:'DI82JQ406M'});
+      result={ok:true,data:{reference:'DI82JQ406M',amount:100,currency:'ETB',txnDate:'2026-09-08T09:21:32.000Z',receiverAccount:'2519****7175'}};
     }else if(path.endsWith('demo_lookup_status'))result={remaining:10-state.used,result:requests.get(body.p_request_id)?.result??null};
     else if(path.endsWith('reserve_demo_lookup')){
       assert.match(body.p_token_hash,/^[0-9a-f]{64}$/);assert.notEqual(body.p_token_hash,'a'.repeat(64));

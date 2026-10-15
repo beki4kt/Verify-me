@@ -7,6 +7,7 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const verifyRoute_1 = require("./routes/verifyRoute");
 const operatorRoute_1 = require("./routes/operatorRoute");
+const providerLookupRoute_1 = require("./routes/providerLookupRoute");
 const productionMiddleware_1 = require("./productionMiddleware");
 const veritasVerifier_1 = require("./veritasVerifier");
 const hostDiagnostics_1 = require("./hostDiagnostics");
@@ -36,6 +37,7 @@ app.use((0, cors_1.default)({
 app.use(express_1.default.json({ limit: "3mb" }));
 // Verification routes (mounted at /api → /api/verify, /api/verify/:provider)
 app.use("/api", operatorRoute_1.operatorRouter);
+app.use("/api", providerLookupRoute_1.providerLookupRouter);
 app.use("/api", productionMiddleware_1.verificationRateLimit, verifyRoute_1.verifyRouter);
 app.get("/ready", (_req, res) => {
     const ownedVerifier = (0, veritasVerifier_1.verifierConfiguration)();

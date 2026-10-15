@@ -77,6 +77,26 @@ function mapNewReceipt(payload) {
         raw: (0, common_1.safeRaw)(raw),
     };
 }
+function mapLegacyRelayReceipt(payload) {
+    if (!payload || typeof payload !== "object")
+        return null;
+    const envelope = payload;
+    if (envelope.success === false)
+        return null;
+    const raw = envelope.data && typeof envelope.data === "object"
+        ? envelope.data : envelope;
+    return {
+        payerName: (0, common_1.nonEmpty)(raw.payerName),
+        payerAccount: (0, common_1.nonEmpty)(raw.payerAccount),
+        receiverName: (0, common_1.nonEmpty)(raw.receiverName),
+        receiverAccount: (0, common_1.nonEmpty)(raw.receiverAccount),
+        amount: (0, common_1.numberFrom)(raw.amount ?? raw.transferredAmount),
+        date: (0, common_1.ethiopianLocalDate)(raw.date ?? raw.paymentDate),
+        reference: (0, common_1.nonEmpty)(raw.reference ?? raw.receiptNo),
+        reason: (0, common_1.nonEmpty)(raw.reason),
+        raw: (0, common_1.safeRaw)(raw),
+    };
+}
 function normalizeCbe(submittedReference, receipt) {
     if (receipt.amount === null ||
         receipt.amount <= 0 ||
@@ -138,9 +158,19 @@ async function fetchLegacyRelay(combinedId) {
         responseType: "arraybuffer",
         timeout: (0, common_1.configuredTimeout)(),
         maxContentLength: common_1.MAX_PROVIDER_RESPONSE_BYTES,
-        headers: { Accept: "application/pdf", "User-Agent": "CHEKMI-Verifier/1.0" },
+        maxRedirects: 0,
+        headers: { Accept: "application/json,application/pdf", "User-Agent": "CHEKMI-Verifier/1.0" },
     });
-    return parseCbePdf(Buffer.from(response.data));
+    const bytes = Buffer.from(response.data);
+    if (bytes.subarray(0, 5).toString() === "%PDF-")
+        return parseCbePdf(bytes);
+    try {
+        const receipt = mapLegacyRelayReceipt(JSON.parse(bytes.toString("utf8")));
+        if (receipt)
+            return receipt;
+    }
+    catch { /* A non-JSON relay response is invalid. */ }
+    throw new types_1.OwnedVerifierError("CBE relay returned an invalid legacy receipt.", "PROVIDER_UNAVAILABLE", 502, true);
 }
 async function fetchNewDirect(token) {
     const appId = process.env.CBE_APP_ID?.trim();
@@ -169,6 +199,7 @@ async function fetchNewRelay(token) {
     const response = await axios_1.default.get(url, {
         timeout: (0, common_1.configuredTimeout)(),
         maxContentLength: common_1.MAX_PROVIDER_RESPONSE_BYTES,
+        maxRedirects: 0,
         headers: { Accept: "application/json", "User-Agent": "CHEKMI-Verifier/1.0" },
     });
     return mapNewReceipt(response.data);
