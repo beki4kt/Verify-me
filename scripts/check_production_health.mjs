@@ -29,6 +29,15 @@ const checks = [
       body?.verifier?.configured === true,
   },
   {
+    name: "demo verification",
+    url: `${supabaseUrl}/functions/v1/chekmi-demo`,
+    validate: (body, response) =>
+      response.ok &&
+      body?.status === "ready" &&
+      body?.demo === true &&
+      body?.service === "chekmi-demo",
+  },
+  {
     name: "current legal versions",
     url: `${supabaseUrl}/rest/v1/legal_documents?select=document_type,version,is_current&is_current=eq.true`,
     headers: supabaseHeaders,
