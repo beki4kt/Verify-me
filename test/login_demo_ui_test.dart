@@ -119,7 +119,10 @@ void main() {
       await show(tester, TrialModeScreen(client: client, manualOnly: true));
       expect(find.text('Demo checks unavailable'), findsOneWidget);
       expect(find.text('10 free checks'), findsNothing);
-      expect(find.textContaining('has not been deployed'), findsOneWidget);
+      expect(
+        find.text('Demo checks are unavailable right now. Try again later.'),
+        findsOneWidget,
+      );
       client.close();
     },
   );

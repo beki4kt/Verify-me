@@ -12,7 +12,7 @@ class DemoServiceUnavailable implements Exception {
 
   @override
   String toString() =>
-      'Demo checks are temporarily unavailable. The demo service has not been deployed.';
+      'Demo checks are unavailable right now. Try again later.';
 }
 
 class DemoRequestRejected implements Exception {
