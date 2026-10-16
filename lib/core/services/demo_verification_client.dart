@@ -7,6 +7,23 @@ import 'package:http/http.dart' as http;
 import '../../offline_storage.dart';
 import '../config/app_environment.dart';
 
+class DemoServiceUnavailable implements Exception {
+  const DemoServiceUnavailable();
+
+  @override
+  String toString() =>
+      'Demo checks are temporarily unavailable. The demo service has not been deployed.';
+}
+
+class DemoRequestRejected implements Exception {
+  const DemoRequestRejected(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class DemoVerificationClient {
   DemoVerificationClient({
     http.Client? client,
@@ -35,13 +52,27 @@ class DemoVerificationClient {
         )
         .timeout(const Duration(seconds: 50));
     if (response.statusCode == 404) {
-      throw Exception(
-        'The demo scanner needs to be deployed. Please try again after setup.',
-      );
+      throw const DemoServiceUnavailable();
     }
-    final data = jsonDecode(response.body);
+    final Object? data;
+    try {
+      data = jsonDecode(response.body);
+    } on FormatException {
+      throw Exception('The demo service returned an unreadable response.');
+    }
     if (data is! Map<String, dynamic> || data['demo'] != true) {
       throw Exception('The demo service returned an invalid response.');
+    }
+    if ((response.statusCode >= 400 && response.statusCode < 500) ||
+        data['code'] == 'DEMO_NOT_CONFIGURED') {
+      throw DemoRequestRejected(
+        data['error']?.toString() ?? 'This demo check could not be accepted.',
+      );
+    }
+    if (response.statusCode >= 500) {
+      throw Exception(
+        data['error']?.toString() ?? 'The demo service is unavailable.',
+      );
     }
     return data;
   }
@@ -74,6 +105,10 @@ class DemoVerificationClient {
         'reference': reference.trim(),
         'receivingAccount': receivingAccount.trim(),
       });
+    } on DemoServiceUnavailable {
+      rethrow;
+    } on DemoRequestRejected {
+      rethrow;
     } catch (_) {
       // Never repeat a paid lookup after an uncertain response.
       try {

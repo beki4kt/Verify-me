@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -26,6 +29,7 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
       widget.client ?? DemoVerificationClient();
   int? _remaining;
   String? _error;
+  bool _loadingUsage = true;
   @override
   void initState() {
     super.initState();
@@ -33,17 +37,26 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
   }
 
   Future<void> _refresh() async {
+    setState(() {
+      _loadingUsage = true;
+      _error = null;
+    });
     try {
       final state = await _client.usage();
       if (mounted) {
         setState(() {
           _remaining = (state['remaining'] as num?)?.toInt();
           _error = state['error']?.toString();
+          _loadingUsage = false;
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+        setState(() {
+          _remaining = null;
+          _loadingUsage = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
       }
     }
   }
@@ -94,8 +107,10 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    _remaining == null
-                        ? '10 free checks'
+                    _loadingUsage
+                        ? 'Checking demo availability…'
+                        : _error != null
+                        ? 'Demo checks unavailable'
                         : '$_remaining free checks left',
                     key: const Key('demo-remaining'),
                     style: Theme.of(context).textTheme.titleMedium
@@ -181,14 +196,11 @@ class _DemoReceiptScreen extends StatefulWidget {
   State<_DemoReceiptScreen> createState() => _DemoReceiptScreenState();
 }
 
-class _DemoReceiptScreenState extends State<_DemoReceiptScreen>
-    with WidgetsBindingObserver {
+class _DemoReceiptScreenState extends State<_DemoReceiptScreen> {
   final _reference = TextEditingController(),
       _account = TextEditingController();
-  CameraController? _camera;
-  int _cameraGeneration = 0;
-  bool _busy = false, _capturing = false;
-  String? _error, _cameraError;
+  bool _busy = false;
+  String? _error;
   Map<String, dynamic>? _result;
   late int? _remaining = widget.remaining;
   bool get _nativeCamera =>
@@ -197,97 +209,25 @@ class _DemoReceiptScreenState extends State<_DemoReceiptScreen>
       (defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.android);
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    if (_nativeCamera) _startCamera();
-  }
-
-  Future<void> _stopCamera() async {
-    _cameraGeneration++;
-    final camera = _camera;
-    _camera = null;
-    await camera?.dispose();
-  }
-
-  Future<void> _startCamera() async {
-    final generation = ++_cameraGeneration;
-    try {
-      final cameras = await availableCameras();
-      if (!mounted || generation != _cameraGeneration) return;
-      if (cameras.isEmpty) throw Exception('No camera is available.');
-      final camera = CameraController(
-        cameras.firstWhere(
-          (c) => c.lensDirection == CameraLensDirection.back,
-          orElse: () => cameras.first,
-        ),
-        ResolutionPreset.high,
-        enableAudio: false,
-      );
-      _camera = camera;
-      await camera.initialize();
-      if (!mounted || generation != _cameraGeneration) return;
-      setState(() => _cameraError = null);
-    } catch (_) {
-      if (mounted && generation == _cameraGeneration) {
-        setState(
-          () => _cameraError = 'Camera access is unavailable. Enter the reference below or enable camera permission.',
-        );
-      }
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_nativeCamera) return;
-    if (state == AppLifecycleState.inactive) {
-      _stopCamera();
-    }
-    if (state == AppLifecycleState.resumed && _camera == null) {
-      _startCamera();
-    }
-  }
-
-  @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _stopCamera();
     _reference.dispose();
     _account.dispose();
     super.dispose();
   }
 
-  Future<void> _capture() async {
-    if (_capturing || _busy || _camera?.value.isInitialized != true) return;
-    setState(() => _capturing = true);
-    final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-    try {
-      final file = await _camera!.takePicture();
-      final text = await recognizer.processImage(
-        InputImage.fromFilePath(file.path),
-      );
-      if (!mounted) return;
-      final reference = ReceiptParser.extractTransactionId(
-        text.text,
-        widget.provider,
-      );
-      setState(() {
-        if (reference != null) _reference.text = reference;
-        _error = reference == null
-            ? 'Could not read the reference. You can type it below.'
-            : null;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(
-          () => _error =
-              'Could not read this photo. Try again or enter the reference.',
-        );
-      }
-    } finally {
-      await recognizer.close();
-      if (mounted) setState(() => _capturing = false);
-    }
+  Future<void> _openCamera() async {
+    final reference = await Navigator.of(context).push<String>(
+      CupertinoPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            _DemoCameraScreen(provider: widget.provider, label: widget.label),
+      ),
+    );
+    if (!mounted || reference == null) return;
+    setState(() {
+      _reference.text = reference;
+      _error = null;
+    });
   }
 
   Future<void> _verify({bool statusOnly = false}) async {
@@ -338,22 +278,17 @@ class _DemoReceiptScreenState extends State<_DemoReceiptScreen>
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            _remaining == null ? '10 free checks' : '$_remaining checks left',
+            _remaining == null
+                ? 'Demo availability unknown'
+                : '$_remaining checks left',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
           if (_nativeCamera) ...[
-            if (_camera?.value.isInitialized == true)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: SizedBox(height: 210, child: CameraPreview(_camera!)),
-              ),
-            if (_cameraError != null) Text(_cameraError!),
-            const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: _busy || _capturing ? null : _capture,
+              onPressed: _busy ? null : _openCamera,
               icon: const Icon(AppIcons.scanReceipt),
-              label: Text(_capturing ? 'Reading receipt…' : 'Scan receipt'),
+              label: const Text('Open camera to scan receipt'),
             ),
             const SizedBox(height: 18),
           ],
@@ -441,4 +376,250 @@ class _DemoReceiptScreenState extends State<_DemoReceiptScreen>
       ),
     ),
   );
+}
+
+class _DemoCameraScreen extends StatefulWidget {
+  const _DemoCameraScreen({required this.provider, required this.label});
+
+  final String provider;
+  final String label;
+
+  @override
+  State<_DemoCameraScreen> createState() => _DemoCameraScreenState();
+}
+
+class _DemoCameraScreenState extends State<_DemoCameraScreen>
+    with WidgetsBindingObserver {
+  CameraController? _camera;
+  int _cameraGeneration = 0;
+  bool _capturing = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startCamera();
+  }
+
+  Future<void> _stopCamera() async {
+    _cameraGeneration++;
+    final camera = _camera;
+    _camera = null;
+    try {
+      await camera?.dispose();
+    } catch (_) {
+      // The camera may already have been released by the operating system.
+    }
+  }
+
+  Future<void> _startCamera() async {
+    final generation = ++_cameraGeneration;
+    try {
+      final cameras = await availableCameras();
+      if (!mounted || generation != _cameraGeneration) return;
+      if (cameras.isEmpty) throw Exception('No camera available');
+      final camera = CameraController(
+        cameras.firstWhere(
+          (item) => item.lensDirection == CameraLensDirection.back,
+          orElse: () => cameras.first,
+        ),
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+      _camera = camera;
+      await camera.initialize();
+      if (!mounted || generation != _cameraGeneration) return;
+      setState(() => _error = null);
+    } catch (_) {
+      if (mounted && generation == _cameraGeneration) {
+        unawaited(_stopCamera());
+        setState(
+          () => _error = 'Camera access is unavailable. Enable camera permission or enter the reference manually.',
+        );
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive) {
+      unawaited(_stopCamera());
+    } else if (state == AppLifecycleState.resumed && _camera == null) {
+      unawaited(_startCamera());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_stopCamera());
+    super.dispose();
+  }
+
+  Future<void> _capture() async {
+    if (_capturing || _camera?.value.isInitialized != true) return;
+    setState(() {
+      _capturing = true;
+      _error = null;
+    });
+    final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+    try {
+      final file = await _camera!.takePicture();
+      final text = await recognizer.processImage(
+        InputImage.fromFilePath(file.path),
+      );
+      if (!mounted) return;
+      final reference = ReceiptParser.extractTransactionId(
+        text.text,
+        widget.provider,
+      );
+      if (reference == null) {
+        setState(
+          () => _error = 'Could not read the reference. Try another photo or enter it manually.',
+        );
+      } else {
+        Navigator.of(context).pop(reference);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not read this photo. Try again or enter the reference manually.',
+        );
+      }
+    } finally {
+      await recognizer.close();
+      if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final camera = _camera;
+    final ready = camera?.value.isInitialized == true;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          if (ready)
+            Positioned.fill(
+              child: ClipRect(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: camera!.value.previewSize?.height ?? 1,
+                    height: camera.value.previewSize?.width ?? 1,
+                    child: CameraPreview(camera),
+                  ),
+                ),
+              ),
+            )
+          else if (_error == null)
+            const Center(child: CircularProgressIndicator()),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: .65),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: .76),
+                    ],
+                    stops: const [0, .36, 1],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      IconButton.filledTonal(
+                        tooltip: 'Close camera',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(AppIcons.back),
+                      ),
+                      const SizedBox(width: 12),
+                      PaymentLogo(provider: widget.label, size: 34),
+                      const SizedBox(width: 10),
+                      Text(
+                        '${widget.label} receipt',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 18),
+                      child: Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 18),
+                      child: Text(
+                        _capturing
+                            ? 'Reading receipt…'
+                            : 'Fill the view with the receipt',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  Semantics(
+                    label: 'Capture receipt',
+                    button: true,
+                    enabled: ready && !_capturing,
+                    child: Pressable(
+                      enabled: ready && !_capturing,
+                      onTap: _capture,
+                      pressedScale: .9,
+                      child: Container(
+                        width: 82,
+                        height: 82,
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                        ),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white,
+                          ),
+                          child: _capturing
+                              ? const Padding(
+                                  padding: EdgeInsets.all(18),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Enter reference manually'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

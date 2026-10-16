@@ -106,4 +106,21 @@ void main() {
     expect(find.byType(WaiterDashboard), findsNothing);
     client.close();
   });
+
+  testWidgets(
+    'unavailable demo shows its status without promising free checks',
+    (tester) async {
+      final client = DemoVerificationClient(
+        token: () async => 'a' * 64,
+        client: MockClient(
+          (_) async => http.Response('{"code":"NOT_FOUND"}', 404),
+        ),
+      );
+      await show(tester, TrialModeScreen(client: client, manualOnly: true));
+      expect(find.text('Demo checks unavailable'), findsOneWidget);
+      expect(find.text('10 free checks'), findsNothing);
+      expect(find.textContaining('has not been deployed'), findsOneWidget);
+      client.close();
+    },
+  );
 }

@@ -426,6 +426,80 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return AppColors.textFaint;
   }
 
+  Future<_PaymentAccountProvider?> _pickPaymentAccountProvider(
+    BuildContext context,
+    _PaymentAccountProvider selected,
+  ) => showModalBottomSheet<_PaymentAccountProvider>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (pickerContext) => SizedBox(
+      height: (MediaQuery.sizeOf(pickerContext).height * .64).clamp(
+        300.0,
+        480.0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Choose payment method',
+                  style: Theme.of(pickerContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_enabledPaymentAccountProviders.length} available methods',
+                  style: Theme.of(pickerContext).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              key: const Key('payment-account-provider-list'),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+              itemCount: _enabledPaymentAccountProviders.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 4),
+              itemBuilder: (context, index) {
+                final provider = _enabledPaymentAccountProviders[index];
+                final isSelected = provider.numberKey == selected.numberKey;
+                return FadeSlideIn(
+                  index: index,
+                  child: ListTile(
+                    key: Key('payment-account-provider-${provider.numberKey}'),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    tileColor: isSelected
+                        ? provider.color.withValues(alpha: .12)
+                        : null,
+                    leading: PaymentLogo(provider: provider.name, size: 36),
+                    title: Text(provider.name),
+                    trailing: isSelected
+                        ? Icon(
+                            Icons.check_circle_rounded,
+                            color: provider.color,
+                          )
+                        : const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(pickerContext).pop(provider),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
   Future<void> _showBankConfigSheet(
     Map<String, dynamic> currentAccounts,
   ) async {
@@ -597,34 +671,51 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 ),
                               ],
                               const SizedBox(height: 18),
-                              DropdownButtonFormField<String>(
-                                initialValue: selectedProvider.numberKey,
-                                decoration: const InputDecoration(
-                                  labelText: 'Payment method',
-                                  prefixIcon: Icon(AppIcons.money),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  'Payment method',
+                                  style: theme.textTheme.labelLarge,
                                 ),
-                                items: _enabledPaymentAccountProviders
-                                    .map(
-                                      (provider) => DropdownMenuItem(
-                                        value: provider.numberKey,
-                                        child: PaymentBrand(
-                                          provider: provider.name,
-                                          logoSize: 26,
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setSheetState(() {
-                                    selectedProvider =
-                                        _enabledPaymentAccountProviders
-                                            .firstWhere(
-                                              (provider) =>
-                                                  provider.numberKey == value,
+                              ),
+                              OutlinedButton(
+                                key: const Key(
+                                  'payment-account-provider-picker',
+                                ),
+                                onPressed: isSubmitting
+                                    ? null
+                                    : () async {
+                                        final choice =
+                                            await _pickPaymentAccountProvider(
+                                              sheetContext,
+                                              selectedProvider,
                                             );
-                                  });
-                                },
+                                        if (choice != null &&
+                                            sheetContext.mounted) {
+                                          setSheetState(
+                                            () => selectedProvider = choice,
+                                          );
+                                        }
+                                      },
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: PaymentBrand(
+                                        provider: selectedProvider.name,
+                                        logoSize: 26,
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                    ),
+                                  ],
+                                ),
                               ),
                               const SizedBox(height: 14),
                               ..._enabledPaymentAccountProviders
