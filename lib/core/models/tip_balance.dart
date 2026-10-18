@@ -3,11 +3,18 @@ double calculateWithdrawableTips({
   required Iterable<Map<String, dynamic>> withdrawals,
 }) {
   final earned = tickets
-      .where((ticket) => ticket['status'] == 'settled')
+      .where(
+        (ticket) =>
+            ticket['status'] == 'settled' &&
+            (ticket['financial_state'] == null ||
+                ticket['financial_state'] == 'normal'),
+      )
       .fold<double>(
         0,
         (sum, ticket) =>
-            sum + ((ticket['tip_amount'] as num?)?.toDouble() ?? 0),
+            sum +
+            ((ticket['tip_amount'] as num?)?.toDouble() ?? 0) +
+            ((ticket['allocated_tip_amount'] as num?)?.toDouble() ?? 0),
       );
   final committed = withdrawals
       .where(

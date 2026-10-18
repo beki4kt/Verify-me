@@ -231,7 +231,7 @@ async function handleVerify(req, res) {
                 status: d.status ?? d.statusText ?? null,
                 serviceFee: typeof d.serviceFee === "number" ? d.serviceFee : null,
                 expectedAmount: expected,
-                tipAmount: Math.max(0, amount - expected),
+                unresolvedExcess: Math.max(0, amount - expected),
                 underpaymentDetected: false,
                 fraudDetected: false,
             },
@@ -263,7 +263,7 @@ async function handleVerifyAndCreate(req, res) {
     const providerRaw = body.provider || "";
     const expected = (0, paymentSecurity_1.positiveAmount)(body.expectedAmount);
     const reference = (body.reference ?? "").trim();
-    const tableNumber = (body.tableNumber ?? "").trim();
+    const tableNumber = (body.tableNumber ?? "").trim() || `Payment: ${reference.toUpperCase()}`;
     const token = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
     let provider = null;
     let verificationContextLoaded = false;
@@ -275,8 +275,8 @@ async function handleVerifyAndCreate(req, res) {
         if (!isProvider(providerRaw)) {
             throw new ClientError(`Invalid provider. Must be one of: ${KNOWN_PROVIDERS.join(", ")}`, 400, "INVALID_PROVIDER");
         }
-        if (!reference || !tableNumber || expected === null) {
-            throw new ClientError("Bank reference, business reference, and a positive amount due are required.", 400, "INVALID_TICKET");
+        if (!reference || tableNumber.length > 320 || expected === null) {
+            throw new ClientError("Bank reference and a positive amount due are required.", 400, "INVALID_TICKET");
         }
         if (body.receiptImageBase64 &&
             Buffer.byteLength(body.receiptImageBase64, "base64") > 1500000) {
@@ -489,7 +489,8 @@ async function handleVerifyAndCreate(req, res) {
                 ...committed,
                 amount: verifiedAmount,
                 expectedAmount: expected,
-                tipAmount: Math.max(0, verifiedAmount - expected),
+                tipAmount: Number(committed.tip_amount ?? 0),
+                unresolvedExcess: Number(committed.unresolved_excess ?? 0),
                 currency: data.currency ?? "ETB",
             },
         });

@@ -15,6 +15,7 @@ import 'core/widgets/app_shell.dart';
 import 'core/widgets/payment_brand.dart';
 import 'core/widgets/state_views.dart';
 import 'receipt_parser.dart';
+import 'guided_preview_screen.dart';
 
 class DemoScannerScreen extends StatefulWidget {
   const DemoScannerScreen({super.key, this.client, this.manualOnly = false});
@@ -127,6 +128,15 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
               onPressed: _refresh,
               child: const Text('Refresh demo status'),
             ),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                CupertinoPageRoute<void>(
+                  builder: (_) => const GuidedPreviewScreen(),
+                ),
+              ),
+              icon: const Icon(CupertinoIcons.play_circle),
+              label: const Text('Explore the guided preview'),
+            ),
           ],
           if (_remaining == 0) ...[
             const SizedBox(height: 20),
@@ -146,7 +156,8 @@ class _DemoScannerScreenState extends State<DemoScannerScreen> {
                       child: FadeSlideIn(
                         index: i + 1,
                         child: HoverSurface(
-                          onTap: _remaining == 0
+                          onTap:
+                              _remaining == 0 || _error != null || _loadingUsage
                               ? null
                               : () => _open(methods[i].id, methods[i].label),
                           padding: const EdgeInsets.all(18),

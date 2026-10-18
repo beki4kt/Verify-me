@@ -46,5 +46,9 @@ jobs:
           cache: npm
           cache-dependency-path: backend-server/package-lock.json
       - run: npm ci
+      - run: node scripts/build-edge.cjs
+      - name: Ensure deployable Edge bundle matches source
+        working-directory: .
+        run: git diff --exit-code -- supabase/functions/chekmi-verify/index.js
       - run: npm test
       - run: npx tsc --noEmit

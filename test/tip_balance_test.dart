@@ -32,4 +32,23 @@ void main() {
 
     expect(available, 0);
   });
+
+  test('explicit allocated tips count only after a payment completes', () {
+    expect(
+      calculateWithdrawableTips(
+        tickets: const [
+          {'status': 'settled', 'tip_amount': 0, 'allocated_tip_amount': 18},
+          {'status': 'pending', 'tip_amount': 0, 'allocated_tip_amount': 12},
+          {
+            'status': 'settled',
+            'financial_state': 'refunded',
+            'tip_amount': 0,
+            'allocated_tip_amount': 9,
+          },
+        ],
+        withdrawals: const [],
+      ),
+      18,
+    );
+  });
 }

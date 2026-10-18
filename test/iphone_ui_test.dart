@@ -52,7 +52,8 @@ void main() {
     expect(find.byType(CupertinoTextField), findsOneWidget);
     expect(find.byKey(const Key('iphone-connect-workspace')), findsOneWidget);
     expect(find.text('Every payment.\nVerified.'), findsOneWidget);
-    expect(find.text('Try the live demo'), findsOneWidget);
+    expect(find.text('Use Chekmi on my own'), findsOneWidget);
+    expect(find.text('Explore a preview'), findsOneWidget);
     expect(find.byType(FloatingNavIsland), findsNothing);
 
     await tester.tap(find.byKey(const Key('iphone-connect-workspace')));

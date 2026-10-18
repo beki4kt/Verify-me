@@ -134,16 +134,18 @@ function createEdgeVerificationHandler(env, transport = fetch) {
             if (action !== "verify" && action !== "status")
                 throw new Failure("INVALID_ACTION", "Unknown verification action.", 400);
             expected = (0, paymentSecurity_1.positiveAmount)(body.expectedAmount);
-            const businessReference = typeof body.tableNumber === "string" ? body.tableNumber.trim() : "";
-            if (action === "verify" && (expected === null || !businessReference || businessReference.length > 320))
-                throw new Failure("INVALID_PAYMENT", "Enter a positive amount due and business reference.", 400);
+            const businessReference = (typeof body.tableNumber === "string" ? body.tableNumber.trim() : "") || `Payment: ${reference}`;
+            if (action === "verify" && (expected === null || businessReference.length > 320))
+                throw new Failure("INVALID_PAYMENT", "Enter a positive amount due.", 400);
             const photo = body.receiptImageBase64;
             if (photo !== undefined && (typeof photo !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(photo) || photo.length % 4 !== 0 || photo.length > 2000000))
                 throw new Failure("RECEIPT_TOO_LARGE", "The receipt image is invalid or exceeds 1.5 MB.", 413);
             // The trusted RPC validates the opaque session and business scope. The
             // public Supabase publishable key is never sufficient authorization.
             context = json(await rpc("get_verification_context", { p_token: token, p_provider: provider }));
-            if (!context || context.provider !== provider || !["waiter", "admin"].includes(String(context.role)) || !context.business_id || !context.receiving_account)
+            // get_verification_context enforces the member capability in the DB.
+            // A legacy job title is never an additional authorization gate here.
+            if (!context || context.provider !== provider || !context.business_id || !context.staff_number || !context.receiving_account)
                 throw new Failure("ACCESS_DENIED", "This account cannot verify payments for that business.", 403);
             const existing = json(await find());
             if (existing?.ticket_id)
@@ -266,7 +268,9 @@ function createEdgeVerificationHandler(env, transport = fetch) {
             }));
             if (!committed?.ticket_id)
                 throw new Failure("COMMIT_NOT_CONFIRMED", "No saved payment confirmation was returned. Check payment history before retrying.", 503, true);
-            return respond(201, { success: true, data: { ...committed, amount: data.amount, expectedAmount: expected, tipAmount: Math.max(0, data.amount - expected), currency: data.currency } });
+            // Tip allocation is a workspace policy decision made by the database.
+            // A bank amount above the sale amount is never itself evidence of a tip.
+            return respond(201, { success: true, data: { ...committed, amount: data.amount, expectedAmount: expected, tipAmount: Number(committed.tip_amount ?? 0), unresolvedExcess: Number(committed.unresolved_excess ?? 0), currency: data.currency } });
         }
         catch (error) {
             const failure = error instanceof Failure ? error : new Failure("VERIFICATION_UNAVAILABLE", "Payment verification could not finish. Check payment history before retrying.", 503, true);

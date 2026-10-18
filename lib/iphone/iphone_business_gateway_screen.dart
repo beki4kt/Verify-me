@@ -13,6 +13,8 @@ import '../pricing_screen.dart';
 import '../staff_login_screen.dart';
 import '../super_admin_login_screen.dart';
 import '../trial_mode_screen.dart';
+import '../guided_preview_screen.dart';
+import '../localization_service.dart';
 
 /// iPhone-first provisioning experience.
 ///
@@ -148,7 +150,7 @@ class _IPhoneBusinessGatewayScreenState
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: Text(
-                              'Your workspace',
+                              context.tr('Choose how to begin'),
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                           ),
@@ -163,6 +165,48 @@ class _IPhoneBusinessGatewayScreenState
                           isLoading: _isLoading,
                           errorMessage: _errorMessage,
                           onConnect: _connectWorkspace,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      FadeSlideIn(
+                        index: 3,
+                        child: _IPhoneSection(
+                          children: [
+                            _ActionRow(
+                              icon: CupertinoIcons.person_crop_circle,
+                              color: AppColors.primary,
+                              title: 'Use Chekmi on my own',
+                              subtitle: 'Personal setup is coming soon',
+                              onTap: () => showCupertinoDialog<void>(
+                                context: context,
+                                builder: (dialogContext) =>
+                                    CupertinoAlertDialog(
+                                      title: const Text(
+                                        'Personal accounts are coming',
+                                      ),
+                                      content: const Text(
+                                        'Account recovery and deletion are being prepared. Explore the preview for now.',
+                                      ),
+                                      actions: [
+                                        CupertinoDialogAction(
+                                          onPressed: () {
+                                            Navigator.pop(dialogContext);
+                                            _open(const GuidedPreviewScreen());
+                                          },
+                                          child: const Text('Explore preview'),
+                                        ),
+                                      ],
+                                    ),
+                              ),
+                            ),
+                            _ActionRow(
+                              icon: CupertinoIcons.play_circle_fill,
+                              color: AppColors.aqua,
+                              title: 'Explore a preview',
+                              subtitle: 'See the flow with sample data',
+                              onTap: () => _open(const GuidedPreviewScreen()),
+                            ),
+                          ],
                         ),
                       ),
                       if (!AppVariant.isPublicRelease) ...[
@@ -180,8 +224,8 @@ class _IPhoneBusinessGatewayScreenState
                                 _ActionRow(
                                   icon: CupertinoIcons.play_circle_fill,
                                   color: AppColors.primary,
-                                  title: 'Try the live demo',
-                                  subtitle: 'Explore Chekmi without connecting',
+                                  title: 'Try a live demo check',
+                                  subtitle: 'Requires the demo service',
                                   onTap: () => _open(const TrialModeScreen()),
                                 ),
                               if (AppVariant.showsPlanMarketing)
@@ -209,7 +253,7 @@ class _IPhoneBusinessGatewayScreenState
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Secure business access',
+                              context.tr('Secure workspace access'),
                               style: CupertinoTheme.of(context)
                                   .textTheme
                                   .textStyle
@@ -338,6 +382,19 @@ class _WorkspaceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(
+            context.tr('Connect to my team'),
+            style: CupertinoTheme.of(context).textTheme.navTitleTextStyle,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Enter the code your workspace owner gave you.',
+            style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
+              fontSize: 13,
+              color: CupertinoColors.secondaryLabel.resolveFrom(context),
+            ),
+          ),
+          const SizedBox(height: 16),
           CupertinoTextField(
             key: const Key('iphone-workspace-code'),
             controller: controller,
@@ -352,7 +409,7 @@ class _WorkspaceCard extends StatelessWidget {
               FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9-]')),
               LengthLimitingTextInputFormatter(32),
             ],
-            placeholder: 'Business code',
+            placeholder: context.tr('Workspace code'),
             prefix: const Padding(
               padding: EdgeInsets.only(left: 13),
               child: Icon(CupertinoIcons.building_2_fill, size: 19),
@@ -516,7 +573,7 @@ class _ActionRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  context.tr(title),
                   style: CupertinoTheme.of(context).textTheme.textStyle
                       .copyWith(fontSize: 16, fontWeight: FontWeight.w600),
                 ),

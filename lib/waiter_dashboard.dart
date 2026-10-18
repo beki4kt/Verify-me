@@ -31,6 +31,7 @@ import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
 import 'core/config/payment_context.dart';
+import 'core/models/workspace_profile.dart';
 import 'core/models/tip_balance.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
@@ -39,10 +40,14 @@ class WaiterDashboard extends StatefulWidget {
     super.key,
     @visibleForTesting this.forceManualReceiptEntry = false,
     this.trialMode = false,
+    this.workspaceProfile,
+    this.initialTab = 0,
   });
 
   final bool forceManualReceiptEntry;
   final bool trialMode;
+  final WorkspaceProfile? workspaceProfile;
+  final int initialTab;
 
   @override
   State<WaiterDashboard> createState() => _WaiterDashboardState();
@@ -1135,7 +1140,10 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                         final t = tickets[index];
                         final amount =
                             (t['bill_amount'] as num?)?.toDouble() ?? 0;
-                        final tip = (t['tip_amount'] as num?)?.toDouble() ?? 0;
+                        final tip =
+                            ((t['tip_amount'] as num?)?.toDouble() ?? 0) +
+                            ((t['allocated_tip_amount'] as num?)?.toDouble() ??
+                                0);
                         final settled = t['status'] == 'settled';
                         return HoverSurface(
                           accent: settled
@@ -1381,7 +1389,9 @@ class _WaiterDashboardState extends State<WaiterDashboard>
     );
     final billController = TextEditingController();
     final tableController = TextEditingController();
-    PaymentContextKind contextKind = PaymentContextKind.invoice;
+    PaymentContextKind contextKind = PaymentContextKind.fromStorage(
+      widget.workspaceProfile?.defaultReferenceKind ?? 'invoice',
+    );
     String selectedBank = initialProvider ?? _selectedBank ?? 'Telebirr';
     if (!AppVariant.isPaymentProviderEnabled(selectedBank)) {
       selectedBank = 'Telebirr';
@@ -1484,30 +1494,31 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                             },
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      key: const Key('payment-context-value'),
-                      controller: tableController,
-                      enabled: !isSubmitting,
-                      maxLength: 80,
-                      textCapitalization: TextCapitalization.characters,
-                      style: Theme.of(context).textTheme.bodyLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                      decoration:
-                          _buildInputDecoration(
-                            '${context.tr(contextKind.fieldLabel)} (${context.tr('optional')})',
-                            contextKind == PaymentContextKind.table
-                                ? AppIcons.table
-                                : AppIcons.receipt,
-                          ).copyWith(
-                            hintText: contextKind.hint,
-                            helperText: AppVariant.usesMinimalCopy
-                                ? null
-                                : context.tr(
-                                    'Leave blank to use the bank reference.',
-                                  ),
-                            helperMaxLines: 2,
-                          ),
-                    ),
+                    if (contextKind != PaymentContextKind.none)
+                      TextField(
+                        key: const Key('payment-context-value'),
+                        controller: tableController,
+                        enabled: !isSubmitting,
+                        maxLength: 80,
+                        textCapitalization: TextCapitalization.characters,
+                        style: Theme.of(context).textTheme.bodyLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                        decoration:
+                            _buildInputDecoration(
+                              '${context.tr(contextKind.fieldLabel)} (${context.tr('optional')})',
+                              contextKind == PaymentContextKind.table
+                                  ? AppIcons.table
+                                  : AppIcons.receipt,
+                            ).copyWith(
+                              hintText: contextKind.hint,
+                              helperText: AppVariant.usesMinimalCopy
+                                  ? null
+                                  : context.tr(
+                                      'Leave blank to use the bank reference.',
+                                    ),
+                              helperMaxLines: 2,
+                            ),
+                      ),
                     const SizedBox(height: 16),
 
                     TextField(
@@ -1555,7 +1566,9 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                 .withValues(alpha: 0.1),
                           ),
                     ),
-                    if (!AppVariant.usesMinimalCopy) ...[
+                    if (widget.workspaceProfile?.overpaymentPolicy ==
+                            'legacy_tip' &&
+                        !AppVariant.usesMinimalCopy) ...[
                       const SizedBox(height: 8),
                       const Text(
                         'Enter the full amount due. Any excess payment is currently recorded as a staff tip.',
@@ -1566,6 +1579,44 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                       ),
                     ],
                     const SizedBox(height: 24),
+
+                    StreamBuilder<Map<String, dynamic>>(
+                      stream: ApiService.streamCurrentBusiness(),
+                      builder: (context, snapshot) {
+                        final accounts = snapshot.data?['bank_accounts'];
+                        final key =
+                            '${selectedBank.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '')}_number';
+                        final account = accounts is Map
+                            ? accounts[key]?.toString().trim()
+                            : null;
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            color: AppColors.primary.withValues(alpha: .08),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                AppIcons.shield,
+                                size: 20,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  account == null || account.isEmpty
+                                      ? 'Receiving account is not configured for $selectedBank.'
+                                      : 'Receiving account · $account',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 18),
 
                     if (errorText != null)
                       Container(
@@ -1677,11 +1728,25 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                   // Success animation only ever follows the
                                   // backend's authoritative verification —
                                   // pending and failed results never reach it.
+                                  final completion = data['completion_status']
+                                      ?.toString();
+                                  final unresolved =
+                                      (data['unresolved_excess'] as num?)
+                                          ?.toDouble() ??
+                                      0;
                                   await SuccessOverlay.show(
                                     this.context,
-                                    message: calculatedTip > 0
+                                    message: unresolved > 0
+                                        ? completion == 'marked_complete'
+                                              ? 'PAYMENT VERIFIED · COMPLETE · EXCESS RECORDED'
+                                              : 'PAYMENT VERIFIED · REVIEW NEEDED · EXCESS RECORDED'
+                                        : completion == 'marked_complete'
+                                        ? 'PAYMENT VERIFIED · MARKED COMPLETE'
+                                        : completion == 'requires_review'
+                                        ? 'PAYMENT VERIFIED · REQUIRES REVIEW'
+                                        : calculatedTip > 0
                                         ? 'VERIFIED · +${calculatedTip.toStringAsFixed(2)} ETB TIP'
-                                        : 'VERIFIED',
+                                        : 'PAYMENT VERIFIED',
                                   );
                                 } else {
                                   throw Exception(result.displayErrorMessage);
@@ -1766,6 +1831,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 3,
+      initialIndex: widget.initialTab,
       child: Scaffold(
         appBar: AppVariant.usesIPhoneUi
             ? IPhoneDashboardNavigationBar(
@@ -1830,7 +1896,9 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                   children: [
                     _buildTicketFeed(),
                     _buildScannerTab(),
-                    _buildWalletProfile(),
+                    widget.workspaceProfile?.isRestaurant == false
+                        ? _buildTicketFeed()
+                        : _buildWalletProfile(),
                   ],
                 ),
               ),

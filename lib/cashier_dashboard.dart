@@ -23,10 +23,17 @@ import 'localization_service.dart';
 import 'support_privacy_screen.dart';
 import 'core/config/app_variant.dart';
 import 'core/config/payment_context.dart';
+import 'core/models/workspace_profile.dart';
 import 'iphone/iphone_dashboard_shell.dart';
 
 class CashierDashboard extends StatefulWidget {
-  const CashierDashboard({super.key});
+  const CashierDashboard({
+    super.key,
+    this.workspaceProfile,
+    this.readOnly = false,
+  });
+  final WorkspaceProfile? workspaceProfile;
+  final bool readOnly;
 
   @override
   State<CashierDashboard> createState() => _CashierDashboardState();
@@ -40,6 +47,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
   void initState() {
     super.initState();
     _ticketsStream = ApiService.streamTodayTickets();
+    if (widget.readOnly) _tabIndex = 1;
   }
 
   void _refreshData() {
@@ -56,6 +64,112 @@ class _CashierDashboardState extends State<CashierDashboard> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const SupportPrivacyScreen()),
     );
+  }
+
+  Future<void> _showTipAllocation(Map<String, dynamic> payment) async {
+    final amountController = TextEditingController();
+    final reasonController = TextEditingController();
+    final available =
+        ((payment['unresolved_excess'] as num?)?.toDouble() ?? 0) -
+        ((payment['allocated_tip_amount'] as num?)?.toDouble() ?? 0);
+    var saving = false;
+    String? errorText;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Allocate a tip'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Available excess: ${available.toStringAsFixed(2)} ETB'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Tip amount (ETB)',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: reasonController,
+                maxLength: 500,
+                decoration: const InputDecoration(labelText: 'Reason'),
+              ),
+              if (errorText != null)
+                Text(
+                  errorText!,
+                  style: TextStyle(
+                    color: Theme.of(dialogContext).colorScheme.error,
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final amount = double.tryParse(
+                        amountController.text.trim(),
+                      );
+                      if (amount == null ||
+                          !amount.isFinite ||
+                          amount <= 0 ||
+                          amount > available ||
+                          reasonController.text.trim().length < 3) {
+                        setDialogState(
+                          () => errorText =
+                              'Enter a valid amount and a short reason.',
+                        );
+                        return;
+                      }
+                      setDialogState(() {
+                        saving = true;
+                        errorText = null;
+                      });
+                      try {
+                        await ApiService.allocatePaymentTip(
+                          ticketId: payment['ticket_id'].toString(),
+                          recipientStaffNumber: payment['waiter_id'].toString(),
+                          amount: amount,
+                          reason: reasonController.text.trim(),
+                        );
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() {
+                            saving = false;
+                            errorText = error.toString().replaceFirst(
+                              'Exception: ',
+                              '',
+                            );
+                          });
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Allocate tip'),
+            ),
+          ],
+        ),
+      ),
+    );
+    amountController.dispose();
+    reasonController.dispose();
   }
 
   // ── Settlement sheet ─────────────────────────────────────────────────────
@@ -85,16 +199,17 @@ class _CashierDashboardState extends State<CashierDashboard> {
             final actual = double.tryParse(input);
             final hasInput = input.isNotEmpty && actual != null;
             final isShortfall = hasInput && actual < expectedAmount;
-            final tip = (hasInput && actual > expectedAmount)
-                ? actual - expectedAmount
-                : 0.0;
+            final tip =
+                ((ticket['tip_amount'] as num?)?.toDouble() ?? 0) +
+                ((ticket['allocated_tip_amount'] as num?)?.toDouble() ?? 0);
+            final unresolved =
+                ((ticket['unresolved_excess'] as num?)?.toDouble() ?? 0) -
+                ((ticket['allocated_tip_amount'] as num?)?.toDouble() ?? 0);
 
             return AppSheetBody(
               children: [
                 AppSheetHeader(
-                  title: AppVariant.usesMinimalCopy
-                      ? 'VERIFY'
-                      : 'VERIFY PAYMENT',
+                  title: 'COMPLETE PAYMENT',
                   color: AppColors.primary,
                 ),
                 const SizedBox(height: 24),
@@ -157,7 +272,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                if (hasInput && !isShortfall)
+                if (tip > 0)
                   // The tip reveal grows in place, so the number reads as the
                   // result of the amount above it.
                   AnimatedSize(
@@ -176,8 +291,8 @@ class _CashierDashboardState extends State<CashierDashboard> {
                         children: [
                           Text(
                             AppVariant.usesMinimalCopy
-                                ? 'TIP'
-                                : 'CALCULATED TIP',
+                                ? 'TIP ALLOCATED'
+                                : 'ALLOCATED TIP',
                             style: AppTypography.microLabel(
                               color: AppColors.success,
                             ),
@@ -191,6 +306,14 @@ class _CashierDashboardState extends State<CashierDashboard> {
                           ),
                         ],
                       ),
+                    ),
+                  ),
+                if (unresolved > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      '${unresolved.toStringAsFixed(2)} ETB excess remains unresolved.',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
                 if (isShortfall)
@@ -239,7 +362,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                             try {
                               await ApiService.rejectTicket(
                                 ticketId: ticketId,
-                                reason: 'Cashier rejected after bank review',
+                                reason: 'Reviewer did not complete payment',
                               );
                               if (!context.mounted || !mounted) return;
                               final messenger = ScaffoldMessenger.of(
@@ -287,16 +410,14 @@ class _CashierDashboardState extends State<CashierDashboard> {
                             try {
                               await ApiService.settleTicket(
                                 ticketId: ticketId,
-                                reason: 'Payment confirmed at cashier',
+                                reason: 'Payment marked complete by reviewer',
                               );
                               if (!context.mounted || !mounted) return;
                               final dashboardContext = this.context;
                               Navigator.pop(context);
                               await SuccessOverlay.show(
                                 dashboardContext,
-                                message: tip > 0
-                                    ? 'SETTLED · +${tip.toStringAsFixed(2)} ETB TIP'
-                                    : 'SETTLED',
+                                message: 'PAYMENT MARKED COMPLETE',
                               );
                             } catch (e) {
                               if (context.mounted) {
@@ -312,11 +433,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
                           },
                     child: isSubmitting
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                            AppVariant.usesMinimalCopy
-                                ? 'SETTLE'
-                                : 'SETTLE PAYMENT',
-                          ),
+                        : Text('MARK COMPLETE'),
                   ),
               ],
             );
@@ -476,7 +593,12 @@ class _CashierDashboardState extends State<CashierDashboard> {
             final bank = (t['bank'] ?? '').toString();
             final billAmount = (t['bill_amount'] as num?)?.toDouble() ?? 0.0;
             final actual = (t['actual_amount'] as num?)?.toDouble() ?? 0.0;
-            final tip = (t['tip_amount'] as num?)?.toDouble() ?? 0.0;
+            final tip =
+                ((t['tip_amount'] as num?)?.toDouble() ?? 0) +
+                ((t['allocated_tip_amount'] as num?)?.toDouble() ?? 0);
+            final remainingExcess =
+                ((t['unresolved_excess'] as num?)?.toDouble() ?? 0) -
+                ((t['allocated_tip_amount'] as num?)?.toDouble() ?? 0);
             final status = isSettled ? 'settled' : 'rejected';
             final statusColor = isSettled
                 ? AppColors.success
@@ -549,6 +671,24 @@ class _CashierDashboardState extends State<CashierDashboard> {
                           ),
                         ),
                       ),
+                    if (isSettled && remainingExcess > 0) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '${remainingExcess.toStringAsFixed(2)} ETB excess unresolved',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      if (t['financial_state'] == 'normal' &&
+                          widget.workspaceProfile?.tipsEnabled == true &&
+                          widget.workspaceProfile?.can('manage_tips') == true &&
+                          (t['allocated_tip_amount'] as num? ?? 0) == 0)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => _showTipAllocation(t),
+                            child: const Text('Allocate a tip'),
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -573,7 +713,13 @@ class _CashierDashboardState extends State<CashierDashboard> {
       backgroundColor: Colors.transparent,
       appBar: AppVariant.usesIPhoneUi
           ? IPhoneDashboardNavigationBar(
-              title: Text(context.tr('Cashier')),
+              title: Text(
+                widget.workspaceProfile == null
+                    ? context.tr('Cashier')
+                    : widget.readOnly
+                    ? 'Activity'
+                    : 'Payments',
+              ),
               onSignOut: _handleLogout,
               onHelp: _openHelpAndPrivacy,
               onRefresh: _refreshData,
@@ -599,7 +745,13 @@ class _CashierDashboardState extends State<CashierDashboard> {
                   onPressed: _refreshData,
                 ),
               ],
-              title: Text(context.tr('Cashier terminal')),
+              title: Text(
+                widget.workspaceProfile == null
+                    ? context.tr('Cashier terminal')
+                    : widget.readOnly
+                    ? 'Activity'
+                    : 'Payments',
+              ),
               titleTextStyle: AppTypography.appBarTitle(),
             ),
       body: AppBackdrop(
@@ -609,19 +761,22 @@ class _CashierDashboardState extends State<CashierDashboard> {
               listenable: ApiService.dashboardRefreshState,
               onRefresh: _refreshData,
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.sm,
-                AppSpacing.xl,
-                AppSpacing.md,
+            if (!widget.readOnly)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl,
+                  AppSpacing.sm,
+                  AppSpacing.xl,
+                  AppSpacing.md,
+                ),
+                child: SegmentedTabs(
+                  tabs: widget.workspaceProfile == null
+                      ? [context.tr('PENDING'), context.tr('SETTLED')]
+                      : const ['REVIEW', 'COMPLETE'],
+                  index: _tabIndex,
+                  onChanged: (i) => setState(() => _tabIndex = i),
+                ),
               ),
-              child: SegmentedTabs(
-                tabs: [context.tr('PENDING'), context.tr('SETTLED')],
-                index: _tabIndex,
-                onChanged: (i) => setState(() => _tabIndex = i),
-              ),
-            ),
             Expanded(
               // Fade-through keeps the segmented control and its pill feeling
               // connected to the body: the outgoing list leaves before the
@@ -629,7 +784,7 @@ class _CashierDashboardState extends State<CashierDashboard> {
               child: FadeThroughSwitcher(
                 child: KeyedSubtree(
                   key: ValueKey(_tabIndex),
-                  child: _tabIndex == 0
+                  child: _tabIndex == 0 && !widget.readOnly
                       ? _buildPendingQueue()
                       : _buildSettledLedger(),
                 ),

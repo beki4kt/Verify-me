@@ -12,7 +12,7 @@ const receipt = (change = {}) => ({ ok: true, data: {
     } });
 function setup() {
     const upstreamResponses = [];
-    const state = { calls: 0, commits: [], existing: false, upstreamStatus: 200, payload: receipt(), sessionValid: true, unavailable: false, badCommit: false, provider: "telebirr", account: "0911000099", outgoing: {}, onUpstream: null };
+    const state = { calls: 0, commits: [], existing: false, upstreamStatus: 200, payload: receipt(), sessionValid: true, unavailable: false, badCommit: false, provider: "telebirr", role: "waiter", account: "0911000099", outgoing: {}, onUpstream: null };
     const respond = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
     const transport = (async (input, init) => {
         const url = String(input);
@@ -33,7 +33,7 @@ function setup() {
         strict_1.default.equal(new Headers(init?.headers).get('apikey'), env.SUPABASE_SERVICE_ROLE_KEY);
         if (url.endsWith('/get_verification_context'))
             return state.sessionValid
-                ? respond({ business_id: 'business-one', staff_number: '01', role: 'waiter', provider: state.provider, receiving_account: state.account })
+                ? respond({ business_id: 'business-one', staff_number: '01', role: state.role, provider: state.provider, receiving_account: state.account })
                 : respond({ code: '28000' }, 401);
         if (url.endsWith('/find_committed_payment'))
             return respond(state.existing ? { ticket_id: 'saved-one' } : null);
@@ -42,7 +42,7 @@ function setup() {
             if (state.badCommit)
                 return respond({});
             state.existing = true;
-            return respond({ ticket_id: 'saved-one' });
+            return respond({ ticket_id: 'saved-one', tip_amount: 0, unresolved_excess: 50, completion_status: 'marked_complete' });
         }
         if (url.endsWith('/service_record_failed_verification'))
             return respond(null);
@@ -63,6 +63,9 @@ function setup() {
     const result = await send({ receiptImageBase64: 'cGhvdG8=' });
     strict_1.default.equal(result.status, 201);
     strict_1.default.equal(result.body.data.ticket_id, 'saved-one');
+    strict_1.default.equal(result.body.data.tipAmount, 0);
+    strict_1.default.equal(result.body.data.unresolvedExcess, 50);
+    strict_1.default.equal(result.body.data.completion_status, 'marked_complete');
     strict_1.default.deepEqual(state.outgoing, { provider: 'telebirr', reference: 'DHU5AM9UB3' });
     strict_1.default.equal(state.commits[0].p_verified_amount, 600);
     strict_1.default.equal(state.commits[0].p_table_number, 'Invoice: INV-1042');
@@ -91,6 +94,14 @@ function setup() {
     otherProvider.state.payload = receipt({ receiverAccount: '2519****0099' });
     strict_1.default.equal((await otherProvider.send()).body.code, 'DESTINATION_MISMATCH');
     strict_1.default.equal(otherProvider.state.commits.length, 0);
+});
+(0, node_test_1.default)('a capability-authorized cashier verifies without a restaurant reference', async () => {
+    const { state, send } = setup();
+    state.role = 'cashier';
+    const result = await send({ tableNumber: '' });
+    strict_1.default.equal(result.status, 201);
+    strict_1.default.equal(state.commits[0].p_table_number, 'Payment: DHU5AM9UB3');
+    strict_1.default.equal(state.calls, 1);
 });
 (0, node_test_1.default)('Edge status lookup never starts verification and invalid sessions cannot spend credits', async () => {
     const { state, send } = setup();

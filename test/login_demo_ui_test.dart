@@ -123,6 +123,7 @@ void main() {
         find.text('Demo checks are unavailable right now. Try again later.'),
         findsOneWidget,
       );
+      expect(find.text('Explore the guided preview'), findsOneWidget);
       client.close();
     },
   );

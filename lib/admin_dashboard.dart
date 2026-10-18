@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import 'api_service.dart';
+import 'workspace_settings_screen.dart';
+import 'workspace_home_screen.dart';
 import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_motion.dart';
@@ -299,6 +301,25 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void _refreshData() {
     ApiService.refreshDashboardData();
     setState(() => _ticketsStream = _serverTicketReport());
+  }
+
+  Future<void> _openWorkspaceSettings() async {
+    final profile = ApiService.currentWorkspaceProfile;
+    if (profile == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WorkspaceSettingsScreen(profile: profile),
+      ),
+    );
+    if (!mounted) return;
+    final updated = ApiService.currentWorkspaceProfile;
+    if (updated != null && !updated.isRestaurant) {
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => WorkspaceHomeScreen(profile: updated),
+        ),
+      );
+    }
   }
 
   Stream<List<Map<String, dynamic>>> _serverTicketReport() {
@@ -2429,6 +2450,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           onTap: () => _showBankConfigSheet(accounts),
                           index: 1,
                         ),
+                        if (ApiService.currentWorkspaceProfile != null)
+                          _adminToolCard(
+                            width: width,
+                            icon: AppIcons.settings,
+                            color: AppColors.primary,
+                            title: 'Payment workflow',
+                            detail: 'References, review and tips',
+                            onTap: _openWorkspaceSettings,
+                            index: 7,
+                          ),
                         _adminToolCard(
                           width: width,
                           icon: AppIcons.notifications,

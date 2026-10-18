@@ -12,6 +12,7 @@ import 'super_admin_login_screen.dart';
 import 'admin_dashboard.dart';
 import 'core/config/app_environment.dart';
 import 'trial_mode_screen.dart';
+import 'workspace_home_screen.dart';
 import 'core/config/app_variant.dart';
 import 'core/models/ethiopian_phone.dart';
 
@@ -106,7 +107,10 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
           return;
         }
 
-        if (role == 'super_admin') {
+        final profile = ApiService.currentWorkspaceProfile;
+        if (profile != null && !profile.isRestaurant) {
+          nextScreen = WorkspaceHomeScreen(profile: profile);
+        } else if (role == 'super_admin') {
           nextScreen = const SuperAdminLoginScreen();
         } else if (role == 'admin') {
           nextScreen = const AdminDashboard();

@@ -19,6 +19,7 @@ import 'pricing_screen.dart';
 import 'staff_login_screen.dart';
 import 'super_admin_login_screen.dart';
 import 'trial_mode_screen.dart';
+import 'guided_preview_screen.dart';
 
 class BusinessGatewayScreen extends StatefulWidget {
   const BusinessGatewayScreen({super.key});
@@ -101,6 +102,29 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
   void _openTrial() =>
       Navigator.of(context)
           .push(MaterialPageRoute(builder: (_) => const TrialModeScreen()));
+
+  void _openGuidedPreview() => Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => const GuidedPreviewScreen()));
+
+  void _showPersonalGate() => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Personal accounts are coming'),
+      content: const Text(
+        'Account recovery and deletion are being prepared. Explore the preview for now.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _openGuidedPreview();
+          },
+          child: const Text('Explore preview'),
+        ),
+      ],
+    ),
+  );
 
   void _openPricing() =>
       Navigator.of(context)
@@ -352,6 +376,11 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
+                context.tr('Connect to my team'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
                 context.tr('WORKSPACE CODE'),
                 style: AppTypography.microLabel(),
               ),
@@ -392,6 +421,16 @@ class _BusinessGatewayScreenState extends State<BusinessGatewayScreen> {
                     context.tr(_isLoading ? 'CONNECTING' : 'CONNECT WORKSPACE'),
                   ),
                 ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              OutlinedButton.icon(
+                onPressed: _openGuidedPreview,
+                icon: const Icon(AppIcons.playCircle),
+                label: Text(context.tr('Explore a preview')),
+              ),
+              TextButton(
+                onPressed: _showPersonalGate,
+                child: Text(context.tr('Use Chekmi on my own')),
               ),
             ],
           ),

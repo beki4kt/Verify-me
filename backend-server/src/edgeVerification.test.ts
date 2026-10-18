@@ -8,7 +8,7 @@ const receipt = (change = {}) => ({ ok: true, data: {
 } });
 function setup() {
   const upstreamResponses: Response[] = [];
-  const state = { calls: 0, commits: [] as Record<string, unknown>[], existing: false, upstreamStatus: 200, payload: receipt() as unknown, sessionValid: true, unavailable: false, badCommit: false, provider: "telebirr", account: "0911000099", outgoing: {} as Record<string, unknown>, onUpstream: null as (() => Promise<void>) | null };
+  const state = { calls: 0, commits: [] as Record<string, unknown>[], existing: false, upstreamStatus: 200, payload: receipt() as unknown, sessionValid: true, unavailable: false, badCommit: false, provider: "telebirr", role: "waiter", account: "0911000099", outgoing: {} as Record<string, unknown>, onUpstream: null as (() => Promise<void>) | null };
   const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const transport = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input); const body = JSON.parse(String(init?.body));
@@ -24,12 +24,12 @@ function setup() {
     assert.ok(url.startsWith(env.SUPABASE_URL));
     assert.equal(new Headers(init?.headers).get('apikey'), env.SUPABASE_SERVICE_ROLE_KEY);
     if (url.endsWith('/get_verification_context')) return state.sessionValid
-      ? respond({ business_id: 'business-one', staff_number: '01', role: 'waiter', provider: state.provider, receiving_account: state.account })
+      ? respond({ business_id: 'business-one', staff_number: '01', role: state.role, provider: state.provider, receiving_account: state.account })
       : respond({ code: '28000' }, 401);
     if (url.endsWith('/find_committed_payment')) return respond(state.existing ? { ticket_id: 'saved-one' } : null);
     if (url.endsWith('/commit_verified_payment')) {
       state.commits.push(body); if (state.badCommit) return respond({});
-      state.existing = true; return respond({ ticket_id: 'saved-one' });
+      state.existing = true; return respond({ ticket_id: 'saved-one', tip_amount: 0, unresolved_excess: 50, completion_status: 'marked_complete' });
     }
     if (url.endsWith('/service_record_failed_verification')) return respond(null);
     throw Error('Unexpected endpoint '+url);
@@ -49,6 +49,9 @@ test('Edge function confirms committed payments, uses private ID lookup and reco
   assert.equal(state.calls, 0);
   const result = await send({ receiptImageBase64: 'cGhvdG8=' });
   assert.equal(result.status, 201); assert.equal(result.body.data.ticket_id, 'saved-one');
+  assert.equal(result.body.data.tipAmount, 0);
+  assert.equal(result.body.data.unresolvedExcess, 50);
+  assert.equal(result.body.data.completion_status, 'marked_complete');
   assert.deepEqual(state.outgoing, { provider: 'telebirr', reference: 'DHU5AM9UB3' });
   assert.equal(state.commits[0].p_verified_amount, 600);
   assert.equal(state.commits[0].p_table_number, 'Invoice: INV-1042');
@@ -74,6 +77,15 @@ test('Edge accepts Telebirr middle masks, preserves masked evidence and rejects 
   otherProvider.state.payload = receipt({receiverAccount:'2519****0099'});
   assert.equal((await otherProvider.send()).body.code, 'DESTINATION_MISMATCH');
   assert.equal(otherProvider.state.commits.length, 0);
+});
+
+test('a capability-authorized cashier verifies without a restaurant reference', async () => {
+  const {state,send}=setup();
+  state.role='cashier';
+  const result=await send({tableNumber:''});
+  assert.equal(result.status,201);
+  assert.equal(state.commits[0].p_table_number,'Payment: DHU5AM9UB3');
+  assert.equal(state.calls,1);
 });
 
 test('Edge status lookup never starts verification and invalid sessions cannot spend credits', async () => {

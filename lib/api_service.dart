@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/app_environment.dart';
 import 'core/config/app_variant.dart';
 import 'core/models/verification_result.dart';
+import 'core/models/workspace_profile.dart';
 import 'core/services/payment_verification_client.dart';
 import 'core/services/dashboard_polling.dart';
 import 'core/session/session_controller.dart';
@@ -38,6 +39,7 @@ class ApiService {
   static String? _staffSessionToken;
   static int? currentBusinessMaxStaff;
   static bool? currentBusinessHasCashier;
+  static WorkspaceProfile? currentWorkspaceProfile;
   static final Map<String, Stream<List<Map<String, dynamic>>>>
   _ticketStreamCache = {};
   static Stream<List<Map<String, dynamic>>>? _withdrawalRequestsStream;
@@ -185,7 +187,103 @@ class ApiService {
       maxStaff: currentBusinessMaxStaff!,
       hasCashier: currentBusinessHasCashier!,
     );
+    // An older deployment has no profile RPC. Keep its restaurant navigation
+    // until the additive migration is available, without granting permissions
+    // from a client-side fallback.
+    try {
+      currentWorkspaceProfile = await getWorkspaceProfile();
+    } on PostgrestException catch (error) {
+      if (error.code != 'PGRST202') rethrow;
+      currentWorkspaceProfile = null;
+    }
     return currentUserRole;
+  }
+
+  static Future<WorkspaceProfile> getWorkspaceProfile() async {
+    final response = await _supabase.rpc(
+      'get_workspace_profile',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return WorkspaceProfile.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+  }
+
+  static Future<Map<String, dynamic>> getCurrentBusiness() async {
+    final response = await _supabase.rpc(
+      'get_current_business',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<List<Map<String, dynamic>>> listWorkspaceMembers() async {
+    final response = await _supabase.rpc(
+      'list_workspace_members',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+  }
+
+  static Future<void> setMemberCapability({
+    required String staffNumber,
+    required String capability,
+    required bool allowed,
+  }) async {
+    await _supabase.rpc(
+      'set_member_capability',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_staff_number': staffNumber,
+        'p_capability': capability,
+        'p_allowed': allowed,
+      },
+    );
+  }
+
+  static Future<Map<String, dynamic>> allocatePaymentTip({
+    required String ticketId,
+    required String recipientStaffNumber,
+    required double amount,
+    required String reason,
+  }) async {
+    final response = await _supabase.rpc(
+      'allocate_payment_tip',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_ticket_id': ticketId,
+        'p_recipient_staff_number': recipientStaffNumber,
+        'p_amount': amount,
+        'p_reason': reason,
+      },
+    );
+    refreshDashboardData();
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<WorkspaceProfile> updateWorkspaceProfile({
+    required String useCase,
+    required String defaultReferenceKind,
+    required String reviewPolicy,
+    required bool tipsEnabled,
+    required String overpaymentPolicy,
+  }) async {
+    final response = await _supabase.rpc(
+      'update_workspace_profile',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_use_case': useCase,
+        'p_default_reference_kind': defaultReferenceKind,
+        'p_review_policy': reviewPolicy,
+        'p_tips_enabled': tipsEnabled,
+        'p_overpayment_policy': overpaymentPolicy,
+      },
+    );
+    return currentWorkspaceProfile = WorkspaceProfile.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   static Future<void> logoutStaff() async {
@@ -203,6 +301,7 @@ class ApiService {
     currentUserRole = null;
     currentBusinessMaxStaff = null;
     currentBusinessHasCashier = null;
+    currentWorkspaceProfile = null;
     _session?.logoutStaff();
   }
 
@@ -214,6 +313,7 @@ class ApiService {
     currentUserRole = null;
     currentBusinessMaxStaff = null;
     currentBusinessHasCashier = null;
+    currentWorkspaceProfile = null;
     _session?.logoutStaff();
     _session?.unbind();
   }

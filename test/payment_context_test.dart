@@ -7,7 +7,12 @@ void main() {
     () {
       for (final kind in PaymentContextKind.values) {
         final stored = PaymentContext.encode(kind, '  ABC-1042  ', 'TX123');
-        expect(stored, '${kind.label}: ABC-1042');
+        expect(
+          stored,
+          kind == PaymentContextKind.none
+              ? 'Payment: TX123'
+              : '${kind.label}: ABC-1042',
+        );
         expect(PaymentContext.display(stored), stored);
       }
     },
@@ -30,6 +35,12 @@ void main() {
     expect(PaymentContext.display('08'), 'Table: 08');
     expect(PaymentContext.display('Patio A'), 'Table: Patio A');
     expect(PaymentContext.display(null), 'No business reference');
+  });
+
+  test('booking and note references stay typed while no context is valid', () {
+    expect(PaymentContext.display('Booking: BK-25'), 'Booking: BK-25');
+    expect(PaymentContext.display('Note: Deposit'), 'Note: Deposit');
+    expect(PaymentContextKind.fromStorage('none'), PaymentContextKind.none);
   });
 
   test(
