@@ -184,6 +184,60 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
     }
   }
 
+  Future<void> _resetPassword(Map<String, dynamic> member) async {
+    final controller = TextEditingController();
+    final changed = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset member password'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'New password',
+            helperText: 'At least 8 characters',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Reset password'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (changed == null || !mounted) return;
+    if (changed.length < 8) {
+      setState(() => _error = 'Password must be at least 8 characters.');
+      return;
+    }
+    try {
+      await ApiService.updateStaffProfile(
+        member['staff_number'].toString(),
+        member['name'].toString(),
+        member['phone_number'].toString(),
+        changed,
+        member['role'].toString(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset. Existing sessions were signed out.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -239,6 +293,15 @@ class _WorkspaceMembersScreenState extends State<WorkspaceMembersScreen> {
                       '${PaymentContext.roleLabel(member['role'])} · ${member['staff_number']}',
                     ),
                     children: [
+                      if (member['role'] != 'admin' &&
+                          member['is_active'] == true &&
+                          member['staff_number'] !=
+                              ApiService.currentStaffNumber)
+                        ListTile(
+                          leading: const Icon(Icons.key_outlined),
+                          title: const Text('Reset password'),
+                          onTap: () => _resetPassword(member),
+                        ),
                       for (final permission in _permissions.entries)
                         SwitchListTile.adaptive(
                           title: Text(permission.value),

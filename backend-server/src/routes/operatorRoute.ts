@@ -196,6 +196,7 @@ operatorRouter.get("/operator/overview", requireOperator, async (_req, res) => {
       {},
     );
     let supportCases = snapshot.support_cases;
+    let registrations: unknown[] = [];
     try {
       supportCases = await callServiceRpc<unknown[]>(
         "service_operator_list_support_cases",
@@ -204,9 +205,17 @@ operatorRouter.get("/operator/overview", requireOperator, async (_req, res) => {
     } catch (error) {
       if (!(error instanceof SupabaseRpcError && error.code === "PGRST202")) throw error;
     }
+    try {
+      registrations = await callServiceRpc<unknown[]>(
+        "service_operator_registration_requests",
+        {},
+      );
+    } catch (error) {
+      if (!(error instanceof SupabaseRpcError && error.code === "PGRST202")) throw error;
+    }
     res.json({
       success: true,
-      snapshot: { ...snapshot, support_cases: supportCases },
+      snapshot: { ...snapshot, support_cases: supportCases, registrations },
       system,
     });
   } catch (error) {

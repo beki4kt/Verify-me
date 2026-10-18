@@ -11,6 +11,7 @@ import 'api_service.dart';
 import 'workspace_settings_screen.dart';
 import 'workspace_home_screen.dart';
 import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
+import 'launch_experience.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_motion.dart';
 import 'core/theme/app_spacing.dart';
@@ -2588,10 +2589,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Future<void> _signOut() async {
-    await ApiService.logoutStaff();
+    final owner = ApiService.hasOwnerAuth;
+    if (owner) {
+      await ApiService.signOutOwner();
+    } else {
+      await ApiService.logoutStaff();
+    }
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
-      CupertinoPageRoute<void>(builder: (_) => const StaffLoginScreen()),
+      CupertinoPageRoute<void>(
+        builder: (_) =>
+            owner ? const WelcomeScreen() : const StaffLoginScreen(),
+      ),
     );
   }
 

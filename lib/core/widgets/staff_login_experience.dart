@@ -427,6 +427,13 @@ class _StaffLoginExperienceState extends State<StaffLoginExperience> {
                           ),
                         ),
                   ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Forgot your password? Ask your workspace owner to reset it.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   if (MediaQuery.of(context).disableAnimations)
                     _errorContent()
                   else

@@ -91,6 +91,7 @@ class SyncManager {
 // --- PHASE 1: BUSINESS LAYER DEVICE LOCKING ---
 class DeviceStorage {
   static const String _boxName = 'device_settings';
+  static const String _onboardingKey = 'owner_onboarding_draft';
   static Future<String>? _demoTokenFuture;
 
   static Future<String> demoInstallationToken() =>
@@ -111,6 +112,24 @@ class DeviceStorage {
 
   static Future<void> init() async {
     await Hive.openBox(_boxName);
+  }
+
+  static Map<String, dynamic>? getOnboardingDraft() {
+    if (!Hive.isBoxOpen(_boxName)) return null;
+    final value = Hive.box(_boxName).get(_onboardingKey);
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+
+  static Future<void> saveOnboardingDraft(Map<String, dynamic> draft) async {
+    if (!Hive.isBoxOpen(_boxName)) return;
+    // Credentials are never persisted in the onboarding draft.
+    await Hive.box(_boxName).put(_onboardingKey, draft);
+  }
+
+  static Future<void> clearOnboardingDraft() async {
+    if (Hive.isBoxOpen(_boxName)) {
+      await Hive.box(_boxName).delete(_onboardingKey);
+    }
   }
 
   static Future<void> lockDeviceToBusiness(

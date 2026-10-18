@@ -39,6 +39,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   String _restaurantFilter = 'all';
 
   List<Map<String, dynamic>> get _businesses => _maps('businesses');
+  List<Map<String, dynamic>> get _registrations => _maps('registrations');
   List<Map<String, dynamic>> get _support => _maps('support_cases');
   List<Map<String, dynamic>> get _deletions => _maps('deletion_requests');
   List<Map<String, dynamic>> get _invoices => _maps('invoices');
@@ -511,6 +512,9 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   Widget _businessCard(Map<String, dynamic> business) {
     final active = business['is_active'] == true;
     final status = '${business['subscription_status'] ?? 'unknown'}';
+    final registration = _registrations
+        .where((entry) => entry['business_id'] == business['business_id'])
+        .firstOrNull;
     final color = active && !['overdue', 'grace_period'].contains(status)
         ? AppColors.success
         : AppColors.warning;
@@ -574,6 +578,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
+            if (registration != null) ...[
+              Text(
+                'Requested by ${registration['owner_email']} · ${registration['billing_period']} billing. Review payment or approval before setting the plan active.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
             Wrap(
               spacing: 24,
               runSpacing: 10,
@@ -615,9 +626,17 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                   label: const Text('Revoke sessions'),
                 ),
                 FilledButton.tonalIcon(
-                  onPressed: _acting ? null : () => _confirmStatus(business),
+                  onPressed: _acting || status == 'pending_activation'
+                      ? null
+                      : () => _confirmStatus(business),
                   icon: Icon(active ? AppIcons.pause : AppIcons.play),
-                  label: Text(active ? 'Suspend' : 'Activate'),
+                  label: Text(
+                    status == 'pending_activation'
+                        ? 'Review plan first'
+                        : active
+                        ? 'Suspend'
+                        : 'Activate',
+                  ),
                 ),
               ],
             ),
@@ -1208,6 +1227,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                     labelText: 'Subscription status',
                   ),
                   items: const [
+                    DropdownMenuItem(
+                      value: 'pending_activation',
+                      enabled: false,
+                      child: Text('Pending activation'),
+                    ),
                     DropdownMenuItem(value: 'trial', child: Text('Trial')),
                     DropdownMenuItem(value: 'active', child: Text('Active')),
                     DropdownMenuItem(value: 'overdue', child: Text('Overdue')),

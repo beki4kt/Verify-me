@@ -9,6 +9,7 @@ import 'core/models/workspace_profile.dart';
 import 'core/theme/app_colors.dart';
 import 'core/widgets/app_shell.dart';
 import 'staff_login_screen.dart';
+import 'launch_experience.dart';
 import 'waiter_dashboard.dart';
 import 'workspace_settings_screen.dart';
 import 'workspace_members_screen.dart';
@@ -66,11 +67,17 @@ class _WorkspaceHomeScreenState extends State<WorkspaceHomeScreen> {
             tooltip: 'Sign out',
             icon: const Icon(CupertinoIcons.square_arrow_right),
             onPressed: () async {
-              await ApiService.logoutStaff();
+              final owner = ApiService.hasOwnerAuth;
+              if (owner) {
+                await ApiService.signOutOwner();
+              } else {
+                await ApiService.logoutStaff();
+              }
               if (!context.mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
                 CupertinoPageRoute<void>(
-                  builder: (_) => const StaffLoginScreen(),
+                  builder: (_) =>
+                      owner ? const WelcomeScreen() : const StaffLoginScreen(),
                 ),
                 (_) => false,
               );

@@ -20,6 +20,85 @@ export 'core/models/verification_result.dart';
 class ApiService {
   static String get baseUrl => AppEnvironment.apiBaseUrl;
 
+  static SupabaseClient get _ownerClient => Supabase.instance.client;
+  static bool get hasOwnerAuth => _ownerClient.auth.currentSession != null;
+
+  static Future<bool> signUpOwner(String email, String password) async {
+    final response = await _ownerClient.auth.signUp(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+    return response.session != null;
+  }
+
+  static Future<void> signInOwner(String email, String password) async {
+    await _ownerClient.auth.signInWithPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+  }
+
+  static Future<void> sendOwnerRecovery(String email) =>
+      _ownerClient.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        redirectTo: 'chekmi://auth/recovery',
+      );
+
+  static Future<void> updateOwnerPassword(String password) async {
+    await _ownerClient.auth.updateUser(UserAttributes(password: password));
+  }
+
+  static Future<void> signOutOwner() async {
+    await logoutStaff();
+    await _ownerClient.auth.signOut();
+  }
+
+  static Future<Map<String, dynamic>?> getOwnerRegistration() async {
+    if (!hasOwnerAuth) return null;
+    final response = await _ownerClient.rpc('my_owner_registration');
+    return response == null ? null : Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<Map<String, dynamic>> requestOwnerWorkspace({
+    required String businessName,
+    required String ownerName,
+    required String ownerPhone,
+    required String useCase,
+    required String referenceKind,
+    required String reviewPolicy,
+    required bool team,
+    required String plan,
+    required String billingPeriod,
+    required String provider,
+    required String receivingAccount,
+  }) async {
+    final response = await _ownerClient.rpc(
+      'request_owner_workspace',
+      params: {
+        'p_name': businessName,
+        'p_owner_name': ownerName,
+        'p_owner_phone': ownerPhone,
+        'p_use_case': useCase,
+        'p_reference_kind': referenceKind,
+        'p_review_policy': reviewPolicy,
+        'p_team': team,
+        'p_plan': plan,
+        'p_billing_period': billingPeriod,
+        'p_provider': provider,
+        'p_receiving_account': receivingAccount,
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<bool> startOwnerWorkspaceSession() async {
+    if (!hasOwnerAuth) return false;
+    final registration = await getOwnerRegistration();
+    if (registration == null || registration['is_active'] != true) return false;
+    final response = await _ownerClient.rpc('start_owner_workspace_session');
+    return _acceptStaffSession(response);
+  }
+
   // CHEKMI uses its own short-lived backend sessions. A bare public client is
   // sufficient for the remaining tenant RPCs and avoids an unused browser auth
   // restoration step delaying app startup.
@@ -166,6 +245,11 @@ class ApiService {
     );
     if (response == null) return null;
 
+    if (!await _acceptStaffSession(response)) return null;
+    return currentUserRole;
+  }
+
+  static Future<bool> _acceptStaffSession(dynamic response) async {
     final staff = Map<String, dynamic>.from(response as Map);
     currentBusinessId = staff['business_id']?.toString();
     currentStaffNumber = staff['staff_number']?.toString();
@@ -178,7 +262,7 @@ class ApiService {
         currentStaffNumber == null ||
         currentUserRole == null ||
         _staffSessionToken == null) {
-      return null;
+      return false;
     }
     _session?.startStaffSession(
       businessId: currentBusinessId!,
@@ -196,7 +280,7 @@ class ApiService {
       if (error.code != 'PGRST202') rethrow;
       currentWorkspaceProfile = null;
     }
-    return currentUserRole;
+    return true;
   }
 
   static Future<WorkspaceProfile> getWorkspaceProfile() async {

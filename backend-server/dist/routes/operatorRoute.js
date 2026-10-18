@@ -179,6 +179,7 @@ exports.operatorRouter.get("/operator/overview", requireOperator, async (_req, r
     try {
         const snapshot = await (0, supabaseRpc_1.callServiceRpc)("service_operator_snapshot", {});
         let supportCases = snapshot.support_cases;
+        let registrations = [];
         try {
             supportCases = await (0, supabaseRpc_1.callServiceRpc)("service_operator_list_support_cases", {});
         }
@@ -186,9 +187,16 @@ exports.operatorRouter.get("/operator/overview", requireOperator, async (_req, r
             if (!(error instanceof supabaseRpc_1.SupabaseRpcError && error.code === "PGRST202"))
                 throw error;
         }
+        try {
+            registrations = await (0, supabaseRpc_1.callServiceRpc)("service_operator_registration_requests", {});
+        }
+        catch (error) {
+            if (!(error instanceof supabaseRpc_1.SupabaseRpcError && error.code === "PGRST202"))
+                throw error;
+        }
         res.json({
             success: true,
-            snapshot: { ...snapshot, support_cases: supportCases },
+            snapshot: { ...snapshot, support_cases: supportCases, registrations },
             system,
         });
     }

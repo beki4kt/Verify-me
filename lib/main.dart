@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'business_gateway_screen.dart';
 import 'api_service.dart';
@@ -16,6 +17,10 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'localization_service.dart';
 import 'offline_storage.dart';
+import 'launch_experience.dart';
+import 'business_registration_screen.dart';
+import 'admin_dashboard.dart';
+import 'workspace_home_screen.dart';
 
 void main() {
   runZonedGuarded(() {
@@ -53,6 +58,10 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap>
     with WidgetsBindingObserver {
   late Future<void> _startup;
   late final SessionController _session;
+  Widget? _initialDestination;
+  StreamSubscription<AuthState>? _ownerAuthEvents;
+  bool _needsOwnerRecovery = false;
+  bool _recoveryShown = false;
 
   @override
   void initState() {
@@ -71,11 +80,41 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _ownerAuthEvents?.cancel();
     super.dispose();
+  }
+
+  void _showOwnerRecovery() {
+    final navigator = chekmiNavigatorKey.currentState;
+    if (navigator == null || _recoveryShown) return;
+    _recoveryShown = true;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const OwnerPasswordRecoveryScreen(),
+      ),
+      (_) => false,
+    );
   }
 
   Future<void> _initialize() async {
     AppEnvironment.validateOrThrow();
+    await Supabase.initialize(
+      url: AppEnvironment.supabaseUrl,
+      publishableKey: AppEnvironment.supabasePublishableKey,
+    );
+    _ownerAuthEvents ??= Supabase.instance.client.auth.onAuthStateChange.listen(
+      (state) {
+        if (state.event != AuthChangeEvent.passwordRecovery) return;
+        _needsOwnerRecovery = true;
+        if (chekmiNavigatorKey.currentState == null) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _showOwnerRecovery(),
+          );
+        } else {
+          _showOwnerRecovery();
+        }
+      },
+    );
     await SyncManager.initialize();
     SyncManager.instance.startBackgroundSync();
 
@@ -88,6 +127,33 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap>
       ApiService.currentBusinessId = lockedBusiness['id'];
     }
     ApiService.configureSession(_session);
+    if (_needsOwnerRecovery) {
+      _initialDestination = const OwnerPasswordRecoveryScreen();
+      _recoveryShown = true;
+    } else if (ApiService.hasOwnerAuth) {
+      final registration = await ApiService.getOwnerRegistration();
+      if (registration != null) {
+        if (registration['is_active'] == true &&
+            await ApiService.startOwnerWorkspaceSession()) {
+          final profile = ApiService.currentWorkspaceProfile;
+          _initialDestination = profile != null && !profile.isRestaurant
+              ? WorkspaceHomeScreen(profile: profile)
+              : const AdminDashboard();
+        } else {
+          _initialDestination = OwnerActivationScreen(
+            registration: registration,
+          );
+        }
+      } else {
+        _initialDestination = const BusinessRegistrationScreen();
+      }
+    } else if (DeviceStorage.getOnboardingDraft() != null) {
+      _initialDestination = const BusinessRegistrationScreen();
+    } else {
+      _initialDestination = lockedBusiness['id'] != null
+          ? const StaffLoginScreen()
+          : const WelcomeScreen();
+    }
   }
 
   @override
@@ -159,14 +225,15 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap>
           ChangeNotifierProvider(create: (_) => ThemeController()),
           ChangeNotifierProvider(create: (_) => LocalizationService()),
         ],
-        child: const VerifyMeApp(),
+        child: VerifyMeApp(initialDestination: _initialDestination),
       );
     },
   );
 }
 
 class VerifyMeApp extends StatelessWidget {
-  const VerifyMeApp({super.key});
+  const VerifyMeApp({super.key, this.initialDestination});
+  final Widget? initialDestination;
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +247,7 @@ class VerifyMeApp extends StatelessWidget {
         : const BusinessGatewayScreen();
 
     return MaterialApp(
+      navigatorKey: chekmiNavigatorKey,
       title: AppVariant.isTest2 ? 'CHEKMI Test 2' : 'CHEKMI',
       debugShowCheckedModeBanner: false,
       locale: localization.locale,
@@ -201,7 +269,9 @@ class VerifyMeApp extends StatelessWidget {
               child: child ?? const SizedBox.shrink(),
             )
           : child ?? const SizedBox.shrink(),
-      home: initial,
+      home: initialDestination == null
+          ? initial
+          : LaunchSplashScreen(destination: initialDestination!),
     );
   }
 }
