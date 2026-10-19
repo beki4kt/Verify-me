@@ -21,3 +21,46 @@
   .welcome-actions .button+.button{margin-top:8px}
   .welcome-actions .centered-link{margin-top:0}
 }
+
+/* Approval pass: tighter controls, five presets, and the phone/code forms. */
+.button{height:50px;border-radius:13px;font-size:14px;font-weight:680;box-shadow:none}
+.button-primary{box-shadow:0 8px 20px #195fc02d}
+.button-primary:hover:not(:disabled){box-shadow:0 10px 22px #2775e846}
+.button+.button{margin-top:10px}
+.button-leading{position:absolute;left:18px;width:19px;height:19px;display:grid;place-items:center}
+.button-leading svg,.preview-action svg,.code-icon svg{width:19px;height:19px}
+.button.has-icon{position:relative;padding-inline:46px}
+.preview-action{height:40px;min-width:176px;padding:0 15px;display:inline-flex;align-items:center;justify-content:center;gap:10px;border:1px solid #344663;border-radius:11px;background:#151e35;color:#bacbe7;font-size:13px;font-weight:670;transition:background .22s var(--ease),border-color .22s var(--ease),transform .22s var(--ease)}
+.preview-action:hover{background:#1c2945;border-color:#5a77a6;transform:translateY(-1px)}
+.preview-action:focus-visible,.country-select:focus-visible{outline:2px solid #87bcff;outline-offset:3px}
+.welcome-actions{padding-bottom:16px}
+.welcome-actions .centered-link{margin-top:11px}
+.choice-grid{margin-top:24px;gap:10px}
+.choice{min-height:111px;padding:15px;border-radius:16px}
+.choice-label{font-size:14px;line-height:1.22;font-weight:680;max-width:130px}
+.choice-icon{width:25px;height:25px}
+.choice-icon svg{width:25px;height:25px}
+.choice-check{font-size:15px;right:13px;top:12px}
+.choice-wide{grid-column:1/-1;min-height:70px;flex-direction:row;align-items:center;justify-content:flex-start;gap:17px}
+.choice-wide .choice-label{max-width:none;font-size:15px}
+.choice-wide .choice-check{top:26px;right:17px}
+.screen-footer{padding-top:15px}
+.field-input,.field-select{height:49px;border-radius:13px}
+.code-field{margin-top:32px}
+.code-wrap{display:block;position:relative}
+.code-wrap .field-input{padding-left:49px;letter-spacing:.035em;text-transform:uppercase}
+.code-icon{position:absolute;z-index:1;top:15px;left:16px;color:#a9c5e9;display:flex}
+.phone-input{display:flex;gap:8px}
+.phone-input .field-input{min-width:0;flex:1}
+.country-select{width:111px;flex:none;height:49px;border-radius:13px;border:1px solid #3b496a;background:#18213a;color:var(--text);padding:0 8px;font-size:13px;font-weight:670}
+.event-actions{display:flex;gap:9px;margin-top:18px}
+.event-actions .button{flex:1;min-width:0;font-size:13px}
+.ledger-mini{margin-top:23px;border:1px solid #34415e;border-radius:16px;background:#151d34;padding:14px 17px}
+.ledger-header,.ledger-row{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.ledger-header{padding-bottom:11px;border-bottom:1px solid #34415e;font-size:13px}
+.ledger-header span{font-size:11px;color:var(--muted)}
+.ledger-row{padding-top:12px;font-size:12px;color:var(--muted)}
+.ledger-row strong{font-size:13px;color:var(--text);font-variant-numeric:tabular-nums}
+@media(max-width:350px){.choice{min-height:102px;padding:13px}.choice-wide{min-height:63px}.choice-label{font-size:13px}.choice-wide .choice-label{font-size:14px}.choice-grid{margin-top:18px}.screen-body{padding-top:14px}}
+@media(max-height:700px){.choice{min-height:99px}.choice-wide{min-height:60px}.choice-grid{margin-top:15px}.button{height:48px}}
+@media (min-width:700px) and (max-height:500px){.welcome-actions .button{height:46px}.welcome-actions .centered-link{margin-top:5px}}
