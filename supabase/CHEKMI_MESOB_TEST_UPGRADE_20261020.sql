@@ -642,8 +642,9 @@ begin
   if not found then
     raise exception 'Staging seed is missing MESOB-DEMO';
   end if;
-  if not demo_business.is_active or not demo_business.has_cashier_module then
-    raise exception 'MESOB-DEMO is not active with the cashier module enabled';
+  if not public.subscription_has_access(demo_business) or
+     not demo_business.has_cashier_module then
+    raise exception 'MESOB-DEMO subscription cannot access the cashier module';
   end if;
 
   select count(*) into active_demo_staff
