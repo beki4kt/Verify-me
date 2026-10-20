@@ -111,22 +111,58 @@ with sync_playwright() as playwright:
         ) == "1"
         page.get_by_role("button", name="Shop & Retail").click()
         assert page.get_by_role("button", name="Shop & Retail").get_attribute("aria-pressed") == "true"
+        page.evaluate("window.screenBeforeSelection = document.querySelector('.screen')")
+        page.get_by_role("button", name="Services & Professionals").click()
+        assert page.evaluate("document.querySelector('.screen') === window.screenBeforeSelection")
+        page.get_by_role("button", name="Shop & Retail").click()
         if width == 390:
             shot(page, "business-type.png")
         if width == 320:
             shot(page, "business-type-320.png")
         page.get_by_role("button", name="Continue").click()
-        page.get_by_role("button", name="My Team").click()
-        page.get_by_role("button", name="Review", exact=True).click()
-        page.get_by_label("Go back").click()
-        assert page.get_by_role("button", name="Shop & Retail").get_attribute("aria-pressed") == "true"
+        assert page.get_by_role("heading", name="What kind of shop?").is_visible()
+        assert page.locator(".subtype-choice").count() == 6
+        assert min(button.bounding_box()["height"] for button in page.locator(".subtype-choice").all()) >= 44
+        assert not page.get_by_role("button", name="Restaurant", exact=True).count()
+        page.evaluate("window.screenBeforeSelection = document.querySelector('.screen')")
+        page.get_by_role("button", name="Online Store").click()
+        assert page.evaluate("document.querySelector('.screen') === window.screenBeforeSelection")
+        page.get_by_role("button", name="Grocery / Supermarket").click()
+        if width == 390:
+            shot(page, "shop-subtypes.png")
+        if width == 320:
+            shot(page, "shop-subtypes-320.png")
         page.get_by_role("button", name="Continue").click()
-        assert page.get_by_role("button", name="My Team").get_attribute("aria-pressed") == "true"
+        assert page.get_by_role("heading", name="Where do you receive payments?").is_visible()
+        assert page.get_by_role("button", name="Single Counter").get_attribute("aria-pressed") == "true"
+        assert min(button.bounding_box()["height"] for button in page.locator(".workflow-choice").all()) >= 44
+        page.evaluate("window.screenBeforeSelection = document.querySelector('.screen')")
+        page.get_by_role("button", name="Multiple Counters").click()
+        assert page.evaluate("document.querySelector('.screen') === window.screenBeforeSelection")
+        assert page.get_by_text("Counter labels and staff attribution").is_visible()
+        assert page.locator("#setup-mode").inner_text() == "My Team"
+        page.get_by_role("button", name="Adjust setup").click()
+        page.get_by_role("button", name="Review", exact=True).click()
+        assert page.evaluate("document.querySelector('.screen') === window.screenBeforeSelection")
+        assert page.get_by_text("authorized member completes payments").is_visible()
+        page.get_by_label("Track payments by").select_option("customer")
+        assert page.locator("#setup-reference").inner_text() == "Customer"
+        page.get_by_label("Go back").click()
+        assert page.get_by_role("button", name="Grocery / Supermarket").get_attribute("aria-pressed") == "true"
+        page.get_by_role("button", name="Continue").click()
+        assert page.get_by_role("button", name="Multiple Counters").get_attribute("aria-pressed") == "true"
+        assert page.locator("#setup-reference").inner_text() == "Customer"
         if width == 390:
             shot(page, "workflow.png")
+        if width == 320:
+            shot(page, "workflow-320.png")
         page.get_by_role("button", name="Continue").click()
         assert page.get_by_role("button", name="Basic", exact=False).is_disabled()
         assert page.get_by_text("Request quote").is_visible()
+        page.evaluate("window.screenBeforeSelection = document.querySelector('.screen')")
+        page.get_by_role("button", name="Quarterly").click()
+        assert page.evaluate("document.querySelector('.screen') === window.screenBeforeSelection")
+        assert page.get_by_text("ETB 3,000 / 3 mo").is_visible()
         if width == 390:
             shot(page, "plans.png")
         page.get_by_role("button", name="Continue").click()
@@ -157,7 +193,21 @@ with sync_playwright() as playwright:
         assert page.get_by_role("button", name="Events & Venues").get_attribute("aria-pressed") == "true"
         if width == 390:
             shot(page, "events-selected.png")
-        page.get_by_role("button", name="Explore Events preview").click()
+        page.get_by_role("button", name="Continue").click()
+        assert page.get_by_role("heading", name="What type of event?").is_visible()
+        assert page.locator(".subtype-choice").count() == 5
+        page.get_by_role("button", name="Concert / Festival").click()
+        if width == 390:
+            shot(page, "events-subtypes.png")
+        page.get_by_role("button", name="Continue").click()
+        assert page.get_by_role("heading", name="Where do you collect payments?").is_visible()
+        page.get_by_role("button", name="Multiple Stations").click()
+        assert page.locator("#setup-reference").inner_text() == "Station"
+        assert page.locator("#setup-mode").inner_text() == "My Team"
+        assert page.locator("#setup-review").inner_text() == "Review"
+        if width == 390:
+            shot(page, "events-workflow.png")
+        page.get_by_role("button", name="See event workspace").click()
         assert page.get_by_role("heading", name="Event payments").is_visible()
         page.get_by_label("Category").select_option("Merchandise")
         page.get_by_label("Station").select_option("Hall kiosk")
@@ -177,14 +227,92 @@ with sync_playwright() as playwright:
         fits(page, f"events {width}")
         page.get_by_label("Go back").click()
         page.get_by_role("button", name="Continue").click()
-        assert page.get_by_role("button", name="Event", exact=True).get_attribute("aria-pressed") == "true"
+        assert page.get_by_role("button", name="Basic", exact=False).is_disabled()
+        page.get_by_label("Go back").click()
+        page.get_by_label("Go back").click()
         page.get_by_label("Go back").click()
         page.get_by_label("Go back").click()
         page.get_by_role("button", name="Explore Preview").click()
-        assert page.get_by_text("no bank lookup", exact=False).is_visible()
+        assert page.get_by_role("heading", name="Try a receipt").is_visible()
+        page.get_by_role("button", name="Check sample receipt").click()
+        assert page.get_by_text("Enter a receipt reference and a valid amount.").is_visible()
+        page.get_by_role("button", name="Verified", exact=True).click()
+        assert page.get_by_label("Receipt reference").input_value() == "CK-DEMO-PAID"
+        page.get_by_role("button", name="Check sample receipt").click()
+        page.get_by_text("Sample: payment verified").wait_for()
+        page.get_by_role("button", name="Duplicate", exact=True).click()
+        page.get_by_role("button", name="Check sample receipt").click()
+        page.get_by_text("Sample: duplicate payment").wait_for()
+        page.get_by_role("button", name="Pending", exact=True).click()
+        page.get_by_role("button", name="Check sample receipt").click()
+        page.get_by_text("Sample: verification pending").wait_for()
+        page.get_by_label("Receipt reference").fill("UNKNOWN-REF")
+        page.get_by_role("button", name="Check sample receipt").click()
+        page.get_by_text("Sample: payment not verified").wait_for()
+        if width == 390:
+            shot(page, "interactive-preview.png")
+            page.get_by_role("button", name="Verified", exact=True).click()
+            page.get_by_role("button", name="Check sample receipt").click()
+            page.get_by_text("Sample: payment verified").wait_for()
+            shot(page, "interactive-preview-verified.png")
+        fits(page, f"interactive preview {width}")
+        assert not remote_requests, remote_requests
         assert not errors, errors
         page.close()
         print(f"PASS {width}x{height}: all five journeys, local-only auth, no overflow or script errors")
+
+    # Every subtype has stable IDs, valid choices, and an applicable reference.
+    matrix = browser.new_page(viewport={"width": 390, "height": 844})
+    to_welcome(matrix)
+    config = matrix.evaluate("""() => Object.entries(window.ChekmiPresets).map(([id, category]) => ({
+      id, title: category.title, references: category.references.map(([key]) => key),
+      subtypes: Object.entries(category.subtypes).map(([key, item]) => ({
+        key, title: item.title, question: item.question, choices: item.choices,
+        defaultWorkflow: item.defaultWorkflow
+      }))
+    }))""")
+    assert len(config) == 5
+    for category in config:
+        assert len(category["subtypes"]) >= 4
+        assert len({item["key"] for item in category["subtypes"]}) == len(category["subtypes"])
+        for subtype in category["subtypes"]:
+            assert subtype["question"] and len(subtype["choices"]) >= 2
+            assert subtype["defaultWorkflow"] == subtype["choices"][0]["id"]
+            assert len({choice["id"] for choice in subtype["choices"]}) == len(subtype["choices"])
+            for choice in subtype["choices"]:
+                assert choice["reference"] in category["references"]
+                assert choice["mode"] in ("solo", "team")
+                assert choice["review"] in ("automatic", "review_required")
+                assert not set(choice["features"]) & {"tickets", "admission", "inventory"}
+
+    matrix.get_by_role("button", name="Get Started").click()
+    journeys = [
+        ("Food & Hospitality", "Restaurant", "How do you serve customers?", "Table"),
+        ("Services & Professionals", "Salon / Beauty", "How do you take payments?", "Booking"),
+        ("General & Personal", "Personal Payments", "How will you track payments?", "Payment ref"),
+    ]
+    for category, subtype, question, reference in journeys:
+        matrix.get_by_role("button", name=category).click()
+        matrix.get_by_role("button", name="Continue").click()
+        assert matrix.get_by_role("button", name=subtype).is_visible()
+        matrix.get_by_role("button", name=subtype).click()
+        matrix.get_by_role("button", name="Continue").click()
+        assert matrix.get_by_role("heading", name=question).is_visible()
+        assert matrix.locator("#setup-reference").inner_text() == reference
+        if subtype == "Restaurant":
+            shot(matrix, "restaurant-workflow.png")
+        if subtype == "Personal Payments":
+            shot(matrix, "personal-workflow.png")
+        matrix.get_by_label("Go back").click()
+        matrix.get_by_label("Go back").click()
+    print("PASS all category/subtype configurations and tailored food, service, personal journeys")
+    matrix.close()
+
+    direct = browser.new_page(viewport={"width": 390, "height": 844})
+    direct.goto(URL + "#plans", wait_until="networkidle")
+    assert direct.url.endswith("#business")
+    assert direct.get_by_role("heading", name="Choose your business").is_visible()
+    direct.close()
 
     desktop = browser.new_page(viewport={"width": 1366, "height": 900})
     to_welcome(desktop)

@@ -69,6 +69,7 @@ function setup() {
     strict_1.default.deepEqual(state.outgoing, { provider: 'telebirr', reference: 'DHU5AM9UB3' });
     strict_1.default.equal(state.commits[0].p_verified_amount, 600);
     strict_1.default.equal(state.commits[0].p_table_number, 'Invoice: INV-1042');
+    strict_1.default.equal(state.commits[0].p_receipt_image_base64, null);
     strict_1.default.ok(!JSON.stringify(result).includes('private-'));
     strict_1.default.ok(!JSON.stringify(state.commits).includes('private-'));
     strict_1.default.equal((await send({ action: 'status' })).body.data.recovered, true);

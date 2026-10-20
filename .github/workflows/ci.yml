@@ -49,6 +49,6 @@ jobs:
       - run: node scripts/build-edge.cjs
       - name: Ensure deployable Edge bundle matches source
         working-directory: .
-        run: git diff --exit-code -- supabase/functions/chekmi-verify/index.js
+        run: git diff --exit-code -- supabase/functions/chekmi-verify/index.js supabase/functions/chekmi-receipt-evidence/index.js
       - run: npm test
       - run: npx tsc --noEmit

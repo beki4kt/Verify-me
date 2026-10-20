@@ -2,6 +2,10 @@
 verify_jwt = false
 entrypoint = "./functions/chekmi-verify/index.js"
 
+[functions.chekmi-receipt-evidence]
+verify_jwt = false
+entrypoint = "./functions/chekmi-receipt-evidence/index.js"
+
 [functions.chekmi-demo]
 verify_jwt = false
 entrypoint = "./functions/chekmi-demo/index.js"

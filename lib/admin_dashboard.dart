@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import 'api_service.dart';
+import 'receipt_details_screen.dart';
 import 'workspace_settings_screen.dart';
 import 'workspace_home_screen.dart';
 import 'staff_login_screen.dart'; // FIXED: Swapped to the active login screen
@@ -140,6 +141,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   DateTimeRange? _ledgerCustomRange;
   String? _ledgerStaff;
   String? _ledgerPaymentMethod;
+  String _ledgerSearch = '';
 
   @override
   void initState() {
@@ -352,13 +354,36 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   List<Map<String, dynamic>> _filteredTickets(
     List<Map<String, dynamic>> tickets,
-  ) => filterTransactions(
-    tickets,
-    period: _ledgerPeriod,
-    customRange: _ledgerCustomRange,
-    staffNumber: _ledgerStaff,
-    paymentMethod: _ledgerPaymentMethod,
-  );
+  ) {
+    final filtered = filterTransactions(
+      tickets,
+      period: _ledgerPeriod,
+      customRange: _ledgerCustomRange,
+      staffNumber: _ledgerStaff,
+      paymentMethod: _ledgerPaymentMethod,
+    );
+    final query = _ledgerSearch.trim().toLowerCase();
+    if (query.isEmpty) return filtered;
+    return filtered
+        .where(
+          (ticket) =>
+              [
+                ticket['transaction_ref'],
+                ticket['bank'],
+                ticket['verified_amount'],
+                ticket['bill_amount'],
+                ticket['reference_value'],
+                ticket['table_number'],
+                ticket['waiter_id'],
+                ticket['status'],
+                ticket['receiver_account'],
+              ].any(
+                (value) =>
+                    value?.toString().toLowerCase().contains(query) ?? false,
+              ),
+        )
+        .toList(growable: false);
+  }
 
   Future<void> _changeLedgerPeriod(TransactionPeriod period) async {
     if (period == TransactionPeriod.custom) {
@@ -394,30 +419,44 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }
       if (method != null && method.isNotEmpty) methods.add(method);
     }
-    return TransactionFilterBar(
-      period: _ledgerPeriod,
-      customRange: _ledgerCustomRange,
-      onPeriodChanged: _changeLedgerPeriod,
-      staffMembers: staff,
-      staffNumber: _ledgerStaff,
-      onStaffChanged: (value) => setState(() {
-        _ledgerStaff = value;
-        _ticketsStream = _serverTicketReport();
-      }),
-      paymentMethods: {
-        ...methods,
-        'telebirr',
-        'cbe',
-        'cbebirr',
-        'dashen',
-        'abyssinia',
-        'mpesa',
-      }.toList()..sort(),
-      paymentMethod: _ledgerPaymentMethod,
-      onPaymentMethodChanged: (value) => setState(() {
-        _ledgerPaymentMethod = value;
-        _ticketsStream = _serverTicketReport();
-      }),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TransactionFilterBar(
+          period: _ledgerPeriod,
+          customRange: _ledgerCustomRange,
+          onPeriodChanged: _changeLedgerPeriod,
+          staffMembers: staff,
+          staffNumber: _ledgerStaff,
+          onStaffChanged: (value) => setState(() {
+            _ledgerStaff = value;
+            _ticketsStream = _serverTicketReport();
+          }),
+          paymentMethods: {
+            ...methods,
+            'telebirr',
+            'cbe',
+            'cbebirr',
+            'dashen',
+            'abyssinia',
+            'mpesa',
+          }.toList()..sort(),
+          paymentMethod: _ledgerPaymentMethod,
+          onPaymentMethodChanged: (value) => setState(() {
+            _ledgerPaymentMethod = value;
+            _ticketsStream = _serverTicketReport();
+          }),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          onChanged: (value) => setState(() => _ledgerSearch = value),
+          decoration: const InputDecoration(
+            hintText: 'Search reference, amount, staff or account',
+            prefixIcon: Icon(Icons.search),
+            isDense: true,
+          ),
+        ),
+      ],
     );
   }
 
@@ -2082,6 +2121,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Future<void> _showReceiptEvidence(String ticketId) async {
     try {
+      final verified = await ApiService.fetchVerifiedReceiptDetail(ticketId);
+      if (verified != null) {
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ReceiptDetailsScreen(ticketId: ticketId),
+          ),
+        );
+        return;
+      }
       final data = await ApiService.fetchReceiptImage(ticketId);
       if (!mounted) return;
       final encoded = data?['image_base64']?.toString();
@@ -3092,7 +3141,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                           ],
                                         ),
                                       ),
-                                      if (ticket['receipt_image_saved'] == true)
+                                      if (ticket['receipt_image_saved'] ==
+                                              true ||
+                                          ticket['verification_evidence_id'] !=
+                                              null)
                                         IconButton(
                                           tooltip: 'View receipt evidence',
                                           onPressed: () => _showReceiptEvidence(

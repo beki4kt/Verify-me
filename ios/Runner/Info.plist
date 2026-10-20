@@ -37,6 +37,8 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Chekmi uses the camera to scan a payment receipt and extract its transaction reference for verification.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Chekmi lets you attach an original payment receipt image to its verified payment record.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

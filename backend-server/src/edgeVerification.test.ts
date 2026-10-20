@@ -55,6 +55,7 @@ test('Edge function confirms committed payments, uses private ID lookup and reco
   assert.deepEqual(state.outgoing, { provider: 'telebirr', reference: 'DHU5AM9UB3' });
   assert.equal(state.commits[0].p_verified_amount, 600);
   assert.equal(state.commits[0].p_table_number, 'Invoice: INV-1042');
+  assert.equal(state.commits[0].p_receipt_image_base64, null);
   assert.ok(!JSON.stringify(result).includes('private-'));
   assert.ok(!JSON.stringify(state.commits).includes('private-'));
   assert.equal((await send({ action: 'status' })).body.data.recovered, true);

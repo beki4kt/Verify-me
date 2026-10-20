@@ -39,6 +39,30 @@ begin
      to_regprocedure('public.service_operator_snapshot()') is null then
     raise exception 'One or more required CHEKMI RPC functions are missing';
   end if;
+
+  if to_regprocedure('public.request_owner_workspace(text,text,text,text,text,text,boolean,text,text,text,text)') is null or
+     to_regprocedure('public.get_verified_receipt_detail(text,uuid)') is null or
+     to_regprocedure('public.reserve_receipt_original(text,uuid,text,integer,text,text)') is null or
+     to_regprocedure('public.finish_receipt_original(text,uuid,text)') is null or
+     to_regprocedure('public.service_get_receipt_original_locator(text,uuid)') is null then
+    raise exception 'Owner registration or receipt-evidence RPCs are missing';
+  end if;
+
+  if not exists (
+    select 1 from storage.buckets
+    where id='receipt-evidence' and public=false
+      and file_size_limit=6291456
+  ) then
+    raise exception 'Private receipt-evidence bucket is missing or misconfigured';
+  end if;
+
+  if not exists (
+    select 1 from public.workspace_profiles
+    where business_id=demo_business.business_id
+      and use_case='restaurant' and review_policy='review_required'
+  ) then
+    raise exception 'MESOB-DEMO restaurant workflow is not configured';
+  end if;
 end $$;
 
 select

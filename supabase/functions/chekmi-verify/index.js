@@ -334,7 +334,9 @@ function createEdgeVerificationHandler(env, transport = fetch) {
         p_provider_transaction_at: freshness.transactionDate.toISOString(),
         p_provider_status: data.status,
         p_provider_payload: { ...data, verificationRequest: { submittedReference: inputReference, engine: "owned", host: "supabase-edge", method: "transaction-id" }, ...suffixProof ? { destinationProof: { method: "server_configured_account_suffix" } } : {} },
-        p_receipt_image_base64: photo ?? null
+        // Image archival is a separate operation. Never let a storage failure
+        // roll back a provider-confirmed payment or its immutable evidence.
+        p_receipt_image_base64: null
       }));
       if (!committed?.ticket_id) throw new Failure("COMMIT_NOT_CONFIRMED", "No saved payment confirmation was returned. Check payment history before retrying.", 503, true);
       return respond(201, { success: true, data: { ...committed, amount: data.amount, expectedAmount: expected, tipAmount: Number(committed.tip_amount ?? 0), unresolvedExcess: Number(committed.unresolved_excess ?? 0), currency: data.currency } });

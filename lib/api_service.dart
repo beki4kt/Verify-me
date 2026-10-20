@@ -505,7 +505,6 @@ class ApiService {
     required String provider,
     required double expectedAmount,
     required String tableNumber,
-    Uint8List? receiptImageBytes,
   }) async {
     final normalizedProvider = _normalizeProvider(provider);
     if (normalizedProvider == null) {
@@ -537,8 +536,9 @@ class ApiService {
               'provider': normalizedProvider,
               'expectedAmount': expectedAmount,
               'tableNumber': tableNumber.trim(),
-              if (receiptImageBytes != null)
-                'receiptImageBase64': base64Encode(receiptImageBytes),
+              // The original is uploaded after the bank result is committed.
+              // Keeping these operations separate protects a valid payment
+              // from image-storage errors.
             },
           );
       refreshDashboardData();
@@ -583,6 +583,64 @@ class ApiService {
       params: {'p_token': _requireSessionToken(), 'p_ticket_id': ticketId},
     );
     return response is Map ? Map<String, dynamic>.from(response) : null;
+  }
+
+  static Future<Map<String, dynamic>?> fetchVerifiedReceiptDetail(
+    String ticketId,
+  ) async {
+    final response = await _supabase.rpc(
+      'get_verified_receipt_detail',
+      params: {'p_token': _requireSessionToken(), 'p_ticket_id': ticketId},
+    );
+    return response is Map ? Map<String, dynamic>.from(response) : null;
+  }
+
+  static Uri _receiptEvidenceUri([String? ticketId]) => Uri.parse(
+    '${AppEnvironment.supabaseUrl}/functions/v1/chekmi-receipt-evidence',
+  ).replace(queryParameters: ticketId == null ? null : {'ticket': ticketId});
+
+  /// This never changes the bank result. On failure the verified payment
+  /// remains in history with an explicit incomplete evidence state.
+  static Future<void> uploadReceiptOriginal({
+    required String ticketId,
+    required Uint8List bytes,
+    required String source,
+  }) async {
+    final response = await http
+        .post(
+          _receiptEvidenceUri(),
+          headers: {
+            'authorization': 'Bearer ${_requireSessionToken()}',
+            'apikey': AppEnvironment.supabasePublishableKey,
+            'content-type': 'application/octet-stream',
+            'x-chekmi-ticket-id': ticketId,
+            'x-chekmi-source': source,
+          },
+          body: bytes,
+        )
+        .timeout(const Duration(seconds: 45));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Original image was not saved. Retry from receipt details.',
+      );
+    }
+    refreshDashboardData();
+  }
+
+  static Future<Uint8List> fetchReceiptOriginalBytes(String ticketId) async {
+    final response = await http
+        .get(
+          _receiptEvidenceUri(ticketId),
+          headers: {
+            'authorization': 'Bearer ${_requireSessionToken()}',
+            'apikey': AppEnvironment.supabasePublishableKey,
+          },
+        )
+        .timeout(const Duration(seconds: 25));
+    if (response.statusCode != 200) {
+      throw StateError('Original image is unavailable.');
+    }
+    return response.bodyBytes;
   }
 
   /// Settlement uses the provider-confirmed amount already stored with the

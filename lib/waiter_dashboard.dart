@@ -8,7 +8,7 @@ import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'api_service.dart';
 import 'offline_storage.dart';
@@ -34,6 +34,7 @@ import 'core/config/payment_context.dart';
 import 'core/models/workspace_profile.dart';
 import 'core/models/tip_balance.dart';
 import 'iphone/iphone_dashboard_shell.dart';
+import 'receipt_details_screen.dart';
 
 class WaiterDashboard extends StatefulWidget {
   const WaiterDashboard({
@@ -104,6 +105,31 @@ class _WaiterDashboardState extends State<WaiterDashboard>
     _attemptsStream = ApiService.streamMyVerificationAttempts();
     _withdrawalRequestsStream = ApiService.streamTipWithdrawalRequests();
     _hideTipBalance = DeviceStorage.getHideTipBalance();
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      unawaited(_recoverLostImagePickerData());
+    }
+  }
+
+  Future<void> _recoverLostImagePickerData() async {
+    try {
+      final response = await ImagePicker().retrieveLostData();
+      final file = response.files?.firstOrNull;
+      if (file == null || !mounted) return;
+      final bytes = await file.readAsBytes();
+      _checkOriginalImage(bytes);
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showSubmissionSheet(
+            null,
+            receiptImageBytes: bytes,
+            receiptSource: 'photo_library',
+          );
+        }
+      });
+    } catch (_) {
+      // Recovery remains available by selecting the image again from history.
+    }
   }
 
   void _refreshData() {
@@ -449,6 +475,11 @@ class _WaiterDashboardState extends State<WaiterDashboard>
               ),
             ),
             TextButton.icon(
+              onPressed: _importReceiptPhoto,
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
+              label: const Text('Import receipt photo'),
+            ),
+            TextButton.icon(
               onPressed: _changeBank,
               icon: const Icon(AppIcons.transfer, size: 18),
               label: Text(
@@ -622,6 +653,18 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                           _isExtracting ? 'READING RECEIPT' : 'CAPTURE RECEIPT',
                         ),
                       ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _isExtracting ? null : _importReceiptPhoto,
+                    icon: const Icon(
+                      Icons.photo_library_outlined,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Import photo',
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
                 ],
@@ -1077,6 +1120,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
   );
 
   void _showReceiptHistory(List<Map<String, dynamic>> tickets) {
+    final search = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1125,95 +1169,155 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+              child: TextField(
+                controller: search,
+                decoration: const InputDecoration(
+                  hintText: 'Search amount, provider or reference',
+                  prefixIcon: Icon(Icons.search),
+                  isDense: true,
+                ),
+              ),
+            ),
             Expanded(
-              child: tickets.isEmpty
-                  ? EmptyView(
-                      message: context.tr('No checked receipts yet.'),
-                      icon: AppIcons.receipt,
-                    )
-                  : ListView.separated(
-                      controller: controller,
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-                      itemCount: tickets.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final t = tickets[index];
-                        final amount =
-                            (t['bill_amount'] as num?)?.toDouble() ?? 0;
-                        final tip =
-                            ((t['tip_amount'] as num?)?.toDouble() ?? 0) +
-                            ((t['allocated_tip_amount'] as num?)?.toDouble() ??
-                                0);
-                        final settled = t['status'] == 'settled';
-                        return HoverSurface(
-                          accent: settled
-                              ? AppColors.success
-                              : AppColors.warning,
-                          child: Row(
-                            children: [
-                              PaymentLogo(
-                                provider: t['bank']?.toString() ?? '',
-                                size: 42,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${amount.toStringAsFixed(2)} ETB',
-                                      style: AppTypography.money(size: 16),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${t['bank'] ?? 'Bank'} • ${_formatTicketTime(t['created_at'])}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      'REF ${t['transaction_ref'] ?? '—'} • ${PaymentContext.display(t['table_number'])}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppTypography.microLabel(),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    settled ? 'SETTLED' : 'PENDING',
-                                    style: AppTypography.microLabel(
-                                      color: settled
-                                          ? AppColors.success
-                                          : AppColors.warning,
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: search,
+                builder: (context, value, _) {
+                  final query = value.text.trim().toLowerCase();
+                  final matches = query.isEmpty
+                      ? tickets
+                      : tickets
+                            .where(
+                              (ticket) =>
+                                  [
+                                    ticket['verified_amount'],
+                                    ticket['bill_amount'],
+                                    ticket['bank'],
+                                    ticket['transaction_ref'],
+                                    ticket['reference_value'],
+                                    ticket['table_number'],
+                                    ticket['status'],
+                                  ].any(
+                                    (field) =>
+                                        field
+                                            ?.toString()
+                                            .toLowerCase()
+                                            .contains(query) ??
+                                        false,
+                                  ),
+                            )
+                            .toList();
+                  return matches.isEmpty
+                      ? EmptyView(
+                          message: query.isEmpty
+                              ? context.tr('No checked receipts yet.')
+                              : 'No receipts match that search.',
+                          icon: AppIcons.receipt,
+                        )
+                      : ListView.separated(
+                          controller: controller,
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                          itemCount: matches.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final t = matches[index];
+                            final amount =
+                                (t['verified_amount'] as num?)?.toDouble() ??
+                                (t['bill_amount'] as num?)?.toDouble() ??
+                                0;
+                            final tip =
+                                ((t['tip_amount'] as num?)?.toDouble() ?? 0) +
+                                ((t['allocated_tip_amount'] as num?)
+                                        ?.toDouble() ??
+                                    0);
+                            final settled = t['status'] == 'settled';
+                            return HoverSurface(
+                              onTap: () {
+                                final ticketId = t['ticket_id']?.toString();
+                                if (ticketId == null) return;
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ReceiptDetailsScreen(
+                                      ticketId: ticketId,
                                     ),
                                   ),
-                                  if (tip > 0) ...[
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      '+${tip.toStringAsFixed(2)} tip',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(color: AppColors.success),
+                                );
+                              },
+                              accent: settled
+                                  ? AppColors.success
+                                  : AppColors.warning,
+                              child: Row(
+                                children: [
+                                  PaymentLogo(
+                                    provider: t['bank']?.toString() ?? '',
+                                    size: 42,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${amount.toStringAsFixed(2)} ETB',
+                                          style: AppTypography.money(size: 16),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${t['bank'] ?? 'Bank'} • ${_formatTicketTime(t['created_at'])}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          'REF ${t['transaction_ref'] ?? '—'} • ${PaymentContext.display(t['table_number'])}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTypography.microLabel(),
+                                        ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        settled ? 'SETTLED' : 'PENDING',
+                                        style: AppTypography.microLabel(
+                                          color: settled
+                                              ? AppColors.success
+                                              : AppColors.warning,
+                                        ),
+                                      ),
+                                      if (tip > 0) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          '+${tip.toStringAsFixed(2)} tip',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: AppColors.success,
+                                              ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ],
                               ),
-                            ],
-                          ),
+                            );
+                          },
                         );
-                      },
-                    ),
+                },
+              ),
             ),
           ],
         ),
       ),
-    );
+    ).whenComplete(search.dispose);
   }
 
   String _formatTicketTime(dynamic raw) {
@@ -1263,6 +1367,12 @@ class _WaiterDashboardState extends State<WaiterDashboard>
           ),
         ],
         const SizedBox(height: 24),
+        TextButton.icon(
+          onPressed: _importReceiptPhoto,
+          icon: const Icon(Icons.photo_library_outlined, size: 19),
+          label: const Text('Import receipt photo'),
+        ),
+        const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth > 620;
@@ -1324,6 +1434,71 @@ class _WaiterDashboardState extends State<WaiterDashboard>
   }
 
   // --- SCANNER EXECUTION & EXTRACTION ---
+  Future<void> _archiveVerifiedReceipt(
+    String ticketId,
+    Uint8List original,
+    String source,
+  ) async {
+    try {
+      await ApiService.uploadReceiptOriginal(
+        ticketId: ticketId,
+        bytes: original,
+        source: source,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Payment verified. Original image still needs saving.',
+          ),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () =>
+                unawaited(_archiveVerifiedReceipt(ticketId, original, source)),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _importReceiptPhoto() async {
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      _checkOriginalImage(bytes);
+      if (!mounted) return;
+      _showSubmissionSheet(
+        null,
+        receiptImageBytes: bytes,
+        receiptSource: 'photo_library',
+        initialProvider: _selectedBank,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not import receipt: $error')),
+      );
+    }
+  }
+
+  void _checkOriginalImage(Uint8List bytes) {
+    if (bytes.isEmpty || bytes.length > 6 * 1024 * 1024) {
+      throw const FormatException('Choose an image under 6 MB.');
+    }
+    final jpeg = bytes.length > 3 && bytes[0] == 0xff && bytes[1] == 0xd8;
+    final png =
+        bytes.length > 8 &&
+        bytes[0] == 137 &&
+        bytes[1] == 80 &&
+        bytes[2] == 78 &&
+        bytes[3] == 71;
+    if (!jpeg && !png) {
+      throw const FormatException('Choose a JPEG or PNG original.');
+    }
+  }
+
   Future<void> _captureAndExtract() async {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return;
@@ -1334,22 +1509,19 @@ class _WaiterDashboardState extends State<WaiterDashboard>
     try {
       final XFile imageFile = await _cameraController!.takePicture();
       final originalBytes = await imageFile.readAsBytes();
+      _checkOriginalImage(originalBytes);
       // ML Kit text recognition is native-only. The HTTPS browser test captures
       // the receipt and lets the tester enter its reference manually.
       if (kIsWeb) {
         if (!mounted) return;
         setState(() => _isExtracting = false);
-        _showSubmissionSheet(null, receiptImageBytes: originalBytes);
+        _showSubmissionSheet(
+          null,
+          receiptImageBytes: originalBytes,
+          receiptSource: 'camera',
+        );
         return;
       }
-      final receiptImageBytes = await FlutterImageCompress.compressWithList(
-        originalBytes,
-        minWidth: 1280,
-        minHeight: 1600,
-        quality: 68,
-        format: CompressFormat.jpeg,
-        keepExif: false,
-      );
       final inputImage = InputImage.fromFilePath(imageFile.path);
       final textRecognizer = TextRecognizer(
         script: TextRecognitionScript.latin,
@@ -1368,7 +1540,11 @@ class _WaiterDashboardState extends State<WaiterDashboard>
 
       if (!mounted) return;
       setState(() => _isExtracting = false);
-      _showSubmissionSheet(extractedId, receiptImageBytes: receiptImageBytes);
+      _showSubmissionSheet(
+        extractedId,
+        receiptImageBytes: originalBytes,
+        receiptSource: 'camera',
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _isExtracting = false);
@@ -1382,6 +1558,7 @@ class _WaiterDashboardState extends State<WaiterDashboard>
   void _showSubmissionSheet(
     String? initialTransactionId, {
     Uint8List? receiptImageBytes,
+    String receiptSource = 'camera',
     String? initialProvider,
   }) {
     final refController = TextEditingController(
@@ -1397,6 +1574,8 @@ class _WaiterDashboardState extends State<WaiterDashboard>
       selectedBank = 'Telebirr';
     }
     bool isSubmitting = false;
+    Uint8List? selectedReceiptBytes = receiptImageBytes;
+    String selectedReceiptSource = receiptSource;
     bool submissionSucceeded = false;
     String? errorText;
     var verificationStage = VerificationProgressStage.checkingProvider;
@@ -1438,6 +1617,74 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                       ),
                     ),
                     const SizedBox(height: 24),
+
+                    if (selectedReceiptBytes != null) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.memory(
+                          selectedReceiptBytes!,
+                          height: 124,
+                          fit: BoxFit.contain,
+                          cacheWidth: 640,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                final picked = await ImagePicker().pickImage(
+                                  source: ImageSource.gallery,
+                                );
+                                if (picked == null) return;
+                                final replacement = await picked.readAsBytes();
+                                try {
+                                  _checkOriginalImage(replacement);
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    setSheetState(() => errorText = '$error');
+                                  }
+                                  return;
+                                }
+                                if (context.mounted) {
+                                  setSheetState(() {
+                                    selectedReceiptBytes = replacement;
+                                    selectedReceiptSource = 'photo_library';
+                                  });
+                                }
+                              },
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: const Text('Replace image'),
+                      ),
+                    ] else
+                      TextButton.icon(
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                final picked = await ImagePicker().pickImage(
+                                  source: ImageSource.gallery,
+                                );
+                                if (picked == null) return;
+                                final attachment = await picked.readAsBytes();
+                                try {
+                                  _checkOriginalImage(attachment);
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    setSheetState(() => errorText = '$error');
+                                  }
+                                  return;
+                                }
+                                if (context.mounted) {
+                                  setSheetState(() {
+                                    selectedReceiptBytes = attachment;
+                                    selectedReceiptSource = 'photo_library';
+                                  });
+                                }
+                              },
+                        icon: const Icon(Icons.attach_file, size: 18),
+                        label: const Text('Attach original receipt (optional)'),
+                      ),
+                    const SizedBox(height: 12),
 
                     DropdownButtonFormField<String>(
                       initialValue: selectedBank,
@@ -1708,12 +1955,23 @@ class _WaiterDashboardState extends State<WaiterDashboard>
                                         tableController.text,
                                         transactionId,
                                       ),
-                                      receiptImageBytes: receiptImageBytes,
                                     );
 
                                 if (result.isSuccess) {
                                   final data =
                                       result.data?['data'] as Map? ?? const {};
+                                  final verifiedTicketId = data['ticket_id']
+                                      ?.toString();
+                                  if (selectedReceiptBytes != null &&
+                                      verifiedTicketId != null) {
+                                    unawaited(
+                                      _archiveVerifiedReceipt(
+                                        verifiedTicketId,
+                                        selectedReceiptBytes!,
+                                        selectedReceiptSource,
+                                      ),
+                                    );
+                                  }
                                   final calculatedTip =
                                       (data['tipAmount'] as num?)?.toDouble() ??
                                       (data['tip_amount'] as num?)

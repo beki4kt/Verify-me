@@ -1,8 +1,11 @@
 # Install the Chekmi iPhone test build from Windows
 
-This native release includes the current iPhone UI, receipt camera, and ML Kit
-text recognition. It requires iOS 15.5 or later and uses the configured HTTPS
-staging services. The IPA is unsigned until AltStore signs it with your account.
+This native release includes the current iPhone UI, receipt camera, photo
+import, and ML Kit text recognition. It requires iOS 15.5 or later. The current
+AltStore workflow uses the repository's configured Supabase project, which is
+also used by the production build; it is **not an isolated staging project**.
+Use only an explicitly prepared Mesob test workspace there. The IPA is unsigned
+until AltStore signs it with your account.
 
 1. Follow the [official Windows setup guide](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows)
    to install Apple's desktop iTunes/iCloud dependencies and AltServer.
@@ -18,8 +21,10 @@ staging services. The IPA is unsigned until AltStore signs it with your account.
    unzip the outer artifact ZIP in Files to access the IPA.
 7. Keep AltServer running and both devices on the same network. Open AltStore,
    sign in if requested, then choose **My Apps > +** and select the IPA.
-8. Open Chekmi. Use **Try the live demo > Staff > OPEN PAYMENTS > Scan**, select
-   a provider, and allow the camera. Capture a receipt to test text extraction.
+8. Open Chekmi. Connect to `MESOB-DEMO` with a seeded test member, then open
+   **Verify Payment**. Scan or import a receipt, confirm its real transaction
+   reference, and inspect the verified record in Activity. The public
+   **Explore Preview** flow is illustrative and does not create records.
 
 With a free Apple account, refresh apps within seven days using AltStore's
 **Refresh All** while AltServer is reachable. See [AltStore's app management
