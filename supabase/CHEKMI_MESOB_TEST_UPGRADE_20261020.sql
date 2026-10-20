@@ -1,6 +1,6 @@
--- CHEKMI MESOB TEST UPGRADE — 2026-10-20
--- TEST-ONLY: this resets known MESOB-DEMO role credentials.
--- Run ONCE in an isolated test project after 202610160001_inclusive_workspaces.sql.
+-- CHEKMI MESOB CATCH-UP — 2026-10-20
+-- Run ONCE after 202610160001_inclusive_workspaces.sql on an existing Mesob workspace.
+-- Does not seed demo accounts or change Mesob passwords, receiving accounts, or subscriptions.
 -- Do not run this combined query if either migration below is already applied.
 -- SQL alone is insufficient: deploy chekmi-verify and chekmi-receipt-evidence Edge Functions too.
 
@@ -552,132 +552,49 @@ grant execute on function public.service_get_receipt_original_locator(text,uuid)
 grant execute on function public.get_verified_receipt_detail(text,uuid) to anon,authenticated,service_role;
 grant execute on function public.get_receipt_image(text,uuid) to anon,authenticated,service_role;
 
--- Test-only Mesob workspace and role accounts
--- NON-PRODUCTION DATA ONLY.
--- Run this file explicitly after migrations in local or staging environments.
--- Production migrations intentionally do not create known demo credentials.
-
-do $$ declare demo_business uuid; demo record; begin
-  insert into public.businesses(
-    name,business_code,subscription_tier,max_staff_limit,
-    has_cashier_module,is_active,bank_accounts
-  ) values (
-    'Mesob Demo Restaurant','MESOB-DEMO','pro',20,true,true,
-    jsonb_build_object(
-      'telebirr_number','+251911000099',
-      'telebirr_name','Mesob Demo Restaurant',
-      'cbe_number','1000000000000999',
-      'cbe_name','Mesob Demo Restaurant',
-      'cbebirr_number','+251911000099',
-      'cbebirr_name','Mesob Demo Restaurant',
-      'dashen_number','2000000000000999',
-      'dashen_name','Mesob Demo Restaurant',
-      'abyssinia_number','3000000000000999',
-      'abyssinia_name','Mesob Demo Restaurant',
-      'mpesa_number','+251711000099',
-      'mpesa_name','Mesob Demo Restaurant'
-    )
-  )
-  on conflict (business_code) do update set
-    name=excluded.name,
-    subscription_tier=excluded.subscription_tier,
-    max_staff_limit=excluded.max_staff_limit,
-    has_cashier_module=true,
-    is_active=true,
-    bank_accounts=excluded.bank_accounts
-  returning business_id into demo_business;
-
-  for demo in
-    select * from (values
-      ('1001','Demo Admin','+251911000001','AdminTest!2026','admin'),
-      ('1002','Demo Cashier','+251911000002','CashierTest!2026','cashier'),
-      ('1003','Demo Waiter','+251911000003','WaiterTest!2026','waiter')
-    ) as d(staff_number,name,phone_number,plain_password,role)
-  loop
-    update public.staff set
-      business_id=demo_business,
-      name=demo.name,
-      password=null,
-      password_hash=extensions.crypt(demo.plain_password,extensions.gen_salt('bf')),
-      role=demo.role,
-      is_active=true
-    where phone_number=demo.phone_number;
-
-    if not found then
-      update public.staff set
-        business_id=demo_business,
-        name=demo.name,
-        phone_number=demo.phone_number,
-        password=null,
-        password_hash=extensions.crypt(demo.plain_password,extensions.gen_salt('bf')),
-        role=demo.role,
-        is_active=true
-      where staff_number=demo.staff_number;
-    end if;
-
-    if not found then
-      insert into public.staff(
-        staff_number,business_id,name,phone_number,password,password_hash,role,is_active
-      ) values (
-        demo.staff_number,demo_business,demo.name,demo.phone_number,null,
-        extensions.crypt(demo.plain_password,extensions.gen_salt('bf')),demo.role,true
-      );
-    end if;
-  end loop;
-end $$;
-
--- Assert database readiness before committing
--- Read-only assertions for a migrated, explicitly seeded CHEKMI staging database.
--- psql must run this file with ON_ERROR_STOP enabled.
-
+-- Assert the existing Mesob workspace and new schema before committing
+-- Read-only assertions for an existing Mesob workspace after the catch-up.
+-- This file never creates staff, changes passwords, or changes bank accounts.
 do $$
 declare
-  demo_business public.businesses;
-  active_demo_staff integer;
+  mesob public.businesses;
 begin
-  select * into demo_business
-  from public.businesses
-  where business_code='MESOB-DEMO';
-
+  select * into mesob from public.businesses where business_code='MESOB-DEMO';
   if not found then
-    raise exception 'Staging seed is missing MESOB-DEMO';
+    raise exception 'MESOB-DEMO is absent; do not seed known credentials into this project';
   end if;
-  if not public.subscription_has_access(demo_business) or
-     not demo_business.has_cashier_module then
-    raise exception 'MESOB-DEMO subscription cannot access the cashier module';
+  if not public.subscription_has_access(mesob) then
+    raise exception 'MESOB-DEMO subscription is not active for testing';
   end if;
-
-  select count(*) into active_demo_staff
-  from public.staff
-  where business_id=demo_business.business_id
-    and phone_number in ('+251911000001','+251911000002','+251911000003')
-    and role in ('admin','cashier','waiter')
-    and is_active
-    and password is null
-    and password_hash is not null;
-
-  if active_demo_staff<>3 then
-    raise exception 'Expected three active, password-hashed demo staff accounts; found %',active_demo_staff;
+  if not mesob.has_cashier_module then
+    raise exception 'MESOB-DEMO cashier module is disabled';
   end if;
-
-  if to_regprocedure('public.lookup_business(text)') is null or
-     to_regprocedure('public.login_staff(uuid,text,text)') is null or
-     to_regprocedure('public.list_tickets(text,text)') is null or
-     to_regprocedure('public.get_verification_context(text,text)') is null or
-     to_regprocedure('public.commit_verified_payment(text,text,text,text,numeric,numeric,text,text,text,text,text,timestamptz,text,jsonb,text)') is null or
-     to_regprocedure('public.transition_verified_ticket(text,uuid,text,text)') is null or
-     to_regprocedure('public.service_operator_snapshot()') is null then
-    raise exception 'One or more required CHEKMI RPC functions are missing';
+  if not exists (
+    select 1 from jsonb_each_text(coalesce(mesob.bank_accounts,'{}'::jsonb))
+      as account_field(key,value)
+    where key like '%_number' and btrim(value)<>''
+  ) then
+    raise exception 'MESOB-DEMO has no configured receiving account';
   end if;
-
+  if not exists (
+    select 1 from public.staff
+    where business_id=mesob.business_id and is_active
+  ) then
+    raise exception 'MESOB-DEMO has no active staff member';
+  end if;
+  if not exists (
+    select 1 from public.workspace_profiles
+    where business_id=mesob.business_id and use_case='restaurant'
+  ) then
+    raise exception 'MESOB-DEMO restaurant workspace profile is missing';
+  end if;
   if to_regprocedure('public.request_owner_workspace(text,text,text,text,text,text,boolean,text,text,text,text)') is null or
      to_regprocedure('public.get_verified_receipt_detail(text,uuid)') is null or
      to_regprocedure('public.reserve_receipt_original(text,uuid,text,integer,text,text)') is null or
      to_regprocedure('public.finish_receipt_original(text,uuid,text)') is null or
      to_regprocedure('public.service_get_receipt_original_locator(text,uuid)') is null then
-    raise exception 'Owner registration or receipt-evidence RPCs are missing';
+    raise exception 'Owner registration or receipt-evidence RPC is missing';
   end if;
-
   if not exists (
     select 1 from storage.buckets
     where id='receipt-evidence' and public=false
@@ -685,29 +602,33 @@ begin
   ) then
     raise exception 'Private receipt-evidence bucket is missing or misconfigured';
   end if;
-
   if not exists (
-    select 1 from public.workspace_profiles
-    where business_id=demo_business.business_id
-      and use_case='restaurant' and review_policy='review_required'
+    select 1 from pg_policies
+    where schemaname='storage' and tablename='objects'
+      and policyname='receipt_evidence_private_clients'
+      and permissive='RESTRICTIVE'
   ) then
-    raise exception 'MESOB-DEMO restaurant workflow is not configured';
+    raise exception 'Receipt object privacy policy is missing';
+  end if;
+  if not has_function_privilege('service_role',
+      'public.reserve_receipt_original(text,uuid,text,integer,text,text)',
+      'EXECUTE') or
+     has_function_privilege('anon',
+      'public.reserve_receipt_original(text,uuid,text,integer,text,text)',
+      'EXECUTE') then
+    raise exception 'Receipt reservation RPC grants are incorrect';
   end if;
 end $$;
 
-select
-  b.business_code,
-  b.subscription_tier,
-  b.subscription_status,
-  b.is_active,
-  count(distinct s.staff_number) filter (where s.is_active) as active_staff,
-  count(distinct ss.session_id) filter (
-    where ss.revoked_at is null and ss.expires_at>now()
-  ) as active_sessions
+select b.business_code,b.subscription_tier,b.subscription_status,
+  b.has_cashier_module,wp.use_case,wp.review_policy,
+  (select count(*) from public.staff s
+   where s.business_id=b.business_id and s.is_active) as active_staff,
+  (select count(*) from jsonb_object_keys(coalesce(b.bank_accounts,'{}'::jsonb))
+    as account_key(key) where key like '%_number')
+    as configured_receiving_account_fields
 from public.businesses b
-left join public.staff s on s.business_id=b.business_id
-left join public.staff_sessions ss on ss.business_id=b.business_id
-where b.business_code='MESOB-DEMO'
-group by b.business_id,b.business_code,b.subscription_tier,b.subscription_status,b.is_active;
+join public.workspace_profiles wp on wp.business_id=b.business_id
+where b.business_code='MESOB-DEMO';
 
 commit;

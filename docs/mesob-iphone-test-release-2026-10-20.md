@@ -3,19 +3,21 @@
 The AltStore IPA is an **unsigned native iPhone build**. The repository's
 configured Supabase URL is the same project used by production. Do not treat
 `CHEKMI_ENV=staging` or a local `config/staging.json` label as tenant isolation.
-The Mesob SQL below contains known demo credentials; run it only in a dedicated
-test project or a test environment where those accounts are intentionally allowed.
+The existing-workspace catch-up query does not change Mesob members, passwords,
+receiving accounts, subscription state, or historical payments.
 
 ## Database query
 
 - Fresh isolated test project: run [`../supabase/CHEKMI_APP_TEST_SETUP.sql`](../supabase/CHEKMI_APP_TEST_SETUP.sql) once in the Supabase SQL Editor. It contains the base schema, all 22 dated migrations, Mesob seed, and readiness assertions.
-- Existing test project with `202610160001_inclusive_workspaces.sql` applied, but **neither** owner registration nor receipt archive applied: run [`../supabase/CHEKMI_MESOB_TEST_UPGRADE_20261020.sql`](../supabase/CHEKMI_MESOB_TEST_UPGRADE_20261020.sql) once. It applies both dated migrations and seeds/checks Mesob in one transaction.
-- Existing project with owner registration already applied: run only the pending [`../supabase/migrations/202610200001_receipt_evidence_archive.sql`](../supabase/migrations/202610200001_receipt_evidence_archive.sql). In an isolated test project, run [`../supabase/seed.sql`](../supabase/seed.sql) if Mesob is absent, then [`../supabase/staging_verification.sql`](../supabase/staging_verification.sql).
+- Existing Mesob project with `202610160001_inclusive_workspaces.sql` applied, but **neither** owner registration nor receipt archive applied: run [`../supabase/CHEKMI_MESOB_TEST_UPGRADE_20261020.sql`](../supabase/CHEKMI_MESOB_TEST_UPGRADE_20261020.sql) once. It applies both dated migrations and checks the existing Mesob workspace in one transaction. It does not seed accounts.
+- Existing project with owner registration already applied: run only the pending [`../supabase/migrations/202610200001_receipt_evidence_archive.sql`](../supabase/migrations/202610200001_receipt_evidence_archive.sql), then the read-only [`../supabase/mesob_readiness.sql`](../supabase/mesob_readiness.sql). In an isolated test project only, run [`../supabase/seed.sql`](../supabase/seed.sql) if Mesob is absent.
 
 Never paste the fresh-project bundle into a database that already has those
 migrations. For a managed project, prefer `supabase db push` so migration history
 is tracked. Running SQL manually in the SQL Editor does not mark the migration
 as applied in Supabase CLI history; reconcile that history before a later push.
+The fresh-project test bundle **does** contain known demo credentials. Do not
+run it on the configured production-backed project.
 
 SQL provisions the private `receipt-evidence` Storage bucket and RPCs. To make
 the app functional, also deploy both bundled Edge functions from this commit:
