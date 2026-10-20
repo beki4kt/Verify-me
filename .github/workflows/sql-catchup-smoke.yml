@@ -25,6 +25,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/chekmi-sql-smoke"
           cd "$RUNNER_TEMP/chekmi-sql-smoke"
           supabase init
+          mkdir -p supabase/migrations
           cp "$root/supabase/base_schema.sql" supabase/migrations/202607010001_base_schema.sql
           for migration in "$root"/supabase/migrations/*.sql; do
             name="$(basename "$migration")"
