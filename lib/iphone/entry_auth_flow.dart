@@ -11,6 +11,7 @@ import '../launch_experience.dart' show OwnerActivationScreen;
 import '../offline_storage.dart';
 import '../staff_login_screen.dart';
 import '../workspace_home_screen.dart';
+import 'staff_sign_in_view.dart';
 
 /// A workspace code locates a workspace; the member still signs in separately.
 class WorkspaceConnectScreen extends StatefulWidget {
@@ -32,15 +33,17 @@ class _WorkspaceConnectScreenState extends State<WorkspaceConnectScreen> {
   }
 
   Future<void> _continue() async {
-    if (AppVariant.isUiPreview) {
-      setState(
-        () => error = 'Connect to a staging workspace in the functional build.',
-      );
-      return;
-    }
     final normalized = code.text.trim().toUpperCase();
     if (normalized.isEmpty) {
       setState(() => error = 'Enter your workspace code.');
+      return;
+    }
+    if (AppVariant.isUiPreview) {
+      Navigator.of(context).push(
+        CupertinoPageRoute<void>(
+          builder: (_) => StaffSignInPreviewScreen(workspaceCode: normalized),
+        ),
+      );
       return;
     }
     setState(() {
@@ -162,6 +165,53 @@ class _WorkspaceConnectScreenState extends State<WorkspaceConnectScreen> {
         ),
       ),
     ),
+  );
+}
+
+/// Visual-only second step for the offline IPA. No workspace or member is
+/// resolved, and pressing Sign In never creates a session.
+class StaffSignInPreviewScreen extends StatefulWidget {
+  const StaffSignInPreviewScreen({super.key, required this.workspaceCode});
+  final String workspaceCode;
+
+  @override
+  State<StaffSignInPreviewScreen> createState() =>
+      _StaffSignInPreviewScreenState();
+}
+
+class _StaffSignInPreviewScreenState extends State<StaffSignInPreviewScreen> {
+  final phone = TextEditingController();
+  final password = TextEditingController();
+  String prefix = '9';
+  bool hidden = true;
+  String? message;
+
+  @override
+  void dispose() {
+    phone.dispose();
+    password.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => StaffSignInView(
+    businessName: 'Illustrative workspace · No lookup performed',
+    businessCode: widget.workspaceCode,
+    phone: phone,
+    password: password,
+    loading: false,
+    obscure: hidden,
+    prefix: prefix,
+    onPrefix: (value) => setState(() => prefix = value),
+    error: message,
+    onLogin: () => setState(
+      () => message = 'Preview only. No membership was checked. Use a connected staging build to sign in.',
+    ),
+    onTogglePassword: () => setState(() => hidden = !hidden),
+    onChangeBusiness: () => Navigator.maybePop(context),
+    onOwner: () => Navigator.of(
+      context,
+    ).push(CupertinoPageRoute<void>(builder: (_) => const OwnerSignInScreen())),
   );
 }
 
