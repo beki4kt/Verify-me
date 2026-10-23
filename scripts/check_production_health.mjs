@@ -1,8 +1,19 @@
 import { existsSync, readFileSync } from "node:fs";
+import { healthState, verifierIsReady } from './health_contract.mjs';
 
-const supabaseUrl = "https://lpbdxtzyzlaioggefscc.supabase.co";
+const environment = (process.env.CHEKMI_ENV || "production").toLowerCase();
+if (!['staging', 'production'].includes(environment)) {
+  throw new Error('CHEKMI_ENV must be staging or production for remote health checks');
+}
+const productionUrl = 'https://lpbdxtzyzlaioggefscc.supabase.co';
+const supabaseUrl = (process.env.CHEKMI_SUPABASE_URL ||
+  (environment === 'production' ? productionUrl : '')).replace(/\/$/, '');
+if (!supabaseUrl || (environment === 'staging' && supabaseUrl === productionUrl) ||
+    (environment === 'production' && supabaseUrl !== productionUrl)) {
+  throw new Error('Health-check target does not match CHEKMI_ENV');
+}
 const localConfigPath = new URL("../config/production.json", import.meta.url);
-const localConfig = existsSync(localConfigPath)
+const localConfig = environment === 'production' && existsSync(localConfigPath)
   ? JSON.parse(readFileSync(localConfigPath, "utf8"))
   : {};
 const publishableKey =
@@ -10,7 +21,7 @@ const publishableKey =
   localConfig.CHEKMI_SUPABASE_PUBLISHABLE_KEY;
 
 if (!publishableKey) {
-  throw new Error("CHEKMI_SUPABASE_PUBLISHABLE_KEY is required for production health checks");
+  throw new Error("CHEKMI_SUPABASE_PUBLISHABLE_KEY is required for remote health checks");
 }
 
 const supabaseHeaders = {
@@ -22,11 +33,13 @@ const checks = [
   {
     name: "verification",
     url: `${supabaseUrl}/functions/v1/chekmi-verify`,
+    validate: verifierIsReady,
+  },
+  {
+    name: "receipt evidence",
+    url: `${supabaseUrl}/functions/v1/chekmi-receipt-evidence`,
     validate: (body, response) =>
-      response.ok &&
-      body?.status === "ready" &&
-      body?.verifier?.engine === "owned" &&
-      body?.verifier?.configured === true,
+      response.status === 401 && body?.code === 'SESSION_REQUIRED',
   },
   {
     name: "demo verification",
@@ -72,7 +85,7 @@ const checks = [
     validate: (result, response) =>
       response.status === 403 && result?.code === "28000",
   })),
-  ...["privacy.html", "terms.html", "support.html", "delete-account.html"].map(
+  ...(environment === 'production' ? ["privacy.html", "terms.html", "support.html", "delete-account.html"] : []).map(
     (page) => ({
       name: page,
       url: `https://beki4kt.github.io/Verify-me/${page}`,
@@ -96,14 +109,21 @@ for (const check of checks) {
       body: check.body,
       signal: AbortSignal.timeout(15_000),
     });
-    const body = check.text ? await response.text() : await response.json();
+    const raw = await response.text();
+    let body = raw;
+    if (!check.text) {
+      try { body = JSON.parse(raw); } catch { body = null; }
+    }
     const ok = check.validate(body, response);
+    const state = healthState(response.status, ok);
     failed ||= !ok;
     console.log(
       JSON.stringify({
         check: check.name,
         ok,
+        state,
         status: response.status,
+        engine: check.name === 'verification' ? body?.verifier?.engine ?? null : undefined,
         code: check.method === "POST" ? body?.code ?? null : undefined,
         duration_ms: Date.now() - started,
       }),
@@ -114,6 +134,7 @@ for (const check of checks) {
       JSON.stringify({
         check: check.name,
         ok: false,
+        state: 'service_unavailable',
         error: error?.name ?? "RequestError",
         duration_ms: Date.now() - started,
       }),

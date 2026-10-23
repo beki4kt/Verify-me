@@ -31,6 +31,16 @@ begin
     raise exception 'Expected three active, password-hashed demo staff accounts; found %',active_demo_staff;
   end if;
 
+  if not exists (
+    select 1 from public.businesses b join public.staff s
+      on s.business_id=b.business_id
+    where b.business_code='ISOLATION-DEMO-B' and b.business_id<>demo_business.business_id
+      and s.staff_number='9004' and s.is_active and s.password is null
+      and s.password_hash is not null
+  ) then
+    raise exception 'Second synthetic workspace/member is missing';
+  end if;
+
   if to_regprocedure('public.lookup_business(text)') is null or
      to_regprocedure('public.login_staff(uuid,text,text)') is null or
      to_regprocedure('public.list_tickets(text,text)') is null or

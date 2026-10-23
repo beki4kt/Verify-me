@@ -9,9 +9,8 @@ class AppConfigurationException implements Exception {
 
 /// Compile-time configuration shared by the customer app and owner console.
 ///
-/// Development keeps sensible local defaults. Release builds default to the
-/// production environment and require every public endpoint to be supplied
-/// explicitly with `--dart-define` or `--dart-define-from-file`.
+/// Backend coordinates are always explicit; missing or mixed environments fail
+/// before Supabase initializes.
 class AppEnvironment {
   AppEnvironment._();
 
@@ -39,30 +38,21 @@ class AppEnvironment {
     'CHEKMI_SUPABASE_PUBLISHABLE_KEY',
   );
 
-  static const String _developmentApiUrl = 'http://172.20.10.2:3000/api';
-  static const String _developmentSupabaseUrl =
-      'https://lpbdxtzyzlaioggefscc.supabase.co';
-  static const String _developmentSupabaseKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwYmR4dHp5emxhaW9nZ2Vmc2NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTMyMDUsImV4cCI6MjA5Nzg2OTIwNX0.X9d4_FkisQRQXYFhyVJ_-5XSsbkS1VCHMLLybfGfpzs';
-
+  static const String _productionSupabaseHost =
+      'lpbdxtzyzlaioggefscc.supabase.co';
+  static const Set<String> _productionApiHosts = {
+    'chekmi.app.aletcloud.com',
+    'chekmi-backend-1.app.aletcloud.com',
+  };
   static String get apiBaseUrl {
     final configured = _configuredApiUrl.trim();
     if (configured.isNotEmpty) return _normalizeUrl(configured);
-    return isProduction || environmentName.trim().toLowerCase() == 'staging'
-        ? ''
-        : _developmentApiUrl;
+    return '';
   }
 
-  static String get supabaseUrl => _normalizeUrl(
-    _configuredSupabaseUrl.trim().isEmpty
-        ? _developmentSupabaseUrl
-        : _configuredSupabaseUrl,
-  );
+  static String get supabaseUrl => _normalizeUrl(_configuredSupabaseUrl);
 
-  static String get supabasePublishableKey =>
-      _configuredSupabaseKey.trim().isEmpty
-      ? _developmentSupabaseKey
-      : _configuredSupabaseKey.trim();
+  static String get supabasePublishableKey => _configuredSupabaseKey.trim();
 
   static bool get isProduction =>
       environmentName.trim().toLowerCase() == 'production';
@@ -99,7 +89,7 @@ class AppEnvironment {
       _validateEndpoint(
         value: verificationUrl,
         label: 'CHEKMI_VERIFICATION_URL',
-        requireHttps: true,
+        requireHttps: protectedMode,
         problems: problems,
       );
       final uri = Uri.tryParse(verificationUrl);
@@ -111,12 +101,19 @@ class AppEnvironment {
         );
       }
     }
-    if (!const {'development', 'staging', 'production'}.contains(mode)) {
-      problems.add('CHEKMI_ENV must be development, staging, or production.');
+    if (!const {
+      'development',
+      'preview',
+      'staging',
+      'production',
+    }.contains(mode)) {
+      problems.add(
+        'CHEKMI_ENV must be development, preview, staging, or production.',
+      );
     }
 
     final usesDedicatedVerification = verificationUrl.trim().isNotEmpty;
-    if (protectedMode) {
+    if (mode != 'preview') {
       if (!apiUrlWasProvided && !usesDedicatedVerification) {
         problems.add('VERIFY_ME_API_URL is required for $mode builds.');
       }
@@ -142,9 +139,25 @@ class AppEnvironment {
     _validateEndpoint(
       value: supabaseUrl,
       label: 'CHEKMI_SUPABASE_URL',
-      requireHttps: true,
+      requireHttps: protectedMode,
       problems: problems,
     );
+
+    final projectHost = Uri.tryParse(supabaseUrl)?.host.toLowerCase();
+    if (mode == 'production' && projectHost != _productionSupabaseHost) {
+      problems.add(
+        'Production must use the approved production Supabase project.',
+      );
+    }
+    if (mode != 'production' && projectHost == _productionSupabaseHost) {
+      problems.add(
+        'Nonproduction builds cannot use the production Supabase project.',
+      );
+    }
+    final apiHost = Uri.tryParse(apiUrl)?.host.toLowerCase();
+    if (mode != 'production' && _productionApiHosts.contains(apiHost)) {
+      problems.add('Nonproduction builds cannot use the production API host.');
+    }
 
     final key = supabasePublishableKey.trim();
     if (key.isEmpty) {

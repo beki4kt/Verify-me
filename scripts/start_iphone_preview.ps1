@@ -83,13 +83,16 @@ if ($Functional) {
   Write-Host 'Starting the functional iPhone UI with the staging configuration.' -ForegroundColor Cyan
 } elseif ($VisualOnly) {
   $flutterArguments += @(
-    '--dart-define=CHEKMI_ENV=development',
+    '--dart-define=CHEKMI_ENV=preview',
     '--dart-define=CHEKMI_UI_PREVIEW=true'
   )
   Write-Host 'Starting the deterministic iPhone visual preview.' -ForegroundColor Cyan
 } else {
-  $flutterArguments += '--dart-define=CHEKMI_ENV=development'
-  Write-Host 'Starting the interactive iPhone demo with local device storage.' -ForegroundColor Cyan
+  $flutterArguments += @(
+    '--dart-define=CHEKMI_ENV=preview',
+    '--dart-define=CHEKMI_UI_PREVIEW=true'
+  )
+  Write-Host 'Starting the offline iPhone preview. Use -Functional with isolated staging configuration for backend testing.' -ForegroundColor Cyan
 }
 
 Write-Host "Open Safari on the iPhone at: $previewUrl" -ForegroundColor Green

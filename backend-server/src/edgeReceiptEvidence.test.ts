@@ -127,3 +127,51 @@ test("cross-workspace, bad sessions, corrupt images and missing originals are de
   assert.equal((await post(corrupt)).status, 415);
   assert.equal(state.reserves, 0);
 });
+
+test("two synthetic workspace sessions cannot read each other's stored original", async () => {
+  const workspaceA = { token, ticket, key: `workspace-a/${ticket}/original.png` };
+  const workspaceB = { token: 'b'.repeat(64), ticket: otherTicket,
+    key: `workspace-b/${otherTicket}/original.png` };
+  const transport = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/rpc/service_get_receipt_original_locator') ||
+        url.includes('/rpc/reserve_receipt_original')) {
+      const params = JSON.parse(String(init?.body));
+      const member = [workspaceA, workspaceB].find((workspace) =>
+        workspace.token === params.p_token && workspace.ticket === params.p_ticket_id);
+      return member ? Response.json({ storage_object_key: member.key, mime_type: 'image/png' })
+        : Response.json({ code: '42501' }, { status: 403 });
+    }
+    if (url.includes('/storage/v1/object/')) return new Response(new Uint8Array(image));
+    throw Error(`Unexpected URL ${url}`);
+  }) as typeof fetch;
+  const handler = createEdgeReceiptEvidenceHandler({
+    SUPABASE_URL: 'https://database.example', SUPABASE_SERVICE_ROLE_KEY: 'service-test-only',
+  }, transport);
+  const read = (session: string, payment: string) => handler(new Request(
+    `https://database.example/functions/v1/chekmi-receipt-evidence?ticket=${payment}`,
+    { headers: { authorization: `Bearer ${session}` } },
+  ));
+  assert.equal((await read(workspaceA.token, workspaceA.ticket)).status, 200);
+  assert.equal((await read(workspaceB.token, workspaceB.ticket)).status, 200);
+  assert.equal((await read(workspaceA.token, workspaceB.ticket)).status, 403);
+  assert.equal((await read(workspaceB.token, workspaceA.ticket)).status, 403);
+  const crossUpload = handler(new Request(
+    'https://database.example/functions/v1/chekmi-receipt-evidence', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${workspaceA.token}`,
+        'x-chekmi-ticket-id': workspaceB.ticket, 'x-chekmi-source': 'camera' },
+      body: new Uint8Array(image),
+    },
+  ));
+  assert.equal((await crossUpload).status, 403);
+  for (const method of ['PUT', 'DELETE']) {
+    const response = await handler(new Request(
+      'https://database.example/functions/v1/chekmi-receipt-evidence', {
+        method, headers: { authorization: `Bearer ${workspaceA.token}`,
+          'x-chekmi-ticket-id': workspaceB.ticket },
+      },
+    ));
+    assert.equal(response.status, 405);
+  }
+});

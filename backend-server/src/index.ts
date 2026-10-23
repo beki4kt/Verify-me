@@ -6,7 +6,9 @@ import { providerLookupRouter } from "./routes/providerLookupRoute";
 import { requestLogger, requireProductionHttps, verificationRateLimit } from "./productionMiddleware";
 import { verifierConfiguration } from "./veritasVerifier";
 import { hostDiagnostics, startHostDiagnostics } from "./hostDiagnostics";
+import { validateBackendEnvironment } from "./deploymentEnvironment";
 
+validateBackendEnvironment(process.env);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")

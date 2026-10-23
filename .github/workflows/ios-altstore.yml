@@ -11,6 +11,7 @@ permissions:
 jobs:
   ipa:
     runs-on: macos-26
+    environment: staging
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -23,18 +24,26 @@ jobs:
           cache: true
       - name: Install Flutter packages
         run: flutter pub get
+      - name: Reject production project in test build
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+          STAGING_CHEKMI_BACKEND_URL: ${{ vars.STAGING_CHEKMI_BACKEND_URL }}
+        run: node scripts/check_staging_target.mjs
       - name: Build native release for physical iPhone
         env:
-          SUPABASE_URL: ${{ vars.CHEKMI_SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          STAGING_BACKEND_URL: ${{ vars.STAGING_CHEKMI_BACKEND_URL }}
         run: >-
           flutter build ios --release --no-codesign
           --build-number=${{ github.run_number }}
-          --dart-define=CHEKMI_ENV=production
+          --dart-define=CHEKMI_ENV=staging
           --dart-define=CHEKMI_TEST2=true
+          --dart-define=VERIFY_ME_API_URL="$STAGING_BACKEND_URL"
           --dart-define=CHEKMI_SUPABASE_URL="$SUPABASE_URL"
           --dart-define=CHEKMI_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
-          --dart-define=CHEKMI_VERIFICATION_URL=https://lpbdxtzyzlaioggefscc.supabase.co/functions/v1/chekmi-verify
+          --dart-define=CHEKMI_VERIFICATION_URL="$SUPABASE_URL/functions/v1/chekmi-verify"
       - name: Package unsigned IPA for AltStore signing
         shell: bash
         run: |
