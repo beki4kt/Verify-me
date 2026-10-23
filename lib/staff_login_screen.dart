@@ -6,6 +6,9 @@ import 'core/theme/app_colors.dart';
 import 'core/widgets/staff_login_experience.dart';
 import 'offline_storage.dart';
 import 'business_gateway_screen.dart';
+import 'launch_experience.dart' show WelcomeScreen;
+import 'iphone/entry_auth_flow.dart' show OwnerSignInScreen;
+import 'iphone/staff_sign_in_view.dart';
 import 'waiter_dashboard.dart';
 import 'cashier_dashboard.dart';
 import 'super_admin_login_screen.dart';
@@ -216,70 +219,129 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
     Navigator.pop(dialogContext);
     await Navigator.of(context).pushReplacement(
-      CupertinoPageRoute<void>(builder: (_) => const BusinessGatewayScreen()),
+      CupertinoPageRoute<void>(
+        builder: (_) => AppVariant.usesIPhoneUi
+            ? const WelcomeScreen()
+            : const BusinessGatewayScreen(),
+      ),
     );
   }
 
   @override
-  Widget build(BuildContext context) => StaffLoginExperience(
-    businessName: _lockedBusiness['name'] ?? 'Business',
-    businessCode: _lockedBusiness['code'] ?? '',
-    phone: _phoneController,
-    password: _passwordController,
-    loading: _isLoading,
-    obscure: _obscurePassword,
-    prefix: _phonePrefix,
-    onPrefix: (value) => setState(() => _phonePrefix = value),
-    error: _errorMessage,
-    onLogin: _handleLogin,
-    onTogglePassword: () =>
-        setState(() => _obscurePassword = !_obscurePassword),
-    onChangeBusiness: _confirmUnbindDevice,
-    onDemo: AppVariant.isPublicRelease
-        ? null
-        : () => Navigator.of(context).push(
-            CupertinoPageRoute<void>(builder: (_) => const TrialModeScreen()),
+  Widget build(BuildContext context) => AppVariant.usesIPhoneUi
+      ? StaffSignInView(
+          businessName: _lockedBusiness['name'] ?? 'Business',
+          businessCode: _lockedBusiness['code'] ?? '',
+          phone: _phoneController,
+          password: _passwordController,
+          loading: _isLoading,
+          obscure: _obscurePassword,
+          prefix: _phonePrefix,
+          onPrefix: (value) => setState(() => _phonePrefix = value),
+          error: _errorMessage,
+          onLogin: _handleLogin,
+          onTogglePassword: () =>
+              setState(() => _obscurePassword = !_obscurePassword),
+          onChangeBusiness: _confirmUnbindDevice,
+          onOwner: () => Navigator.of(context).push(
+            CupertinoPageRoute<void>(builder: (_) => const OwnerSignInScreen()),
           ),
-    onOwner: AppVariant.exposesOperatorConsole
-        ? () => Navigator.of(context).push(
-            CupertinoPageRoute<void>(
-              builder: (_) => const SuperAdminLoginScreen(),
-            ),
-          )
-        : null,
-    quickAccess: _isTestDemoWorkspace
-        ? Wrap(
-            spacing: 8,
-            children: [
-              ActionChip(
-                label: const Text('Admin'),
-                onPressed: _isLoading
-                    ? null
-                    : () => _useDemoAccount(
-                        phone: '11000001',
-                        password: 'AdminTest!2026',
-                      ),
-              ),
-              ActionChip(
-                label: const Text('Cashier'),
-                onPressed: _isLoading
-                    ? null
-                    : () => _useDemoAccount(
-                        phone: '11000002',
-                        password: 'CashierTest!2026',
-                      ),
-              ),
-              ActionChip(
-                label: const Text('Staff'),
-                onPressed: _isLoading
-                    ? null
-                    : () => _useDemoAccount(
-                        phone: '11000003',
-                        password: 'WaiterTest!2026',
-                      ),
-              ),
-            ],
-          )
-        : null,
-  );
+          quickAccess: _isTestDemoWorkspace
+              ? Wrap(
+                  spacing: 8,
+                  children: [
+                    ActionChip(
+                      label: const Text('Admin'),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _useDemoAccount(
+                              phone: '11000001',
+                              password: 'AdminTest!2026',
+                            ),
+                    ),
+                    ActionChip(
+                      label: const Text('Cashier'),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _useDemoAccount(
+                              phone: '11000002',
+                              password: 'CashierTest!2026',
+                            ),
+                    ),
+                    ActionChip(
+                      label: const Text('Staff'),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _useDemoAccount(
+                              phone: '11000003',
+                              password: 'WaiterTest!2026',
+                            ),
+                    ),
+                  ],
+                )
+              : null,
+        )
+      : StaffLoginExperience(
+          businessName: _lockedBusiness['name'] ?? 'Business',
+          businessCode: _lockedBusiness['code'] ?? '',
+          phone: _phoneController,
+          password: _passwordController,
+          loading: _isLoading,
+          obscure: _obscurePassword,
+          prefix: _phonePrefix,
+          onPrefix: (value) => setState(() => _phonePrefix = value),
+          error: _errorMessage,
+          onLogin: _handleLogin,
+          onTogglePassword: () =>
+              setState(() => _obscurePassword = !_obscurePassword),
+          onChangeBusiness: _confirmUnbindDevice,
+          onDemo: AppVariant.isPublicRelease
+              ? null
+              : () => Navigator.of(context).push(
+                  CupertinoPageRoute<void>(
+                    builder: (_) => const TrialModeScreen(),
+                  ),
+                ),
+          onOwner: AppVariant.exposesOperatorConsole
+              ? () => Navigator.of(context).push(
+                  CupertinoPageRoute<void>(
+                    builder: (_) => const SuperAdminLoginScreen(),
+                  ),
+                )
+              : null,
+          quickAccess: _isTestDemoWorkspace
+              ? Wrap(
+                  spacing: 8,
+                  children: [
+                    ActionChip(
+                      label: const Text('Admin'),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _useDemoAccount(
+                              phone: '11000001',
+                              password: 'AdminTest!2026',
+                            ),
+                    ),
+                    ActionChip(
+                      label: const Text('Cashier'),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _useDemoAccount(
+                              phone: '11000002',
+                              password: 'CashierTest!2026',
+                            ),
+                    ),
+                    ActionChip(
+                      label: const Text('Staff'),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _useDemoAccount(
+                              phone: '11000003',
+                              password: 'WaiterTest!2026',
+                            ),
+                    ),
+                  ],
+                )
+              : null,
+        );
 }

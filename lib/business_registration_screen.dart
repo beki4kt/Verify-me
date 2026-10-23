@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 
 import 'api_service.dart';
 import 'core/config/app_variant.dart';
-import 'core/theme/app_colors.dart';
+import 'core/config/payment_context.dart';
+import 'core/models/business_presets.dart';
+import 'core/widgets/entry_components.dart';
+import 'iphone/interactive_preview_screen.dart';
 import 'launch_experience.dart';
 import 'offline_storage.dart';
 import 'plan_catalog.dart';
@@ -18,6 +21,10 @@ class BusinessRegistrationScreen extends StatefulWidget {
 class _BusinessRegistrationScreenState
     extends State<BusinessRegistrationScreen> {
   int step = 0;
+  String categoryId = 'shop_retail';
+  String subtypeId = 'supermarket';
+  String workflowId = 'single_counter';
+  bool adjustSetup = false;
   String useCase = 'general';
   bool team = false;
   String review = 'automatic';
@@ -41,8 +48,31 @@ class _BusinessRegistrationScreenState
     super.initState();
     final draft = DeviceStorage.getOnboardingDraft();
     if (draft != null) {
-      step = (draft['step'] as int? ?? 0).clamp(0, 3);
+      final oldStep = (draft['step'] as int? ?? 0).clamp(0, 4);
+      step = draft['onboarding_version'] == 2
+          ? oldStep
+          : switch (oldStep) {
+              0 => 0,
+              1 => 2,
+              2 => 3,
+              _ => 4,
+            };
       useCase = draft['use_case']?.toString() ?? useCase;
+      categoryId =
+          draft['category_id']?.toString() ??
+          switch (useCase) {
+            'shop' => 'shop_retail',
+            'restaurant' => 'food_hospitality',
+            'service' => 'services_professionals',
+            _ => 'general_personal',
+          };
+      final category = BusinessPresets.category(categoryId);
+      subtypeId =
+          draft['subtype_id']?.toString() ??
+          (useCase == 'restaurant' ? 'restaurant' : category.subtypes.first.id);
+      workflowId =
+          draft['workflow_id']?.toString() ??
+          BusinessPresets.subtype(category, subtypeId).choices.first.id;
       team = draft['team'] == true;
       review = draft['review']?.toString() ?? review;
       reference = draft['reference']?.toString() ?? reference;
@@ -57,6 +87,8 @@ class _BusinessRegistrationScreenState
       email.text = draft['email']?.toString() ?? '';
       account.text = draft['account']?.toString() ?? '';
       awaitingConfirmation = draft['confirmation_pending'] == true;
+    } else {
+      _applyWorkflow();
     }
     for (final field in [business, owner, phone, email, account]) {
       field.addListener(_saveDraft);
@@ -65,7 +97,11 @@ class _BusinessRegistrationScreenState
 
   void _saveDraft() {
     DeviceStorage.saveOnboardingDraft({
+      'onboarding_version': 2,
       'step': step,
+      'category_id': categoryId,
+      'subtype_id': subtypeId,
+      'workflow_id': workflowId,
       'use_case': useCase,
       'team': team,
       'review': review,
@@ -90,20 +126,55 @@ class _BusinessRegistrationScreenState
     super.dispose();
   }
 
-  void _chooseUseCase(String value) {
+  BusinessCategory get category => BusinessPresets.category(categoryId);
+  BusinessSubtype get subtype => BusinessPresets.subtype(category, subtypeId);
+  WorkflowChoice get workflow => BusinessPresets.workflow(subtype, workflowId);
+
+  void _chooseCategory(String value) {
     setState(() {
-      useCase = value;
-      reference = switch (value) {
-        'restaurant' => 'table',
-        'shop' => 'order',
-        'service' => 'invoice',
-        _ => 'none',
-      };
+      categoryId = value;
+      subtypeId = category.subtypes.first.id;
+      workflowId = subtype.choices.first.id;
+      _applyWorkflow();
     });
     _saveDraft();
   }
 
+  void _chooseSubtype(String value) {
+    setState(() {
+      subtypeId = value;
+      workflowId = subtype.choices.first.id;
+      _applyWorkflow();
+    });
+    _saveDraft();
+  }
+
+  void _chooseWorkflow(String value) {
+    setState(() {
+      workflowId = value;
+      _applyWorkflow();
+    });
+    _saveDraft();
+  }
+
+  void _applyWorkflow() {
+    useCase = subtype.backendUseCase ?? category.backendUseCase;
+    reference = workflow.reference;
+    team = workflow.team;
+    review = workflow.review;
+    if (team) plan = 'pro';
+  }
+
   void _next() {
+    if (step == 2 && (category.previewOnly || useCase == 'personal')) {
+      Navigator.of(context).push(
+        CupertinoPageRoute<void>(
+          builder: (_) =>
+              InteractivePreviewScreen(events: category.previewOnly),
+        ),
+      );
+      return;
+    }
     setState(() {
       step++;
       error = null;
@@ -124,6 +195,10 @@ class _BusinessRegistrationScreenState
   }
 
   Future<void> _submit() async {
+    if (AppVariant.isUiPreview) {
+      setState(() => error = 'Registration needs the functional build.');
+      return;
+    }
     if (business.text.trim().length < 2 ||
         owner.text.trim().length < 2 ||
         !RegExp(r'^\+251[79]\d{8}$').hasMatch(phone.text.trim()) ||
@@ -186,209 +261,257 @@ class _BusinessRegistrationScreenState
     }
   }
 
-  Widget _choice(
-    String value,
-    String title,
-    String description,
-    IconData icon,
-    String selected,
-    ValueChanged<String> onSelect,
-  ) {
-    final active = value == selected;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 11),
-      child: Semantics(
-        button: true,
-        selected: active,
-        child: Material(
-          color: active
-              ? AppColors.primary.withValues(alpha: .12)
-              : Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(19),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(19),
-            onTap: () => onSelect(value),
-            child: Container(
-              padding: const EdgeInsets.all(17),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(19),
-                border: Border.all(
-                  color: active
-                      ? AppColors.primary
-                      : Theme.of(context).colorScheme.outlineVariant,
-                  width: active ? 1.5 : 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    icon,
-                    color: active
-                        ? AppColors.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          description,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (active)
-                    const Icon(
-                      CupertinoIcons.check_mark_circled_solid,
-                      color: AppColors.primary,
-                    ),
-                ],
+  Widget _categoryCard(BusinessCategory item, {bool wide = false}) {
+    final selected = item.id == categoryId;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected ? EntryColors.selected : EntryColors.surface,
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(15),
+          onTap: () => _chooseCategory(item.id),
+          child: Container(
+            height: wide ? 69 : 124,
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: selected ? EntryColors.blue : EntryColors.line,
+                width: selected ? 1.5 : 1,
               ),
             ),
+            child: wide
+                ? Row(
+                    children: [
+                      Icon(item.icon, color: EntryColors.muted, size: 21),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          item.label,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      if (selected)
+                        const Icon(
+                          CupertinoIcons.checkmark,
+                          color: EntryColors.blue,
+                          size: 18,
+                        ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(item.icon, color: EntryColors.muted, size: 21),
+                          const Spacer(),
+                          if (selected)
+                            const Icon(
+                              CupertinoIcons.checkmark,
+                              color: EntryColors.blue,
+                              size: 17,
+                            ),
+                        ],
+                      ),
+                      const Spacer(),
+                      Text(
+                        item.label,
+                        maxLines: 2,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          height: 1.13,
+                        ),
+                      ),
+                    ],
+                  ),
           ),
         ),
       ),
     );
   }
 
+  Widget _selectionRow({
+    required String title,
+    required bool selected,
+    required VoidCallback onTap,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected ? EntryColors.selected : EntryColors.surface,
+        borderRadius: BorderRadius.circular(13),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(13),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 53),
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: selected ? EntryColors.blue : EntryColors.line,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Icon(
+                  selected
+                      ? CupertinoIcons.checkmark_circle_fill
+                      : CupertinoIcons.circle,
+                  color: selected ? EntryColors.blue : EntryColors.muted,
+                  size: 21,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
   List<Widget> _content() => switch (step) {
     0 => [
-      _choice(
-        'shop',
-        'Shop / Retail',
-        'Customer payments and orders',
-        CupertinoIcons.bag,
-        useCase,
-        _chooseUseCase,
-      ),
-      _choice(
-        'restaurant',
-        'Restaurant / Cafe',
-        'Tables, orders and optional tips',
-        CupertinoIcons.square_list,
-        useCase,
-        _chooseUseCase,
-      ),
-      _choice(
-        'service',
-        'Services',
-        'Invoices, bookings and customers',
-        CupertinoIcons.briefcase,
-        useCase,
-        _chooseUseCase,
-      ),
-      _choice(
-        'general',
-        'General Business',
-        'A flexible payment workspace',
-        CupertinoIcons.square_grid_2x2,
-        useCase,
-        _chooseUseCase,
-      ),
+      for (var row = 0; row < 2; row++) ...[
+        Row(
+          children: [
+            Expanded(child: _categoryCard(BusinessPresets.categories[row * 2])),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _categoryCard(BusinessPresets.categories[row * 2 + 1]),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+      ],
+      _categoryCard(BusinessPresets.categories[4], wide: true),
     ],
     1 => [
-      Text(
-        'Who will be using Chekmi?',
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      const SizedBox(height: 14),
-      _choice(
-        'solo',
-        'Just Me',
-        'I verify and manage payments myself',
-        CupertinoIcons.person,
-        team ? 'team' : 'solo',
-        (v) {
-          setState(() {
-            team = false;
-            review = 'automatic';
-          });
-          _saveDraft();
-        },
-      ),
-      _choice(
-        'team',
-        'Me and My Team',
-        'Staff can verify and review payments',
-        CupertinoIcons.person_2,
-        team ? 'team' : 'solo',
-        (v) {
-          setState(() {
-            team = true;
-            plan = 'pro';
-          });
-          _saveDraft();
-        },
-      ),
-      const SizedBox(height: 16),
-      Text(
-        'How should payments be handled?',
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      const SizedBox(height: 14),
-      _choice(
-        'automatic',
-        'Complete Automatically',
-        'After bank verification, Chekmi marks the payment complete',
-        CupertinoIcons.checkmark_shield,
-        review,
-        (v) {
-          setState(() => review = v);
-          _saveDraft();
-        },
-      ),
-      _choice(
-        'review_required',
-        'Require Review',
-        'An authorized member completes it after verification',
-        CupertinoIcons.person_crop_circle_badge_checkmark,
-        review,
-        (v) {
-          setState(() => review = v);
-          _saveDraft();
-        },
-      ),
-      const SizedBox(height: 16),
-      Text(
-        'Track payments against',
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      const SizedBox(height: 10),
-      DropdownButtonFormField<String>(
-        key: ValueKey(reference),
-        initialValue: reference,
-        decoration: const InputDecoration(labelText: 'Default reference'),
-        items: const [
-          DropdownMenuItem(value: 'none', child: Text('No extra reference')),
-          DropdownMenuItem(value: 'invoice', child: Text('Invoice')),
-          DropdownMenuItem(value: 'order', child: Text('Order')),
-          DropdownMenuItem(value: 'booking', child: Text('Booking')),
-          DropdownMenuItem(value: 'customer', child: Text('Customer')),
-          DropdownMenuItem(value: 'table', child: Text('Table')),
-          DropdownMenuItem(value: 'note', child: Text('Note')),
-        ],
-        onChanged: (v) {
-          if (v != null) {
-            setState(() => reference = v);
-            _saveDraft();
-          }
-        },
-      ),
+      for (final item in category.subtypes)
+        _selectionRow(
+          title: item.label,
+          selected: item.id == subtypeId,
+          onTap: () => _chooseSubtype(item.id),
+        ),
     ],
     2 => [
       Text(
-        'Choose the plan that fits today.',
-        style: Theme.of(context).textTheme.bodyLarge,
+        subtype.label,
+        style: const TextStyle(
+          color: EntryColors.muted,
+          fontWeight: FontWeight.w600,
+        ),
       ),
-      const SizedBox(height: 18),
+      const SizedBox(height: 16),
+      for (final item in subtype.choices)
+        _selectionRow(
+          title: item.label,
+          selected: item.id == workflowId,
+          onTap: () => _chooseWorkflow(item.id),
+        ),
+      const SizedBox(height: 20),
+      const Divider(color: EntryColors.line),
+      _summaryRow(
+        'Track by',
+        reference == 'none'
+            ? 'Payment reference'
+            : PaymentContextKind.fromStorage(reference).label,
+      ),
+      _summaryRow('Workspace', team ? 'My Team' : 'Just Me'),
+      _summaryRow(
+        'Completion',
+        review == 'review_required' ? 'Review' : 'Auto',
+      ),
+      const Divider(color: EntryColors.line),
+      TextButton(
+        onPressed: () => setState(() => adjustSetup = !adjustSetup),
+        style: TextButton.styleFrom(foregroundColor: EntryColors.blue),
+        child: Text(adjustSetup ? 'Hide setup' : 'Adjust setup'),
+      ),
+      if (adjustSetup) ...[
+        const SizedBox(height: 12),
+        const Text(
+          'Who uses Chekmi?',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 9),
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: false, label: Text('Just Me')),
+            ButtonSegment(value: true, label: Text('My Team')),
+          ],
+          selected: {team},
+          onSelectionChanged: (value) {
+            setState(() {
+              team = value.first;
+              if (team) plan = 'pro';
+            });
+            _saveDraft();
+          },
+        ),
+        const SizedBox(height: 19),
+        const Text(
+          'When is payment complete?',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 9),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'automatic', label: Text('Auto')),
+            ButtonSegment(value: 'review_required', label: Text('Review')),
+          ],
+          selected: {review},
+          onSelectionChanged: (value) {
+            setState(() => review = value.first);
+            _saveDraft();
+          },
+        ),
+        const SizedBox(height: 19),
+        DropdownButtonFormField<String>(
+          key: ValueKey(reference),
+          initialValue: reference,
+          decoration: const InputDecoration(labelText: 'Track payments by'),
+          items: PaymentContextKind.values
+              .where((kind) => kind != PaymentContextKind.other)
+              .map(
+                (kind) => DropdownMenuItem(
+                  value: kind.name,
+                  child: Text(
+                    kind == PaymentContextKind.none
+                        ? 'Payment reference'
+                        : kind.label,
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => reference = value);
+              _saveDraft();
+            }
+          },
+        ),
+      ],
+      if (category.previewOnly || useCase == 'personal') ...[
+        const SizedBox(height: 15),
+        const Text(
+          'This setup is an illustrative preview. Registration is not open yet.',
+          style: TextStyle(color: EntryColors.muted),
+        ),
+      ],
+    ],
+    3 => [
       SegmentedButton<BillingPeriod>(
         segments: const [
           ButtonSegment(value: BillingPeriod.monthly, label: Text('Monthly')),
@@ -398,38 +521,34 @@ class _BusinessRegistrationScreenState
           ),
         ],
         selected: {period},
-        onSelectionChanged: (v) {
-          setState(() => period = v.first);
+        onSelectionChanged: (value) {
+          setState(() => period = value.first);
           _saveDraft();
         },
       ),
       const SizedBox(height: 20),
       for (final item in PlanCatalog.all)
-        _choice(
-          item.id,
-          item.name,
-          item.priceFor(period) == null
-              ? '${item.tagline} Price arranged during activation.'
-              : '${item.priceFor(period)} ETB / ${period == BillingPeriod.monthly ? 'month' : '3 months'} · ${item.staffLimit} member',
-          item.id == 'basic'
-              ? CupertinoIcons.square_stack
-              : CupertinoIcons.sparkles,
-          plan,
-          (v) {
-            if (team && v == 'basic') {
+        _selectionRow(
+          title: item.priceFor(period) == null
+              ? '${item.name} · Price arranged at activation'
+              : '${item.name} · ${item.priceFor(period)} ETB / ${period == BillingPeriod.monthly ? 'month' : '3 months'}',
+          selected: item.id == plan,
+          onTap: () {
+            if (team && item.id == 'basic') {
               setState(() => error = 'A team needs the Pro plan.');
               return;
             }
             setState(() {
-              plan = v;
+              plan = item.id;
               error = null;
             });
             _saveDraft();
           },
         ),
-      const SizedBox(height: 6),
+      const SizedBox(height: 8),
       const Text(
-        'Choosing a plan does not charge you. Activation is reviewed after registration.',
+        'No charge now. Activation is reviewed after registration.',
+        style: TextStyle(color: EntryColors.muted),
       ),
     ],
     _ => [
@@ -442,7 +561,7 @@ class _BusinessRegistrationScreenState
       TextField(
         controller: owner,
         textCapitalization: TextCapitalization.words,
-        decoration: const InputDecoration(labelText: 'Your name'),
+        decoration: const InputDecoration(labelText: 'Owner name'),
       ),
       const SizedBox(height: 13),
       TextField(
@@ -458,7 +577,7 @@ class _BusinessRegistrationScreenState
         controller: email,
         keyboardType: TextInputType.emailAddress,
         autofillHints: const [AutofillHints.email],
-        decoration: const InputDecoration(labelText: 'Owner email'),
+        decoration: const InputDecoration(labelText: 'Owner email for sign-in'),
       ),
       const SizedBox(height: 13),
       TextField(
@@ -472,16 +591,17 @@ class _BusinessRegistrationScreenState
             tooltip: hidePassword ? 'Show password' : 'Hide password',
             onPressed: () => setState(() => hidePassword = !hidePassword),
             icon: Icon(
-              hidePassword
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
+              hidePassword ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
             ),
           ),
         ),
       ),
-      const SizedBox(height: 23),
-      Text('Receiving account', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 10),
+      const SizedBox(height: 22),
+      const Text(
+        'Receiving account',
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 12),
       DropdownButtonFormField<String>(
         initialValue: provider,
         decoration: const InputDecoration(labelText: 'Payment provider'),
@@ -491,9 +611,9 @@ class _BusinessRegistrationScreenState
                   DropdownMenuItem(value: item.id, child: Text(item.label)),
             )
             .toList(),
-        onChanged: (v) {
-          if (v != null) {
-            setState(() => provider = v);
+        onChanged: (value) {
+          if (value != null) {
+            setState(() => provider = value);
             _saveDraft();
           }
         },
@@ -508,95 +628,125 @@ class _BusinessRegistrationScreenState
       ),
       if (awaitingConfirmation)
         const Padding(
-          padding: EdgeInsets.only(top: 20),
+          padding: EdgeInsets.only(top: 16),
           child: Text(
-            'Confirm the email we sent, then enter your password here and continue.',
+            'Confirm your email, then continue here.',
+            style: TextStyle(color: EntryColors.muted),
           ),
         ),
     ],
   };
 
+  Widget _summaryRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      children: [
+        Text(label, style: const TextStyle(color: EntryColors.muted)),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
-    const titles = [
-      'Let’s personalize Chekmi for you.',
-      'Make payments work your way.',
-      'Choose your plan.',
-      'Create your workspace.',
+    final subtypeTitle = switch (categoryId) {
+      'shop_retail' => 'What kind of shop?',
+      'food_hospitality' => 'What do you operate?',
+      'services_professionals' => 'What service do you offer?',
+      'events_venues' => 'What type of event?',
+      _ => 'How will you use Chekmi?',
+    };
+    final titles = [
+      'Choose your business',
+      subtypeTitle,
+      subtype.question,
+      'Choose your plan',
+      'Create your business',
     ];
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          onPressed: _back,
-          icon: const Icon(CupertinoIcons.back),
-          tooltip: 'Back',
-        ),
-        title: const Text('Register your business'),
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
-              children: [
-                LinearProgressIndicator(
-                  value: (step + 1) / 4,
-                  minHeight: 4,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                const SizedBox(height: 11),
-                Text(
-                  'Step ${step + 1} of 4',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-                const SizedBox(height: 26),
-                Text(
-                  titles[step],
-                  style: Theme.of(context).textTheme.headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  step == 0
-                      ? 'Tell us how you work. You can change this later.'
-                      : step == 3
-                      ? 'Your email confirms ownership. Your plan starts only after activation.'
-                      : 'A few choices now will make your workspace feel right from the start.',
-                ),
-                const SizedBox(height: 27),
-                ..._content(),
-                if (error != null)
+    return ChekmiEntryTheme(
+      child: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                children: [
                   Padding(
-                    padding: const EdgeInsets.only(top: 15),
-                    child: Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                    padding: const EdgeInsets.fromLTRB(23, 16, 23, 0),
+                    child: Column(
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: EntryBackButton(onPressed: _back),
+                        ),
+                        const SizedBox(height: 21),
+                        EntryStepProgress(step: step + 1, total: 5),
+                      ],
                     ),
                   ),
-                const SizedBox(height: 30),
-                SizedBox(
-                  height: 55,
-                  child: FilledButton(
-                    onPressed: busy
-                        ? null
-                        : step == 3
-                        ? _submit
-                        : _next,
-                    child: busy
-                        ? const CircularProgressIndicator()
-                        : Text(
-                            step == 3
-                                ? awaitingConfirmation
-                                      ? 'I’ve confirmed my email'
-                                      : 'Create workspace request'
-                                : 'Continue',
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(23, 27, 23, 18),
+                      children: [
+                        Text(
+                          titles[step],
+                          style: const TextStyle(
+                            fontSize: 31,
+                            height: 1.09,
+                            letterSpacing: -1.2,
+                            fontWeight: FontWeight.w800,
                           ),
+                        ),
+                        if (step == 4) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '${subtype.label} · ${workflow.label}',
+                            style: const TextStyle(color: EntryColors.muted),
+                          ),
+                        ],
+                        const SizedBox(height: 28),
+                        ..._content(),
+                        if (error != null) ...[
+                          const SizedBox(height: 15),
+                          Text(
+                            error!,
+                            style: const TextStyle(color: EntryColors.error),
+                          ),
+                        ],
+                        if (step == 4) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Email confirms ownership. Your plan starts only after activation.',
+                            style: TextStyle(color: EntryColors.muted),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(23, 8, 23, 20),
+                    child: EntryActionButton(
+                      label: step == 4
+                          ? awaitingConfirmation
+                                ? 'I’ve confirmed my email'
+                                : 'Request activation'
+                          : step == 2 &&
+                                (category.previewOnly || useCase == 'personal')
+                          ? 'Explore Preview'
+                          : 'Continue',
+                      loading: busy,
+                      onPressed: step == 4 ? _submit : _next,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

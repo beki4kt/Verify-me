@@ -69,7 +69,12 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap>
     WidgetsBinding.instance.addObserver(this);
     ApiService.setAppForeground(true);
     _session = SessionController();
-    _startup = AppVariant.isUiPreview ? Future<void>.value() : _initialize();
+    if (AppVariant.isUiPreview) {
+      _initialDestination = const WelcomeScreen();
+      _startup = Future<void>.value();
+    } else {
+      _startup = _initialize();
+    }
   }
 
   @override
@@ -244,6 +249,8 @@ class VerifyMeApp extends StatelessWidget {
     final locked = DeviceStorage.getLockedBusiness();
     final initial = locked['id'] != null
         ? const StaffLoginScreen()
+        : AppVariant.usesIPhoneUi
+        ? const WelcomeScreen()
         : const BusinessGatewayScreen();
 
     return MaterialApp(
