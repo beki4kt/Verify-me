@@ -57,3 +57,62 @@ test("private provider lookup rejects missing keys and returns owned receipt evi
     ]);
   }
 });
+
+test("isolated staging fixtures never contact a live provider relay", async () => {
+  let relayRequests = 0;
+  const relay = createServer((_request, response) => {
+    relayRequests++;
+    response.writeHead(503).end();
+  });
+  await new Promise<void>((done) => relay.listen(0, "127.0.0.1", done));
+  const relayAddress = relay.address();
+  assert.ok(relayAddress && typeof relayAddress !== "string");
+  const values = {
+    NODE_ENV: "production",
+    CHEKMI_ENV: "staging",
+    CHEKMI_VERIFIER_MODE: "fixtures",
+    CHEKMI_VERIFICATION_ENGINE: "owned",
+    CHEKMI_PROVIDER_EGRESS: "proxy",
+    CHEKMI_INTERNAL_LOOKUP_KEY: "staging-test-only-key",
+    TELEBIRR_PROXY_URLS: `http://127.0.0.1:${relayAddress.port}/verify.php`,
+    TELEBIRR_PROXY_KEY: "local-only-key",
+  };
+  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, values);
+  const app = express();
+  app.use(express.json());
+  app.use("/api", providerLookupRouter);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((done) => server.once("listening", done));
+  const apiAddress = server.address();
+  assert.ok(apiAddress && typeof apiAddress !== "string");
+  const endpoint = `http://127.0.0.1:${apiAddress.port}/api/internal/provider-lookup`;
+  try {
+    const headers = { "Content-Type": "application/json", "x-chekmi-lookup-key": "staging-test-only-key" };
+    const missing = await fetch(endpoint, {
+      method: "POST", headers,
+      body: JSON.stringify({ provider: "telebirr", reference: "CHEKMI-OK" }),
+    });
+    assert.equal(missing.status, 400);
+    const accepted = await fetch(endpoint, {
+      method: "POST", headers,
+      body: JSON.stringify({ provider: "telebirr", reference: "CHEKMI-OK",
+        expectedAmount: 150, receivingAccount: "0911000099" }),
+    });
+    assert.equal(accepted.status, 200);
+    const result = await accepted.json() as Record<string, any>;
+    assert.equal(result.ok, true);
+    assert.equal(result.data.fixture, true);
+    assert.equal(result.data.amount, 150);
+    assert.equal(result.data.receiverAccount, "0911000099");
+    assert.equal(relayRequests, 0);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await Promise.all([
+      new Promise<void>((done) => server.close(() => done())),
+      new Promise<void>((done) => relay.close(() => done())),
+    ]);
+  }
+});

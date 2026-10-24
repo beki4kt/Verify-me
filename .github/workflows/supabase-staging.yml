@@ -55,6 +55,7 @@ jobs:
           npm --prefix backend-server ci
           npm --prefix backend-server audit --omit=dev --audit-level=moderate
           node backend-server/scripts/build-edge.cjs
+          node backend-server/scripts/build-demo.cjs
           git diff --exit-code -- supabase/functions
           npm --prefix backend-server test
       - uses: supabase/setup-cli@v1
@@ -73,6 +74,7 @@ jobs:
         run: |
           supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
             CHEKMI_ENV=staging \
+            CHEKMI_VERIFIER_MODE=fixtures \
             CHEKMI_BACKEND_URL="$STAGING_CHEKMI_BACKEND_URL" \
             CHEKMI_INTERNAL_LOOKUP_KEY="$STAGING_CHEKMI_INTERNAL_LOOKUP_KEY" \
             CORS_ALLOWED_ORIGINS="$STAGING_CORS_ALLOWED_ORIGINS"

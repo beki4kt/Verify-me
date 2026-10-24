@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import { verifyWithOwnedRoute, OwnedVerifierError, type Provider } from "../ownedVerifier";
 import { verifierConfiguration } from "../veritasVerifier";
+import { fixtureVerification, resolveVerifierMode } from "../verificationFixtures";
 
 export const providerLookupRouter = Router();
 const providers = new Set<Provider>(["telebirr", "cbe", "cbebirr", "dashen", "abyssinia", "mpesa"]);
@@ -28,6 +29,23 @@ providerLookupRouter.post("/internal/provider-lookup", async (req, res) => {
       (body?.suffix !== undefined && (typeof body.suffix !== "string" || body.suffix.length > 8)) ||
       (body?.phoneNumber !== undefined && (typeof body.phoneNumber !== "string" || body.phoneNumber.length > 16))) {
     res.status(400).json({ ok: false, code: "INVALID_LOOKUP", error: "Invalid provider lookup." });
+    return;
+  }
+  if (resolveVerifierMode() === "fixtures") {
+    const expectedAmount = body?.expectedAmount;
+    const receivingAccount = body?.receivingAccount;
+    if (typeof expectedAmount !== "number" || !Number.isFinite(expectedAmount) ||
+        expectedAmount <= 0 || typeof receivingAccount !== "string" ||
+        !receivingAccount.trim() || receivingAccount.length > 64) {
+      res.status(400).json({ ok: false, code: "INVALID_FIXTURE_CONTEXT", error: "Staging fixture context is required." });
+      return;
+    }
+    res.status(200).json(fixtureVerification({
+      provider,
+      reference: reference.trim(),
+      expectedAmount,
+      receivingAccount: receivingAccount.trim(),
+    }));
     return;
   }
   try {

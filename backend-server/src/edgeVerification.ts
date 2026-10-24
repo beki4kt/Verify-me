@@ -35,6 +35,7 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
   const backend = env.CHEKMI_BACKEND_URL?.trim() || "";
   const configured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY &&
     env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() && /^https:\/\/[^/?#]+\/api$/.test(backend));
+  const fixtureMode = env.CHEKMI_ENV === "staging" && env.CHEKMI_VERIFIER_MODE === "fixtures";
   return async (req: Request): Promise<Response> => {
     const requestId = crypto.randomUUID();
     const origin = req.headers.get("origin");
@@ -51,7 +52,7 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
     if (!originAllowed) return respond(403, { success: false, code: "ORIGIN_NOT_ALLOWED", error: "This web origin is not configured." });
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
     if (req.method === "GET") return respond(configured ? 200 : 503, {
-      status: configured ? "ready" : "not_ready", verifierMode: "live",
+      status: configured ? "ready" : "not_ready", verifierMode: fixtureMode ? "fixtures" : "live",
       verifier: { engine: "owned", mode: "transaction-id", configured, imageVerification: false },
       service: "chekmi-verify", version: "2026-10-15.1",
     });
@@ -135,7 +136,11 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
         if (!phone) throw new Failure("RECEIVING_ACCOUNT_INVALID", "Configure a valid CBE Birr receiving phone in Admin.");
         lookup.phoneNumber = phone;
       }
-      const outgoing = { provider, ...lookup };
+      // Only isolated staging fixtures receive synthetic amount/account input.
+      // Live production lookups keep their existing minimal provider contract.
+      const outgoing = fixtureMode
+        ? { provider, ...lookup, expectedAmount: expected, receivingAccount: account }
+        : { provider, ...lookup };
       let upstream: Response | undefined; let payload: unknown;
       // One bounded retry of the read-only provider lookup absorbs short
       // outages. Never retry a database commit or a rejected receipt.

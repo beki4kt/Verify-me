@@ -1,5 +1,53 @@
 # CHEKMI Phase 1 — staging, backend recovery, and security foundation
 
+## 24 October 2026 staging gate update
+
+**Gate remains blocked.** A separate Supabase project and backend have not been provisioned. The user confirmed that staging was not provisioned, and this machine has no authorized Supabase management token, Supabase CLI, staging database connection, or backend hosting access. No remote migration, Edge deployment, staging payment, production change, or real provider call was made. The 21 October findings below are historical unless superseded here.
+
+### What is now prepared
+
+| Area | Verified result | Changes |
+|---|---|---|
+| GitHub deployment boundary | The repository's `staging` environment was absent when checked with repository-admin access; it has now been created and confirmed with an owner-required review rule. Its environment variables and secrets are both empty. A 404 from the earlier environment lookup was checked against the environment list and was genuine absence, not assumed from the status alone. | GitHub repository environment; no production deployment |
+| Local target | The ignored `config/staging.json` had production Supabase and backend hosts. It was replaced locally with fail-fast placeholders from `config/staging.example.json`. It is not committed or a usable staging credential source. | Ignored local `config/staging.json` |
+| Provider isolation | A staging backend in fixture mode now handles the private provider-lookup route with synthetic responses, after its internal-key check. It requires expected amount and receiving account, and does not contact a live provider. The staging Edge verifier supplies those values only in staging fixture mode. Production retains its live lookup contract. The demo labels fixture results illustrative. | `backend-server/src/routes/providerLookupRoute.ts`, `backend-server/src/edgeVerification.ts`, `backend-server/src/demoVerification.ts`, tests, generated `chekmi-verify` and `chekmi-demo` bundles |
+| Staging packaging | Added a staging-only backend environment template and `package-alet.ps1 -Staging`. The new package includes the staging template, compiled backend, and source; it excludes the production-oriented Alet example, `.env`, and `node_modules`. Its SHA-256 is `ECA76D9D05E288261641F24D6904A81100359E1F04D96B8D45894791B47ED3D2`. | `backend-server/.env.staging.example`, `backend-server/scripts/package-alet.ps1`, `build/Chekmi-Staging-Backend-Safe-v2-20261024.zip` (local ignored artifact) |
+| Edge deployment check | The manual staging workflow sets `CHEKMI_VERIFIER_MODE=fixtures` for staging Edge functions and now checks both verifier/evidence and demo generated bundles before deployment. | `.github/workflows/supabase-staging.yml` |
+
+### Actual validation on 24 October
+
+| Command or check | Result |
+|---|---|
+| `node scripts/check_staging_target.mjs` with current local configuration | **Exit 1 as intended:** distinct staging ref and valid staging Supabase/backend URLs are absent. This is not a pass with genuine staging configuration. |
+| `node --test scripts/check_staging_target.test.mjs` | **5/5 passed**, including rejection of production project, production backend, production database, malformed URLs, and a positive synthetic staging target. |
+| `flutter test --no-pub test/app_environment_test.dart` | **11/11 passed**, including Flutter rejection of production targets in nonproduction modes. |
+| `npm test` in `backend-server` | **64/64 passed** with test doubles; includes staging fixture route, illustrative demo, readiness label, and the prior evidence/tenant tests. No deployed provider or Storage system was exercised. |
+| `npm run build` in `backend-server` | **Passed** after correcting the new readiness test type. |
+| `node backend-server/scripts/build-edge.cjs` and `node backend-server/scripts/build-demo.cjs` | **Passed**; generated verifier, receipt evidence, and demo bundles. |
+| Staging backend ZIP manifest | **126 entries**; staging example present, production Alet example absent, private `.env` absent, `node_modules` absent. |
+| GitHub environment API | `staging` exists with required owner review; **0 variables, 0 secrets**. No workflow was dispatched. |
+| Remote migration list, migration dry run/apply, Edge readiness, Auth, Storage, two-tenant access | **Not run** because there is no separate staging project or backend. |
+
+### Exact operator action to unblock the gate
+
+1. Create a new Supabase project for Chekmi staging under an account authorized to provision it. Confirm any plan or resource cost in that account first. Do not import customer data. The project must have its own Auth, Postgres, Storage, project ref, database password, publishable key, service-role key, and management access token.
+2. Create a separate HTTPS backend app. Deploy `build/Chekmi-Staging-Backend-Safe-v2-20261024.zip` or the same source commit using `backend-server/.env.staging.example` as the variable checklist. Set its `CHEKMI_ENV=staging`, distinct `CHEKMI_STAGING_PROJECT_REF`, staging `SUPABASE_URL`, staging `SUPABASE_SERVICE_ROLE_KEY`, `CHEKMI_VERIFIER_MODE=fixtures`, `CHEKMI_VERIFICATION_ENGINE=owned`, and a new staging-only `CHEKMI_INTERNAL_LOOKUP_KEY`. Keep the service-role key and internal key in the host's secret store. Do not copy production values or configure live provider credentials.
+3. In the existing protected GitHub `staging` environment, set variables `STAGING_SUPABASE_PROJECT_REF`, `STAGING_SUPABASE_URL`, `STAGING_CHEKMI_BACKEND_URL` (HTTPS URL ending in `/api`), and `STAGING_CORS_ALLOWED_ORIGINS`. Set secrets `STAGING_SUPABASE_ACCESS_TOKEN`, `STAGING_SUPABASE_DB_PASSWORD`, `STAGING_DATABASE_URL`, `STAGING_SUPABASE_PUBLISHABLE_KEY`, `STAGING_CHEKMI_INTERNAL_LOOKUP_KEY`, and `STAGING_FIXTURE_STAFF_PASSWORD`. The internal key must match the new backend's key. Never send secret values in chat or commit them.
+4. Provide access to those configured resources or confirm they are ready. Then run `node scripts/check_staging_target.mjs` using the genuine staging values. Only after it passes, run the protected `Supabase staging deployment` workflow with `apply=false`, review `supabase migration list` and `supabase db push --dry-run`, and then run with `apply=true` and synthetic seed. Validate the three Edge endpoints, private Storage, and two synthetic workspaces with the existing health/schema/isolation scripts. Record the actual results here before considering Phase 2 unblocked.
+
+The owner review rule protects the GitHub deployment workflow. It does not substitute for a separate cloud project, backend, credentials, successful guard run, or live tenant-isolation test. **PHASE 1 STAGING GATE HAS NOT PASSED.**
+
+### Audit status carried forward
+
+| Requirement IDs | Current status | Why |
+|---|---|---|
+| A12, H20, K06 | PARTIAL | Source and GitHub deployment boundaries exist, but no second cloud project/backend or runtime separation test exists. |
+| K03, K04 | NOT VERIFIED | All three Edge functions and relevant RPC migrations exist in source, but the staging project and remote migration history are unavailable. |
+| K05 | NOT VERIFIED | Staging deliberately uses synthetic fixtures; authorized provider sandbox credentials have not been supplied. |
+| H02, H03, H19 | NOT VERIFIED | Local tenant and permission tests pass with doubles; remote RLS, private Storage, and member revocation have not been exercised in staging. |
+
+The last observed production readiness check on 21 October showed `chekmi-verify` ready and `chekmi-demo` and `chekmi-receipt-evidence` returning 404. No new production probe was performed in this update, and no staging endpoint exists to probe yet. Staging migration list, dry run, apply, and schema assertions are all **not run**. The only rollback needed for this update is source reversion or deleting the empty GitHub staging environment; no database or hosted application was changed.
+
 **21 October 2026. Status: partially implemented; staging acceptance is blocked.** No production migration, Edge deployment, financial transaction, SMS, or customer-data write was performed. The distinct staging Supabase project and credentials were not available in this workspace. Source and local tests cannot prove live staging isolation, receipt Storage authorization, or restored endpoints.
 
 ## Baseline and architecture
@@ -46,7 +94,7 @@ The production health failure is now accurate: it is caused by two missing endpo
 1. Provision a **new Supabase project** with its own Auth, database, Storage, project ref, publishable key, service-role key, and access token. Do not clone customer records or reuse production credentials. Provision a separate HTTPS backend and nonproduction provider/test credentials. Set its backend `CHEKMI_ENV=staging`, `CHEKMI_STAGING_PROJECT_REF`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CHEKMI_INTERNAL_LOOKUP_KEY`, and its own verifier credentials. The backend startup guard must pass before serving.
 2. In GitHub's protected **staging** environment, set variables `STAGING_SUPABASE_PROJECT_REF`, `STAGING_SUPABASE_URL`, `STAGING_CHEKMI_BACKEND_URL`, `STAGING_CORS_ALLOWED_ORIGINS`; set secrets `STAGING_SUPABASE_ACCESS_TOKEN`, `STAGING_SUPABASE_DB_PASSWORD`, `STAGING_DATABASE_URL`, `STAGING_SUPABASE_PUBLISHABLE_KEY`, `STAGING_CHEKMI_INTERNAL_LOOKUP_KEY`, and `STAGING_FIXTURE_STAFF_PASSWORD`. The backend and Edge function must receive the **same** internal lookup key. Store secret values only in the provider's secret store. No values belong in this report or a committed config.
 3. Review staging's migration history against `supabase/migrations/`, especially `202610160001`, `202610180001`, and `202610200001`. Run the manual **Supabase staging deployment** workflow once with `apply=false`; inspect its migration list and dry run. After review, run `apply=true` and optionally `seed_synthetic=true`. That path deploys all three existing function names and executes the schema/security assertions. A backend deployment is separate and must be completed before `chekmi-verify` and `chekmi-demo` can report ready.
-4. Fill ignored `config/staging.json` from `config/staging.example.json` with the new staging-only values. The current ignored local file still points at the production Supabase project and `chekmi.app.aletcloud.com`; **do not use it**. The Flutter guard now rejects that project. For local development, use `config/development.example.json` with local Supabase; for offline visual preview, use `CHEKMI_ENV=preview` and `CHEKMI_UI_PREVIEW=true`.
+4. Fill ignored `config/staging.json` from `config/staging.example.json` with the new staging-only values. The local file was reset to placeholders on 24 October, so it cannot run until real staging values are supplied. The Flutter guard rejects the known production project. For local development, use `config/development.example.json` with local Supabase; for offline visual preview, use `CHEKMI_ENV=preview` and `CHEKMI_UI_PREVIEW=true`.
 5. Run `CHEKMI_ENV=staging CHEKMI_SUPABASE_URL=<staging URL> CHEKMI_SUPABASE_PUBLISHABLE_KEY=<staging publishable key> node scripts/check_production_health.mjs`. An unauthenticated receipt GET must yield the expected application `401 SESSION_REQUIRED`, not a platform 404. Run `supabase/staging_schema_assertions.sql` read-only using `psql` against the distinct staging database. After creating **synthetic verified fixture tickets and originals** for Mesob A and Isolation B, run `scripts/check_staging_receipt_isolation.mjs` with short-lived fixture staff tokens, ticket IDs, and B's object key. It performs no provider lookup or financial write.
 
 The local `scripts/bootstrap_staging.ps1` is another staging-only setup route. It now requires `-ExpectedProjectRef`, `-ExpectedDatabaseHost`, `-DatabaseUrl`, and environment variable `STAGING_FIXTURE_STAFF_PASSWORD`; it refuses URLs/usernames identifying production before writing. Do not use it on a populated project without first reviewing migration and seed impact.

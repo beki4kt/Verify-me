@@ -3,6 +3,13 @@ import test from "node:test";
 import { createEdgeVerificationHandler } from "./edgeVerification";
 
 const env = { SUPABASE_URL: "https://database.example", SUPABASE_SERVICE_ROLE_KEY: "private-database-key", CHEKMI_BACKEND_URL: "https://backend.example/api", CHEKMI_INTERNAL_LOOKUP_KEY: "private-lookup-key" };
+test('readiness labels isolated staging fixtures truthfully', async () => {
+  const staging = createEdgeVerificationHandler({ ...env, CHEKMI_ENV: 'staging', CHEKMI_VERIFIER_MODE: 'fixtures' });
+  const production = createEdgeVerificationHandler({ ...env, CHEKMI_ENV: 'production', CHEKMI_VERIFIER_MODE: 'live' });
+  const request = new Request('https://database.example/functions/v1/chekmi-verify');
+  assert.equal((await (await staging(request)).json() as Record<string, unknown>).verifierMode, 'fixtures');
+  assert.equal((await (await production(request)).json() as Record<string, unknown>).verifierMode, 'live');
+});
 const receipt = (change = {}) => ({ ok: true, data: {
   reference: "DHU5AM9UB3", amount: 600, txnDate: new Date().toISOString(), status: "completed", receiverAccount: "0911000099", currency: "ETB", ...change,
 } });

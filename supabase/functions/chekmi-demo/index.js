@@ -1,4 +1,4 @@
-// src/paymentSecurity.ts
+// backend-server/src/paymentSecurity.ts
 function normalizeAccount(value) {
   const normalized = String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
   if (/^0[79]\d{8}$/.test(normalized)) return `251${normalized.slice(1)}`;
@@ -15,7 +15,7 @@ function authoritativeEthiopianPhone(configuredAccount) {
   return /^251[79]\d{8}$/.test(normalized) ? normalized : null;
 }
 
-// src/demoVerification.ts
+// backend-server/src/demoVerification.ts
 var providers = /* @__PURE__ */ new Set(["telebirr", "cbe", "cbebirr", "dashen", "abyssinia", "mpesa"]);
 var hash = async (value) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))).map((x) => x.toString(16).padStart(2, "0")).join("");
 async function boundedJson(value, limit = 5e5) {
@@ -45,6 +45,7 @@ async function boundedJson(value, limit = 5e5) {
 }
 function createDemoVerificationHandler(env, transport = fetch) {
   const backend = env.CHEKMI_BACKEND_URL?.trim() || "";
+  const fixtureMode = env.CHEKMI_ENV === "staging" && env.CHEKMI_VERIFIER_MODE === "fixtures";
   const ready = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() && /^https:\/\/[^/?#]+\/api$/.test(backend));
   return async (req) => {
     const requestId = crypto.randomUUID();
@@ -57,7 +58,7 @@ function createDemoVerificationHandler(env, transport = fetch) {
       headers["Access-Control-Allow-Headers"] = "content-type,apikey";
       headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS";
     }
-    const reply = (status, body) => new Response(JSON.stringify({ ...body, demo: true, requestId }), { status, headers });
+    const reply = (status, body) => new Response(JSON.stringify({ ...body, demo: true, illustrative: fixtureMode, requestId }), { status, headers });
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
     if (req.method === "GET") return reply(ready ? 200 : 503, { status: ready ? "ready" : "not_ready", service: "chekmi-demo", version: "2026-10-15.1", allowance: 10 });
     if (req.method !== "POST") return reply(405, { success: false, error: "Use POST." });
@@ -90,7 +91,7 @@ function createDemoVerificationHandler(env, transport = fetch) {
         if (!phone) return reply(400, { success: false, error: "Enter the receiving CBE Birr phone number." });
         input.phoneNumber = phone;
       }
-      const outgoing = { provider, ...input };
+      const outgoing = fixtureMode ? { provider, ...input, expectedAmount: 250, receivingAccount: typeof body.receivingAccount === "string" && body.receivingAccount.trim() ? body.receivingAccount.trim() : "0911000099" } : { provider, ...input };
       const cap = Number(env.DEMO_DAILY_LIMIT || 100);
       const reservation = await rpc("reserve_demo_lookup", { p_token_hash: tokenHash, p_request_id: body.lookupId, p_fingerprint: await hash(JSON.stringify(outgoing)), p_daily_limit: Number.isInteger(cap) && cap > 0 && cap <= 1e4 ? cap : 100 });
       const remaining = reservation.remaining;
@@ -106,7 +107,7 @@ function createDemoVerificationHandler(env, transport = fetch) {
           const data = verified.data;
           if (!data || typeof data.reference !== "string" || typeof data.amount !== "number" || data.amount <= 0 || typeof data.currency !== "string" || typeof data.txnDate !== "string")
             result = { success: false, error: "The provider returned an incomplete receipt." };
-          else result = { success: true, receipt: { provider, reference: data.reference, amount: data.amount, currency: data.currency, date: data.txnDate, receiverName: data.receiverName, receiverAccount: data.receiverAccount } };
+          else result = { success: true, receipt: { provider, reference: data.reference, amount: data.amount, currency: data.currency, date: data.txnDate, receiverName: data.receiverName, receiverAccount: data.receiverAccount, ...fixtureMode ? { sample: true } : {} } };
         }
       } catch {
         result = { success: false, error: "The provider did not respond in time. This lookup used one demo check." };

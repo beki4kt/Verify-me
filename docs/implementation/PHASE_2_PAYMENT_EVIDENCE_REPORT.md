@@ -11,7 +11,7 @@ The owner confirmed on 24 October that a separate staging Supabase project and b
 | Phase 1 foundation report | `docs/implementation/PHASE_1_FOUNDATION_REPORT.md` says isolated staging, deployment, schema reconciliation, and two-tenant runtime checks were unverified. | Phase 1 acceptance cannot be inferred from local tests. |
 | Local ignored staging config | `config/staging.json` exists, but a read-only host comparison found that its Supabase and backend hosts are both the known production hosts. No URL or key was printed. | It cannot be used for safe Phase 2 tests. |
 | Staging target guard | `node scripts/check_staging_target.mjs` exited 1: no valid distinct project ref, Supabase URL, or backend URL was present in the command environment. | A functional staging build or deployment has no validated target. |
-| GitHub staging environment | Read-only GitHub API checks for staging variables/secrets returned HTTP 404 with the available credential. This may mean the environment is absent or inaccessible; neither interpretation proves a configured staging target. | Required staging credentials are not available for verification. |
+| GitHub staging environment | On 24 October, repository-admin access confirmed the environment was absent, then created `staging` with required owner review. It currently has zero variables and zero secrets. | Required staging credentials are still unavailable; no configured cloud target is proven. |
 | Live schema, endpoints, tenant isolation | No authorized staging database connection or deployed staging endpoint was available to inspect. | Migration state, private evidence retrieval, and cross-workspace denial remain unverified. |
 
 The requested `CHEKMI_PRODUCTION_READINESS_AUDIT(10).md` was not found in the repository or the searched workspace. The available baseline is `docs/audits/CHEKMI_PRODUCTION_READINESS_AUDIT.md`, which retains D01–D30 and E01–E30 as Partial, Missing, or Not Verified according to its status index. **No D/E status is upgraded here.**
@@ -28,7 +28,7 @@ The requested `CHEKMI_PRODUCTION_READINESS_AUDIT(10).md` was not found in the re
 
 - `node scripts/check_staging_target.mjs` — local Windows, exit 1, invalid/missing staging target variables.
 - Read-only classification of `config/staging.json` — both configured hosts match known production hosts; credential values were not displayed.
-- GitHub staging variable/secret metadata lookup — HTTP 404 with the available credential; no values retrieved.
+- GitHub staging environment metadata — `staging` now exists with required owner review, zero variables, and zero secrets; no values retrieved.
 - No provider, database, Storage, migration, or financial reconciliation test was run. Source files and existing local tests cannot establish deployed payment correctness.
 
 ## Migration and recovery

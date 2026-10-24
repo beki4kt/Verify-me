@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$Destination
+  [string]$Destination,
+  [switch]$Staging
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -11,7 +12,12 @@ if (Test-Path -LiteralPath $archivePath) { throw "Archive already exists: $archi
 if (-not (Test-Path -LiteralPath (Join-Path $backendRoot 'dist/index.js'))) {
   throw 'Run npm run build before packaging.'
 }
-$rootFiles = @('package.json', 'package-lock.json', 'tsconfig.json', 'Dockerfile', '.dockerignore', '.env.example', '.env.alet.example', 'README.alet.md')
+$rootFiles = @('package.json', 'package-lock.json', 'tsconfig.json', 'Dockerfile', '.dockerignore')
+if ($Staging) {
+  $rootFiles += '.env.staging.example'
+} else {
+  $rootFiles += @('.env.example', '.env.alet.example', 'README.alet.md')
+}
 $files = @($rootFiles | ForEach-Object { Get-Item -LiteralPath (Join-Path $backendRoot $_) })
 foreach ($directory in @('src', 'dist', 'scripts', 'certs')) {
   $files += @(Get-ChildItem -LiteralPath (Join-Path $backendRoot $directory) -File -Recurse |

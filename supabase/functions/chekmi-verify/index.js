@@ -156,6 +156,7 @@ function createEdgeVerificationHandler(env, transport = fetch) {
   const inFlight = /* @__PURE__ */ new Set();
   const backend = env.CHEKMI_BACKEND_URL?.trim() || "";
   const configured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() && /^https:\/\/[^/?#]+\/api$/.test(backend));
+  const fixtureMode = env.CHEKMI_ENV === "staging" && env.CHEKMI_VERIFIER_MODE === "fixtures";
   return async (req) => {
     const requestId = crypto.randomUUID();
     const origin = req.headers.get("origin");
@@ -173,7 +174,7 @@ function createEdgeVerificationHandler(env, transport = fetch) {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
     if (req.method === "GET") return respond(configured ? 200 : 503, {
       status: configured ? "ready" : "not_ready",
-      verifierMode: "live",
+      verifierMode: fixtureMode ? "fixtures" : "live",
       verifier: { engine: "owned", mode: "transaction-id", configured, imageVerification: false },
       service: "chekmi-verify",
       version: "2026-10-15.1"
@@ -262,7 +263,7 @@ function createEdgeVerificationHandler(env, transport = fetch) {
         if (!phone) throw new Failure("RECEIVING_ACCOUNT_INVALID", "Configure a valid CBE Birr receiving phone in Admin.");
         lookup.phoneNumber = phone;
       }
-      const outgoing = { provider, ...lookup };
+      const outgoing = fixtureMode ? { provider, ...lookup, expectedAmount: expected, receivingAccount: account } : { provider, ...lookup };
       let upstream;
       let payload;
       for (let attempt = 1; attempt <= 2; attempt++) {

@@ -11,12 +11,13 @@ async function boundedJson(value:Request|Response,limit=500000):Promise<Json>{
 }
 export function createDemoVerificationHandler(env:Record<string,string|undefined>,transport:typeof fetch=fetch){
   const backend=env.CHEKMI_BACKEND_URL?.trim()||'';
+  const fixtureMode=env.CHEKMI_ENV==='staging'&&env.CHEKMI_VERIFIER_MODE==='fixtures';
   const ready=Boolean(env.SUPABASE_URL&&env.SUPABASE_SERVICE_ROLE_KEY&&env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim()&&/^https:\/\/[^/?#]+\/api$/.test(backend));
   return async(req:Request)=>{
     const requestId=crypto.randomUUID();const origin=req.headers.get('origin');
     const headers:Record<string,string>={'Content-Type':'application/json','Cache-Control':'no-store'};
     if(origin){if(!(env.CORS_ALLOWED_ORIGINS||'').split(',').map(x=>x.trim()).includes(origin))return new Response('Origin not allowed',{status:403});headers['Access-Control-Allow-Origin']=origin;headers.Vary='Origin';headers['Access-Control-Allow-Headers']='content-type,apikey';headers['Access-Control-Allow-Methods']='GET,POST,OPTIONS';}
-    const reply=(status:number,body:Json)=>new Response(JSON.stringify({...body,demo:true,requestId}),{status,headers});
+    const reply=(status:number,body:Json)=>new Response(JSON.stringify({...body,demo:true,illustrative:fixtureMode,requestId}),{status,headers});
     if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
     if(req.method==='GET')return reply(ready?200:503,{status:ready?'ready':'not_ready',service:'chekmi-demo',version:'2026-10-15.1',allowance:10});
     if(req.method!=='POST')return reply(405,{success:false,error:'Use POST.'});
@@ -44,7 +45,9 @@ export function createDemoVerificationHandler(env:Record<string,string|undefined
       if(provider==='cbebirr'){
         const phone=authoritativeEthiopianPhone(body.receivingAccount);if(!phone)return reply(400,{success:false,error:'Enter the receiving CBE Birr phone number.'});input.phoneNumber=phone;
       }
-      const outgoing={provider,...input};
+      const outgoing=fixtureMode
+        ? {provider,...input,expectedAmount:250,receivingAccount:typeof body.receivingAccount==='string'&&body.receivingAccount.trim()?body.receivingAccount.trim():'0911000099'}
+        : {provider,...input};
       const cap=Number(env.DEMO_DAILY_LIMIT||100);
       const reservation=await rpc('reserve_demo_lookup',{p_token_hash:tokenHash,p_request_id:body.lookupId,p_fingerprint:await hash(JSON.stringify(outgoing)),p_daily_limit:Number.isInteger(cap)&&cap>0&&cap<=10000?cap:100});
       const remaining=reservation.remaining;
@@ -58,7 +61,7 @@ export function createDemoVerificationHandler(env:Record<string,string|undefined
         else{const data=verified.data as Json;
           if(!data||typeof data.reference!=='string'||typeof data.amount!=='number'||data.amount<=0||typeof data.currency!=='string'||typeof data.txnDate!=='string')
             result={success:false,error:'The provider returned an incomplete receipt.'};
-          else result={success:true,receipt:{provider,reference:data.reference,amount:data.amount,currency:data.currency,date:data.txnDate,receiverName:data.receiverName,receiverAccount:data.receiverAccount}};}
+          else result={success:true,receipt:{provider,reference:data.reference,amount:data.amount,currency:data.currency,date:data.txnDate,receiverName:data.receiverName,receiverAccount:data.receiverAccount,...(fixtureMode?{sample:true}:{})}};}
       }catch{result={success:false,error:'The provider did not respond in time. This lookup used one demo check.'};}
       await rpc('finish_demo_lookup',{p_token_hash:tokenHash,p_request_id:body.lookupId,p_result:result});
       return reply(200,{...result,remaining});

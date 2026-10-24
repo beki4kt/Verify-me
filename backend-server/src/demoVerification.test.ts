@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createDemoVerificationHandler} from './demoVerification';
-function setup(){
+function setup(fixture=false){
   const state={used:0,lookups:0,fail:false,capacity:false};
   const requests=new Map<string,{fingerprint:string,result:unknown}>();
   const calls:string[]=[];
-  const handler=createDemoVerificationHandler({SUPABASE_URL:'https://db.example',SUPABASE_SERVICE_ROLE_KEY:'secret-db',CHEKMI_BACKEND_URL:'https://backend.example/api',CHEKMI_INTERNAL_LOOKUP_KEY:'secret-lookup'},(async(url,init)=>{
+  const handler=createDemoVerificationHandler({SUPABASE_URL:'https://db.example',SUPABASE_SERVICE_ROLE_KEY:'secret-db',CHEKMI_BACKEND_URL:'https://backend.example/api',CHEKMI_INTERNAL_LOOKUP_KEY:'secret-lookup',...(fixture?{CHEKMI_ENV:'staging',CHEKMI_VERIFIER_MODE:'fixtures'}:{})},(async(url,init)=>{
     const path=String(url);const body=JSON.parse(String(init?.body));calls.push(path);
     let result:unknown;
     if(path.endsWith('/internal/provider-lookup')){state.lookups++;if(state.fail)throw Error('private transport details');
       assert.equal(new Headers(init?.headers).get('x-chekmi-lookup-key'),'secret-lookup');
-      assert.deepEqual(body,{provider:'telebirr',reference:'DI82JQ406M'});
-      result={ok:true,data:{reference:'DI82JQ406M',amount:100,currency:'ETB',txnDate:'2026-09-08T09:21:32.000Z',receiverAccount:'2519****7175'}};
+      assert.deepEqual(body,fixture?{provider:'telebirr',reference:'CHEKMI-OK',expectedAmount:250,receivingAccount:'0911000099'}:{provider:'telebirr',reference:'DI82JQ406M'});
+      result={ok:true,data:{reference:fixture?'CHEKMI-OK':'DI82JQ406M',amount:fixture?250:100,currency:'ETB',txnDate:'2026-09-08T09:21:32.000Z',receiverAccount:fixture?'0911000099':'2519****7175',...(fixture?{fixture:true}:{})}};
     }else if(path.endsWith('demo_lookup_status'))result={remaining:10-state.used,result:requests.get(body.p_request_id)?.result??null};
     else if(path.endsWith('reserve_demo_lookup')){
       assert.match(body.p_token_hash,/^[0-9a-f]{64}$/);assert.notEqual(body.p_token_hash,'a'.repeat(64));
@@ -25,7 +25,7 @@ function setup(){
     return new Response(JSON.stringify(result));
   }) as typeof fetch);
   const send=async(extra:Record<string,unknown>={})=>{
-    const response=await handler(new Request('https://db.example/functions/v1/chekmi-demo',{method:'POST',body:JSON.stringify({installationToken:'a'.repeat(64),action:'verify',lookupId:'12345678-1234-1234-1234-123456789012',provider:'telebirr',reference:'DI82JQ406M',...extra})}));
+    const response=await handler(new Request('https://db.example/functions/v1/chekmi-demo',{method:'POST',body:JSON.stringify({installationToken:'a'.repeat(64),action:'verify',lookupId:'12345678-1234-1234-1234-123456789012',provider:'telebirr',reference:fixture?'CHEKMI-OK':'DI82JQ406M',...extra})}));
     return {status:response.status,body:await response.json() as Record<string,any>};
   };
   return {state,calls,send};
@@ -51,4 +51,12 @@ test('failed demo lookups count once and never become fake successes',async()=>{
 });
 test('daily demo capacity prevents a provider lookup',async()=>{
   const {send,state}=setup();state.capacity=true;assert.equal((await send()).body.code,'DEMO_LIMIT');assert.equal(state.lookups,0);assert.equal(state.used,0);
+});
+test('staging fixture demo is explicitly illustrative and never a business payment',async()=>{
+  const {send,calls}=setup(true);const result=await send();
+  assert.equal(result.body.success,true);
+  assert.equal(result.body.illustrative,true);
+  assert.equal(result.body.receipt.sample,true);
+  assert.equal(result.body.receipt.amount,250);
+  assert.ok(calls.every(x=>!x.includes('commit_verified_payment')));
 });
