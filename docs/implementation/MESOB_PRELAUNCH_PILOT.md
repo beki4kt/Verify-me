@@ -1,0 +1,32 @@
+# Chekmi prelaunch pilot: Mesob on the current project
+
+**Decision, 24 October 2026:** The owner chose to use Chekmi's current Supabase project and backend for prelaunch testing, with `MESOB-DEMO` as the first full-feature pilot workspace. A separate staging project and backend are no longer a prerequisite for Phase 2. The optional staging tooling remains available but must not be pointed at the current project or described as an isolated environment.
+
+This is a **single-project pilot**, not proof of environment isolation. Apply the normal production code path and keep the financial record truthful. Mesob may exercise Pro entitlements, but an `active` subscription flag alone does not prove that a subscription invoice was paid. Do not create a fake subscription payment or call a synthetic provider response bank-confirmed evidence.
+
+## Current evidence and limitations
+
+- `supabase/seed.sql` defines `MESOB-DEMO` as an active Pro restaurant with cashier access, but this only describes the seed file. It does not prove the current database row or migration state.
+- That seed contains known demo passwords and upserts staff by phone and staff number. **Never rerun `supabase/seed.sql` or `CHEKMI_APP_TEST_SETUP.sql` on the current project.** If Mesob staff were created from that seed, rotate their credentials before broader testing or any external pilot.
+- `supabase/mesob_readiness.sql` is a read-only assertion for the existing workspace, receipt RPCs, and private bucket. It is appropriate only after checking which migrations are installed; a failure is a diagnostic, not permission to paste the full setup bundle.
+- A read-only check on 24 October returned `chekmi-verify` HTTP 200/ready on the **`veritas`** engine. `chekmi-demo` and `chekmi-receipt-evidence` both returned HTTP 404. The legal-version and invalid-session checks passed. This proves endpoint readiness only, not a successful provider transaction. The repository's currently prepared `chekmi-verify` bundle reports the **`owned`** engine; do not replace the working deployed verifier as part of restoring the two missing endpoints without reviewing that engine change.
+- No Supabase management token, database connection, or backend hosting credential was available to this agent on 24 October. The live Mesob row, backup state, migration history, current endpoints, and tenant isolation remain unverified.
+
+## Controlled sequence
+
+1. **Record a recovery point.** Confirm the current project's backup/restore option and capture a backup or provider-supported restore point before any migration. Record the current migration list and deployed function names. Do not export customer or receipt contents into source control.
+2. **Inspect Mesob without writing.** Confirm exactly one `MESOB-DEMO` business, its real subscription status/tier, active staff count, workspace profile, receiving-account presence (not values), and existing verification history. Use read-only dashboard queries or `supabase/mesob_readiness.sql` after schema checks. Confirm whether any subscription invoice/payment really exists before describing Mesob as paid in reports.
+3. **Check migration history.** Compare the remote `supabase_migrations.schema_migrations` history with checked-in `supabase/migrations/`. Run `supabase migration list` and `supabase db push --dry-run` if authorized CLI access is available. Do not run a full fresh-project SQL bundle or manually reapply migrations already present.
+4. **Reconcile only missing, additive schema.** Review the dry run and backup, then apply the smallest required migrations to the current project. Keep existing restaurant rows, financial records, and receipt images intact. Run `supabase/mesob_readiness.sql` afterward and record its actual result.
+5. **Restore only the missing services on the same project.** After schema reconciliation, deploy `chekmi-demo` and `chekmi-receipt-evidence` with their required secrets and backend contract. Preserve the currently ready `chekmi-verify`/`veritas` deployment until its engine, response shape, and rollback path are reviewed separately. Do not enable `CHEKMI_VERIFIER_MODE=fixtures` on the current backend: fixture results must never enter the ordinary customer ledger. Verify GET readiness and the receipt endpoint's expected unauthorized response before a payment test.
+6. **Test access with two workspaces.** Keep Mesob as Workspace A and use a separately created synthetic Workspace B. Test that B cannot retrieve Mesob metadata or original receipt images and that unauthenticated clients cannot browse the private bucket. Use distinct staff sessions and no customer records.
+7. **Exercise the Mesob journey.** Test login, provider rejection/uncertainty, duplicate recovery, evidence upload failure/retry, receipt history/detail, and completion policy. For a successful bank-confirmed verification, use only an explicitly authorized genuine test transaction to Mesob's configured receiving account. Check that retries do not create a second confirmed payment. Do not use a fabricated bank success or a production SMS just to satisfy a test.
+8. **Record evidence and continue Phase 2.** Update `PHASE_2_PAYMENT_EVIDENCE_REPORT.md` with the exact migration, endpoint, tenant-isolation, provider, and device outcomes. Keep each untested provider marked Not Verified. Phase 2 proceeds feature by feature; the absence of a second project is a documented pilot risk, not a claim that isolation was tested.
+
+## Immediate access needed
+
+The operator can provide **nonsecret** project reference, backend URL, migration versions/status, and readiness outputs, or grant an authorized read-only management path. Keep access tokens, database URLs/passwords, service-role keys, internal lookup keys, and staff passwords in the existing secret manager, never in chat. A deployment or real-money verification must be tied to a reviewed migration/dry run or a specifically authorized transaction, respectively.
+
+## Recovery
+
+If a migration or endpoint fails, stop new verification attempts, preserve current payment/evidence records, inspect the backup and migration history, and repair with an additive change. Restore a prior function bundle or backend release only if its schema contract remains compatible. Do not delete or rewrite confirmed financial history to make a test pass.

@@ -1,5 +1,7 @@
 # CHEKMI Phase 1 — staging, backend recovery, and security foundation
 
+> **Owner decision, 24 October 2026:** A separate staging project/backend is no longer required for the prelaunch pilot. Mesob will be tested on the current project under the controls in [MESOB_PRELAUNCH_PILOT.md](MESOB_PRELAUNCH_PILOT.md). The staging findings below remain historical evidence; do not use this report to require a second project before Phase 2.
+
 ## 24 October 2026 staging gate update
 
 **Gate remains blocked.** A separate Supabase project and backend have not been provisioned. The user confirmed that staging was not provisioned, and this machine has no authorized Supabase management token, Supabase CLI, staging database connection, or backend hosting access. No remote migration, Edge deployment, staging payment, production change, or real provider call was made. The 21 October findings below are historical unless superseded here.

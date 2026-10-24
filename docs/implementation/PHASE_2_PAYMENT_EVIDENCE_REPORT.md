@@ -1,5 +1,9 @@
 # Chekmi Phase 2 — payment integrity and receipt evidence
 
+> **Owner decision, 24 October 2026:** The separate-staging gate described below has been superseded for the prelaunch pilot. Use the current project and `MESOB-DEMO` under [MESOB_PRELAUNCH_PILOT.md](MESOB_PRELAUNCH_PILOT.md). This changes the test environment decision; it does not upgrade any unverified payment or evidence requirement. No live Phase 2 test was completed by this decision.
+
+> **Read-only current-project probe, 24 October:** `chekmi-verify` returned 200/ready with engine `veritas`; `chekmi-demo` and `chekmi-receipt-evidence` returned 404. The latter two remain deployment gaps. The prepared source verifier reports `owned`, so a blanket deploy of all three functions would change the working verifier engine and is not authorized by this pilot plan.
+
 **Preflight status, 24 October 2026: blocked by the Phase 1 staging gate. Phase 2 implementation and financial integration testing have not begun.** No payment, SMS, migration, Storage write, or production deployment was performed. The current best iPhone source/build remains commit `f2e199b`.
 
 The owner confirmed on 24 October that a separate staging Supabase project and backend have **not** been provisioned.
