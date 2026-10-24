@@ -11,6 +11,7 @@ This is a **single-project pilot**, not proof of environment isolation. Apply th
 - `supabase/mesob_readiness.sql` is a read-only assertion for the existing workspace, receipt RPCs, and private bucket. It is appropriate only after checking which migrations are installed; a failure is a diagnostic, not permission to paste the full setup bundle.
 - A read-only check on 24 October returned `chekmi-verify` HTTP 200/ready on the **`veritas`** engine. `chekmi-demo` and `chekmi-receipt-evidence` both returned HTTP 404. The legal-version and invalid-session checks passed. This proves endpoint readiness only, not a successful provider transaction. The repository's currently prepared `chekmi-verify` bundle reports the **`owned`** engine; do not replace the working deployed verifier as part of restoring the two missing endpoints without reviewing that engine change.
 - No Supabase management token, database connection, or backend hosting credential was available to this agent on 24 October. The live Mesob row, backup state, migration history, current endpoints, and tenant isolation remain unverified.
+- The GitHub repository environment list has `github-pages` and the unused `staging` environment, but no `production` environment. The manual Supabase production workflow is not present on `origin/main`. Therefore GitHub Actions is not currently a ready deployment path for the master project; use authorized Supabase Dashboard/CLI access after the reviewed preflight rather than assuming that workflow can run.
 
 ## Controlled sequence
 
