@@ -2,6 +2,7 @@ import dns from "node:dns/promises";
 import https from "node:https";
 import tls from "node:tls";
 import providerTls from "./provider-tls.cjs";
+import { planPreflight } from "./preflight-targets.mjs";
 
 const DEFAULT_TIMEOUT_MS = 12_000;
 const timeoutMs = Number(process.env.PREFLIGHT_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
@@ -31,23 +32,8 @@ if (!Number.isFinite(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 60_000) {
   throw new Error("PREFLIGHT_TIMEOUT_MS must be between 1000 and 60000.");
 }
 
-const targets = [
-  ["Telebirr", "transactioninfo.ethiotelecom.et", 443],
-  ["CBE app", "apps.cbe.com.et", 100],
-  ["CBE mobile", "mb.cbe.com.et", 443],
-  ["Dashen", "receipt.dashensuperapp.com", 443],
-  ["Abyssinia", "cs.bankofabyssinia.com", 443],
-  ["CBE Birr", "cbepay1.cbe.com.et", 443],
-  ["M-Pesa", "m-pesabusiness.safaricom.et", 443],
-];
-
 const supabaseHost = argument("supabase-host");
-if (supabaseHost) {
-  if (!/^[a-z0-9.-]+$/i.test(supabaseHost)) {
-    throw new Error("--supabase-host must be a hostname, not a URL or secret.");
-  }
-  targets.push(["Supabase", supabaseHost, 443]);
-}
+const plan = planPreflight(process.env, supabaseHost);
 
 function getEgressTrace() {
   return new Promise((resolve, reject) => {
@@ -108,21 +94,22 @@ function checkTls(host, port) {
 }
 
 let failures = 0;
-console.log("CHEKMI verifier host preflight\n");
+console.log(`CHEKMI verifier host preflight (${plan.mode} egress)\n`);
+for (const error of plan.errors) { console.log(`FAIL configuration: ${error}`); failures++; }
 
 try {
   const egress = await getEgressTrace();
   const isEthiopian = egress.country === "ET";
-  const acceptable = isEthiopian || allowNonEthiopianEgress;
-  const outcome = isEthiopian ? "PASS" : allowNonEthiopianEgress ? "WARN" : "FAIL";
-  console.log(`${outcome} egress: ${egress.ip || "unknown"} (${egress.country || "unknown"})`);
+  const acceptable = isEthiopian || !plan.requiresEthiopianEgress || allowNonEthiopianEgress;
+  const outcome = isEthiopian || !plan.requiresEthiopianEgress ? "PASS" : allowNonEthiopianEgress ? "WARN" : "FAIL";
+  console.log(`${outcome} egress: ${egress.ip || "unknown"} (${egress.country || "unknown"})${plan.requiresEthiopianEgress ? "" : " via configured Ethiopian relays for blocked banks"}`);
   if (!acceptable) failures += 1;
 } catch (error) {
   failures += 1;
   console.log(`FAIL egress: ${error.message}`);
 }
 
-for (const [label, host, port] of targets) {
+for (const [label, host, port] of plan.targets) {
   if (host === "apps.cbe.com.et" && process.env.CBE_LEGACY_ENABLED?.trim().toLowerCase() === "false") {
     console.log(`SKIP ${label.padEnd(11)} ${host}:${port} (legacy CBE disabled; not a connectivity pass)`);
     continue;

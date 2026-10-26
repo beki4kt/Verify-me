@@ -147,6 +147,18 @@ test('Edge reports upstream outages and missing commit confirmations without suc
   assert.equal((await bad.send()).body.code, 'COMMIT_NOT_CONFIRMED');
 });
 
+test('Edge reports a bad owned relay key as configuration failure without retrying or committing', async () => {
+  const { state, send } = setup();
+  state.upstreamStatus = 503;
+  state.payload = { ok: false, code: 'VERIFIER_CONFIGURATION_ERROR', error: 'Private relay key mismatch.' };
+  const result = await send();
+  assert.equal(result.body.code, 'VERIFIER_CONFIGURATION_ERROR');
+  assert.equal(result.body.retryable, false);
+  assert.equal(state.calls, 1);
+  assert.equal(state.commits.length, 0);
+  assert.ok(!JSON.stringify(result.body).includes('Private relay key mismatch'));
+});
+
 test('Edge recovers a transient provider gateway failure with one retry and one commit', async () => {
   const {state, send, upstreamResponses} = setup();
   upstreamResponses.push(new Response('<html>Bad gateway</html>', {status:502}));

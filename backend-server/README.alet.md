@@ -1,5 +1,10 @@
 # Deploy CHEKMI backend to Alet App Hosting
 
+**26 October update:** this guide records an older deployment. The previously
+documented Alet hostname returned HTTP 404 for /health and /ready on 26
+October. For the current owned backend and PHP relay, use
+[README.relay.md](README.relay.md) and verify the actual new Node hostname.
+
 **September 7 update:** for the Veritas Pro transaction-ID integration, follow
 [README.veritas.md](README.veritas.md). The guide below describes the previous
 owned-verifier deployment and its bank egress diagnostics.

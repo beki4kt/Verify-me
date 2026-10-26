@@ -175,6 +175,21 @@ function parseRelayPayload(payload: unknown): TelebirrReceipt | null {
   };
 }
 
+function relayFailure(payload: unknown): void {
+  if (!payload || typeof payload !== "object") return;
+  const value = payload as Record<string, unknown>;
+  if (value.success !== false) return;
+  const error = String(value.error ?? "").toLowerCase();
+  if (error.includes("unauthorized") || error.includes("proxy key")) {
+    throw new OwnedVerifierError("Telebirr relay authentication failed.", "VERIFIER_CONFIGURATION_ERROR", 503, false);
+  }
+  if (error.includes("missing reference") || error.includes("invalid reference format")) {
+    throw new OwnedVerifierError("Telebirr relay rejected the reference.", "INVALID_REFERENCE", 400, false);
+  }
+  if (error.includes("not found") || error.includes("reference is invalid")) return;
+  throw new OwnedVerifierError("Telebirr relay could not confirm this receipt.", "PROVIDER_UNAVAILABLE", 503, true);
+}
+
 function normalizeTelebirr(
   submittedReference: string,
   receipt: TelebirrReceipt,
@@ -275,12 +290,16 @@ async function relayReceipt(
     headers: { Accept: "application/json", "User-Agent": "CHEKMI-Verifier/1.0" },
   });
   if (typeof response.data === "string") {
+    let payload: unknown;
     try {
-      return parseRelayPayload(JSON.parse(response.data));
+      payload = JSON.parse(response.data);
     } catch {
       return parseTelebirrHtml(response.data);
     }
+    relayFailure(payload);
+    return parseRelayPayload(payload);
   }
+  relayFailure(response.data);
   return parseRelayPayload(response.data);
 }
 

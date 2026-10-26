@@ -16,7 +16,7 @@ $rootFiles = @('package.json', 'package-lock.json', 'tsconfig.json', 'Dockerfile
 if ($Staging) {
   $rootFiles += '.env.staging.example'
 } else {
-  $rootFiles += @('.env.example', '.env.alet.example', 'README.alet.md')
+  $rootFiles += @('.env.example', '.env.alet.example', 'README.relay.md', 'README.alet.md')
 }
 $files = @($rootFiles | ForEach-Object { Get-Item -LiteralPath (Join-Path $backendRoot $_) })
 foreach ($directory in @('src', 'dist', 'scripts', 'certs')) {

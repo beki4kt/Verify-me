@@ -34,7 +34,7 @@ export function ownedVerifierConfiguration(env: NodeJS.ProcessEnv = process.env)
   const validMode = rawMode === "direct" || rawMode === "auto" || rawMode === "proxy";
   const mode = validMode ? rawMode : "invalid";
   const validRelay = (raw: string | undefined, key: string | undefined) => {
-    if (!raw?.trim() || !key?.trim()) return false;
+    if (!raw?.trim() || !key?.trim() || /^(?:replace|your|example|placeholder)[-_\s]/i.test(key.trim())) return false;
     return raw.split(",").every((value) => {
       try {
         const url = new URL(value.trim());

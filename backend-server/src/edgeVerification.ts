@@ -171,8 +171,16 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
           // Check status before JSON parsing: a gateway may return an HTML
           // access/credit/rate-limit error, which must keep its real category.
           if ([500, 502, 503, 504].includes(upstream.status)) {
-            failed = true;
-            await upstream.body?.cancel();
+            if (upstream.status === 503 && engine === "owned") {
+              try {
+                const problem = await readJson(upstream, 1_000_000);
+                if (json(problem)?.code === "VERIFIER_CONFIGURATION_ERROR") payload = problem;
+                else failed = true;
+              } catch { failed = true; }
+            } else {
+              failed = true;
+              await upstream.body?.cancel();
+            }
           } else if ([401, 402, 403, 429].includes(upstream.status)) {
             await upstream.body?.cancel();
           } else {
@@ -192,6 +200,7 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
       if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The payment lookup credential needs attention.", 503);
       if (upstream.status === 402) throw new Failure("VERIFICATION_ALLOWANCE_EXHAUSTED", "The payment lookup allowance is exhausted.", 503);
       if (upstream.status === 429) throw new Failure("PROVIDER_RATE_LIMIT", "The provider is busy. Wait a minute.", 429, true);
+      if (upstream.status === 503 && json(payload)?.code === "VERIFIER_CONFIGURATION_ERROR") throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The Chekmi provider connection needs administrator attention.", 503);
       if (upstream.status >= 500) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider is temporarily unavailable. Keep this receipt and try again shortly.", 503, true);
       if (!upstream.ok) throw new Failure("NOT_VERIFIED", "The provider could not verify this reference.");
       const verified = veritas ? normalizeVeritas(provider, reference, payload) : json(payload);

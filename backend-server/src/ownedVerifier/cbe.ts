@@ -130,6 +130,21 @@ function mapLegacyRelayReceipt(payload: unknown): CbeReceipt | null {
   };
 }
 
+function cbeRelayError(error: unknown, isNewToken: boolean): OwnedVerifierError {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    if (status === 401) return new OwnedVerifierError("CBE relay authentication failed.", "VERIFIER_CONFIGURATION_ERROR", 503, false);
+    if (status === 400) return new OwnedVerifierError("CBE relay rejected the receipt token.", "INVALID_REFERENCE", 400, false);
+    const body = error.response?.data;
+    const detail = body && typeof body === "object" && !Buffer.isBuffer(body)
+      ? String((body as Record<string, unknown>).detail ?? "") : "";
+    if (isNewToken && status === 500 && /invalid or tampered.*token/i.test(detail)) {
+      return new OwnedVerifierError("CBE rejected this receipt token.", "INVALID_REFERENCE", 422, false);
+    }
+  }
+  return toOwnedVerifierError(error, "CBE relay");
+}
+
 function normalizeCbe(
   submittedReference: string,
   receipt: CbeReceipt,
@@ -339,7 +354,7 @@ export async function verifyCbeOwned(
         return normalizeCbe(reference, receipt);
       }
     } catch (error) {
-      lastError = toOwnedVerifierError(error, "CBE relay");
+      lastError = cbeRelayError(error, Boolean(newToken));
     }
   }
   if (lastError) throw lastError;

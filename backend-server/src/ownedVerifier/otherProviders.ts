@@ -1,6 +1,7 @@
 import axios from "axios";
 import pdfParse from "pdf-parse";
 import type { Agent } from "node:https";
+import { positiveAmount } from "../paymentSecurity";
 
 const { providerHttpsAgent }: { providerHttpsAgent(url: URL): Agent | undefined } =
   require("../../scripts/provider-tls.cjs");
@@ -461,6 +462,40 @@ function normalizeWalletPdf(
   };
 }
 
+// The relay forwards Safaricom's response unchanged. Its base64Data has been
+// observed as a receipt PDF in older integrations and is documented as JSON
+// by the current relay operator. Accept either only after the provider's
+// responseCode confirms a found receipt and the receipt fields match.
+function normalizeMpesaJson(submittedReference: string, payload: unknown): OwnedVerificationResult {
+  const envelope = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown> : null;
+  const nested = envelope?.data ?? envelope?.receipt;
+  const raw = nested && typeof nested === "object" && !Array.isArray(nested)
+    ? nested as Record<string, unknown> : envelope;
+  if (!raw) return failed("mpesa", "M-Pesa returned an invalid receipt document.");
+  const receiptNo = nonEmpty(rowValue(raw, "receiptNo", "receiptNumber", "receiptNumberId"));
+  const transactionId = nonEmpty(rowValue(raw, "transactionId", "transactionID", "transactionReference", "transactionCode"));
+  const reference = referencesMatch(submittedReference, receiptNo) ? receiptNo
+    : referencesMatch(submittedReference, transactionId) ? transactionId : null;
+  const amount = positiveAmount(numberFrom(rowValue(raw, "amount", "transactionAmount", "paidAmount", "settledAmount")));
+  const date = ethiopianLocalDate(rowValue(raw, "transactionDate", "paymentDate", "txnDate", "date"));
+  const receiverAccount = nonEmpty(rowValue(raw, "receiverAccount", "receiverAccountNumber", "receiverPhone", "receiverNumber", "creditedPartyAccountNo"));
+  const status = nonEmpty(rowValue(raw, "transactionStatus", "status", "statusText"));
+  const currency = nonEmpty(raw.currency)?.toUpperCase() ?? "ETB";
+  if (!reference || amount === null || !date || !receiverAccount ||
+      (status && !completedStatus(status)) || !["ETB", "BIRR"].includes(currency)) {
+    return failed("mpesa", "M-Pesa receipt is missing matching completed payment details.");
+  }
+  return { ok: true, provider: "mpesa", data: {
+    reference, amount, currency: "ETB", txnDate: date, receiverAccount,
+    receiverName: nonEmpty(rowValue(raw, "receiverName", "creditedPartyName")),
+    payerName: nonEmpty(rowValue(raw, "payerName", "customerName", "senderName")),
+    payerAccount: nonEmpty(rowValue(raw, "payerAccount", "payerPhone", "senderAccount")),
+    status: "completed", statusText: status ?? "receipt found",
+    raw: safeRaw(raw),
+  } };
+}
+
 function normalizeCbeBirr(
   submittedReference: string,
   receipt: CbeBirrReceipt,
@@ -587,7 +622,7 @@ export async function verifyMpesaOwned(
   rawReference: string,
 ): Promise<OwnedVerificationResult> {
   const reference = rawReference.trim().toUpperCase();
-  if (!/^[A-Z0-9-]{6,32}$/.test(reference)) {
+  if (!/^[A-Z0-9]{3,64}$/.test(reference)) {
     return failed("mpesa", "Invalid M-Pesa receipt reference.", "INVALID_REFERENCE");
   }
   let lastError: OwnedVerifierError | null = null;
@@ -597,14 +632,29 @@ export async function verifyMpesaOwned(
   ]) {
     try {
       const payload = await fetchMpesaPayload(reference, useRelay);
-      if (String(payload.responseCode) !== "0" || !nonEmpty(payload.base64Data)) {
-        continue;
+      if (payload.success === false) {
+        const code = String(payload.responseCode ?? "");
+        if (code === "401") throw new OwnedVerifierError("M-Pesa relay authentication failed.", "VERIFIER_CONFIGURATION_ERROR", 503, false);
+        if (code === "400") return failed("mpesa", "M-Pesa relay rejected the reference.", "INVALID_REFERENCE");
+        throw new OwnedVerifierError("M-Pesa relay is unavailable.", "PROVIDER_UNAVAILABLE", 503, true);
       }
-      const pdf = Buffer.from(String(payload.base64Data), "base64");
-      if (pdf.length === 0 || pdf.length > MAX_PROVIDER_RESPONSE_BYTES) {
+      if (String(payload.responseCode) === "2032") return failed("mpesa", "M-Pesa receipt was not found.", "RECEIPT_NOT_FOUND");
+      if (String(payload.responseCode) !== "0") {
+        throw new OwnedVerifierError("M-Pesa could not confirm this receipt.", "PROVIDER_UNAVAILABLE", 503, true);
+      }
+      const encoded = nonEmpty(payload.base64Data);
+      if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
         return failed("mpesa", "M-Pesa returned an invalid receipt document.");
       }
-      return normalizeWalletPdf("mpesa", reference, await parseWalletPdf(pdf));
+      const bytes = Buffer.from(encoded, "base64");
+      if (bytes.length === 0 || bytes.length > MAX_PROVIDER_RESPONSE_BYTES) {
+        return failed("mpesa", "M-Pesa returned an invalid receipt document.");
+      }
+      if (bytes.subarray(0, 5).toString() === "%PDF-") {
+        return normalizeWalletPdf("mpesa", reference, await parseWalletPdf(bytes));
+      }
+      try { return normalizeMpesaJson(reference, JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))); }
+      catch { return failed("mpesa", "M-Pesa returned an unsupported receipt document."); }
     } catch (error) {
       lastError = toOwnedVerifierError(error, useRelay ? "M-Pesa relay" : "M-Pesa");
     }

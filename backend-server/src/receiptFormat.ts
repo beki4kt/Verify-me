@@ -57,6 +57,7 @@ function validIso(value: string): string | null {
 }
 
 export function completedStatus(value: unknown): boolean {
+  if (String(value ?? "").trim() === "ተጠናቅቋል") return true;
   const normalized = String(value ?? "")
     .toLowerCase()
     .replace(/[^a-z]+/g, " ")

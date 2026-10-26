@@ -50,6 +50,11 @@ test("owned verifier reports direct and relay capabilities without secrets", () 
     CBE_PROXY_URL:"https://relay.example/verifyCbe.php",CBE_PROXY_KEY:"key",
     MPESA_PROXY_URL:"https://relay.example/mpesa.php",MPESA_PROXY_KEY:"key",
   }).configured, true);
+  assert.equal(ownedVerifierConfiguration({CHEKMI_PROVIDER_EGRESS:"proxy",
+    TELEBIRR_PROXY_URLS:"https://relay.example/verify.php",TELEBIRR_PROXY_KEY:"REPLACE_PRIVATELY_IN_ALET",
+    CBE_PROXY_URL:"https://relay.example/verifyCbe.php",CBE_PROXY_KEY:"key",
+    MPESA_PROXY_URL:"https://relay.example/mpesa.php",MPESA_PROXY_KEY:"key",
+  }).configured, false);
 });
 
 test("Ethiopian provider timestamps are converted to UTC", () => {

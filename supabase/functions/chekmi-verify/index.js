@@ -44,6 +44,7 @@ function validIso(value) {
   return Number.isNaN(date.valueOf()) ? null : date.toISOString();
 }
 function completedStatus(value) {
+  if (String(value ?? "").trim() === "\u1270\u1320\u1293\u1245\u124B\u120D") return true;
   const normalized = String(value ?? "").toLowerCase().replace(/[^a-z]+/g, " ").trim();
   return (/* @__PURE__ */ new Set([
     "success",
@@ -441,8 +442,18 @@ function createEdgeVerificationHandler(env, transport = fetch) {
             signal: AbortSignal.any([deadline, AbortSignal.timeout(timeout)])
           });
           if ([500, 502, 503, 504].includes(upstream.status)) {
-            failed = true;
-            await upstream.body?.cancel();
+            if (upstream.status === 503 && engine === "owned") {
+              try {
+                const problem = await readJson(upstream, 1e6);
+                if (json(problem)?.code === "VERIFIER_CONFIGURATION_ERROR") payload = problem;
+                else failed = true;
+              } catch {
+                failed = true;
+              }
+            } else {
+              failed = true;
+              await upstream.body?.cancel();
+            }
           } else if ([401, 402, 403, 429].includes(upstream.status)) {
             await upstream.body?.cancel();
           } else {
@@ -469,6 +480,7 @@ function createEdgeVerificationHandler(env, transport = fetch) {
       if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The payment lookup credential needs attention.", 503);
       if (upstream.status === 402) throw new Failure("VERIFICATION_ALLOWANCE_EXHAUSTED", "The payment lookup allowance is exhausted.", 503);
       if (upstream.status === 429) throw new Failure("PROVIDER_RATE_LIMIT", "The provider is busy. Wait a minute.", 429, true);
+      if (upstream.status === 503 && json(payload)?.code === "VERIFIER_CONFIGURATION_ERROR") throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The Chekmi provider connection needs administrator attention.", 503);
       if (upstream.status >= 500) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider is temporarily unavailable. Keep this receipt and try again shortly.", 503, true);
       if (!upstream.ok) throw new Failure("NOT_VERIFIED", "The provider could not verify this reference.");
       const verified = veritas ? normalizeVeritas(provider, reference, payload) : json(payload);
