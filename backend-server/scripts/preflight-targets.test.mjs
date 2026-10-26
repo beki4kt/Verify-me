@@ -34,7 +34,7 @@ test("proxy preflight fails closed on missing or unsafe relay configuration", ()
 test("proxy preflight rejects example keys and checks a configured HTTPS port", () => {
   const plan = planPreflight({ CHEKMI_PROVIDER_EGRESS: "proxy",
     TELEBIRR_PROXY_URLS: "https://relay.example:8443/verify.php",
-    TELEBIRR_PROXY_KEY: "REPLACE_PRIVATELY_IN_ALET",
+    TELEBIRR_PROXY_KEY: "SET_PRIVATELY_IN_PLESK",
     CBE_PROXY_URL: "https://relay.example/verifyCbe.php", CBE_PROXY_KEY: "test-secret",
     MPESA_PROXY_URL: "https://relay.example/mpesa.php", MPESA_PROXY_KEY: "test-secret",
   }, undefined);

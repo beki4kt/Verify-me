@@ -11,7 +11,7 @@ const globallyReachableBanks = directBanks.slice(3, 6);
 
 function configuredKey(value) {
   const key = value?.trim();
-  return Boolean(key && !/^(?:replace|your|example|placeholder)[-_\s]/i.test(key));
+  return Boolean(key && !/^(?:replace|set|your|example|placeholder)[-_\s]/i.test(key));
 }
 
 export function planPreflight(env, supabaseHost) {

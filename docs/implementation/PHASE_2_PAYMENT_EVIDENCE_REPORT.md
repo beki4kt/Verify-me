@@ -11,6 +11,8 @@
 | chekmi-demo | GET 404 | Demo remains unavailable; it needs authorized backend lookup configuration. |
 | Owned backend API | Edge secret-name listing did not contain CHEKMI_BACKEND_URL or CHEKMI_INTERNAL_LOOKUP_KEY | The Edge-to-Node private lookup is not configured on this project. No key value was printed or saved. |
 | Prior Alet Node URL | The older deployment guide's chekmi.app.aletcloud.com returned HTTP 404 for /health, /ready and /api/internal/provider-lookup on 26 October | No current Node deployment is established by that historical guide. |
+| Second recorded Alet URL | chekmi-backend-1.app.aletcloud.com returned HTTP 404 for /health, /ready and /connectivity on 26 October | This address also does not establish a running Node deployment. |
+| Ethio Telecom Plesk | Owner screenshot on 26 October shows Node.js Toolkit available with Node 22.23.4, but disabled on the PHP relay domain; application and document roots both point to its `/httpdocs` | A separate subdomain/root is required before enabling Node. The screenshot does not prove that a Node app has started. |
 | Database | Prior catalog checks and Mesob readiness passed except the intentionally unvalidated historic provider-date constraint | Private JPEG/PNG bucket capped at 6 MiB exists. Mesob is active Pro with four active staff and two configured receiving-account fields. These observations do not prove a payment journey. |
 
 ## Implemented in this checkout
@@ -30,6 +32,10 @@ The supplied CONNECT-VERIFY-ME.md, last dated 15 October, describes chekmiverifi
 
 The subsequently supplied VERIFY-API.md confirms that the same PHP service is stateless and exposes only the bank-relay GET endpoints. It documents M-Pesa base64Data as JSON, whereas the earlier Chekmi source and documentation assumed a PDF. Both formats now have a fail-closed decoder, but the actual live format and field names require an authorized redacted or genuine test receipt. An unauthenticated read-only probe of the old Alet URL also returned 404 for the Node health and API routes. The current [Node deployment runbook](../../backend-server/README.relay.md) replaces the stale host assumption.
 
+The existing `chekmi-vps` SSH alias is not a fallback deployment target: the older [deployment record](../owned-verifier-deployment.md) says its setup failed and Alet App Hosting replaced it. The first read-only SSH attempt stopped at a changed host-key warning; the warning was not bypassed. The Windows hosting-console automation helper was unavailable. No authenticated Alet deployment path is established in this environment, so the prepared ZIP has not been uploaded.
+
+After the owner confirmed the changed SSH fingerprint through the provider console, the saved host entry was updated and a read-only hostname attempt reached the server but failed public-key authentication. The owner later clarified the Alet VPS had expired; this old alias is not the deployment path. A subsequent Plesk screenshot established that Ethio Telecom's existing PHP subscription exposes Node.js Toolkit. A separate [Plesk deployment runbook](../../backend-server/README.plesk.md) and [local package](../../build/Chekmi-Backend-Plesk-20261026.zip) were prepared without modifying the relay's `/httpdocs`. The package is not uploaded or running.
+
 - The verifier checks a trusted provider result and configured receiving account, looks for an existing commit, then calls the atomic commit_verified_payment RPC. Same-worker in-flight protection, bounded lookup retry, database uniqueness, and a known cross-workspace duplicate trigger exist. Database concurrency has not been exercised with live sessions.
 - The [inclusive workspace schema](../../supabase/migrations/202610160001_inclusive_workspaces.sql) separates automatic completion, review, evidence, unresolved excess, and explicit authorized tip allocation. Existing restaurant tips remain readable. The financial action RPC records void/refund/dispute events; Chekmi does not initiate bank refunds.
 - The [receipt archive schema](../../supabase/migrations/202610200001_receipt_evidence_archive.sql) keeps legacy images and adds private Storage, SHA-256, source, upload state, reservation/finalization, quota, and tenant-scoped retrieval. Manual verification truthfully records a missing original.
@@ -40,7 +46,7 @@ The subsequently supplied VERIFY-API.md confirms that the same PHP service is st
 
 | Command or check | Result | Limit |
 |---|---|---|
-| Backend npm test | **71 passed, 0 failed** after relay contract changes | Local provider, DB and Storage doubles. Covers both engines, relay JSON/PDF selection, deterministic relay errors, destination, date, money, duplicate recovery, upload/retry/checksum and two synthetic tenants. |
+| Backend npm test | **72 passed, 0 failed** after relay and Plesk package changes | Local provider, DB and Storage doubles. Covers both engines, relay JSON/PDF selection, deterministic relay errors, placeholder key rejection, destination, date, money, duplicate recovery, upload/retry/checksum and two synthetic tenants. |
 | node --test backend-server/scripts/preflight-targets.test.mjs | **3 passed, 0 failed** | Validates proxy target selection, placeholder rejection and HTTPS port handling locally, without bank requests. |
 | Backend npm run build | **Exit 0** | TypeScript compilation only. |
 | node backend-server/scripts/build-edge.cjs | **Exit 0** | Bundle generation, not deployment. |
@@ -49,6 +55,7 @@ The subsequently supplied VERIFY-API.md confirms that the same PHP service is st
 | Supabase db push --dry-run --linked | **Exit 0; only 202610260002_explicit_future_tips.sql pending** | No database changes. |
 | Current-project GET probes | Verify 200/Veritas; demo 404; evidence 401 unsigned | Endpoint observations only. |
 | Local deployment ZIP | [Chekmi-Backend-Relay-Phase2-20261026.zip](../../build/Chekmi-Backend-Relay-Phase2-20261026.zip), SHA-256 2B6F1C2E950C9FDE01247BC247F05080A1CDC2E8FF386ABB0857B53EE2967249 | 137 entries, current runtime and runbook present, zero private-file names. Local ignored artifact; not deployed. |
+| Plesk deployment ZIP | [Chekmi-Backend-Plesk-20261026.zip](../../build/Chekmi-Backend-Plesk-20261026.zip), SHA-256 5956E2575D55751E9CE10243212A37BF4A59C189E6CCF36885C5D802F8E67631 | 138 entries, includes root `app.js`, compiled runtime, private-outside-public layout and Plesk runbook; zero private-file names. Local ignored artifact; not deployed. |
 
 The free-plan project has no confirmed restorable backup. The historic provider-date constraint remains NOT VALID for old rows but enforces new inserts.
 
