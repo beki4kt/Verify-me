@@ -1,5 +1,7 @@
 # Chekmi product status for a co-developer — 23 October 2026
 
+> **Historical snapshot.** For the current 26 October status, use the [visual project status](CHEKMI_STATUS_2026-10-26.html), [relay handoff](RELAY_HANDOFF_2026-10-26.md), and [Phase 2 evidence report](PHASE_2_PAYMENT_EVIDENCE_REPORT.md). The native source now contains five category/subtype presets, and the receipt-evidence endpoint is reachable but not fully accepted; the older observations below remain for chronology.
+
 Chekmi is one payment-receipt verifier for businesses and individuals, built with Flutter, a Node/TypeScript verification relay, and Supabase Auth/PostgreSQL/RLS/Storage/Edge functions. **Current recommendation: controlled internal testing only.** The native app has a real payment workflow, but several backend services and customer journeys are not yet proven or complete enough for public release. This document separates native code, illustrative previews, and deployed behavior.
 
 ## Current UI and user journey

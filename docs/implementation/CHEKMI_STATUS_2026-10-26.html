@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B1020">
+  <title>Chekmi — project status, 26 October 2026</title>
+  <style>
+    :root { color-scheme: dark; --navy:#0B1020; --indigo:#1A1F3D; --blue:#2F8CFF; --orange:#FF8A00; --white:#F4F7FF; --muted:#A9B4CF; --line:#303854; --green:#80DDB4; --red:#FF8F91; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--navy); color:var(--white); font-family:Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height:1.5; }
+    body::before { content:""; position:absolute; inset:0 0 auto; height:620px; pointer-events:none; background:radial-gradient(ellipse at 86% 8%, rgba(47,140,255,.12), transparent 52%); }
+    a { color:inherit; }
+    a:hover { color:#fff; }
+    :focus-visible { outline:3px solid var(--orange); outline-offset:4px; border-radius:3px; }
+    .wrap { width:min(1120px, calc(100% - 48px)); margin:auto; position:relative; }
+    header { border-bottom:1px solid var(--line); }
+    .topbar { display:flex; align-items:center; justify-content:space-between; min-height:84px; gap:16px; }
+    .brand { display:flex; align-items:center; gap:12px; font-size:22px; font-weight:770; letter-spacing:-.045em; text-decoration:none; }
+    .brand img { width:38px; height:38px; object-fit:contain; }
+    .date { font-size:13px; color:var(--muted); text-align:right; }
+    main { padding:58px 0 80px; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { max-width:830px; font-size:clamp(42px, 6vw, 72px); line-height:1.03; letter-spacing:-.065em; font-weight:760; margin-bottom:22px; }
+    .lead { max-width:730px; font-size:clamp(17px, 2vw, 21px); line-height:1.45; color:#C3CEE5; margin-bottom:28px; }
+    .statusline { display:flex; align-items:center; gap:10px; width:fit-content; padding:10px 14px; border:1px solid #66513D; border-radius:8px; background:#261E1B; font-size:14px; color:#F7D3AC; }
+    .statusline::before { content:""; width:8px; height:8px; border-radius:50%; flex:none; background:var(--orange); }
+    .section { margin-top:68px; }
+    .section-head { display:flex; align-items:baseline; justify-content:space-between; gap:20px; padding-bottom:16px; border-bottom:1px solid var(--line); }
+    h2 { font-size:clamp(25px, 3vw, 34px); line-height:1.16; letter-spacing:-.045em; margin-bottom:0; }
+    .section-note { margin-bottom:0; color:var(--muted); font-size:14px; }
+    .system { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-top:25px; }
+    .node { position:relative; min-width:0; padding:19px 18px 20px; border:1px solid var(--line); border-radius:12px; background:rgba(26,31,61,.73); }
+    .node:not(:last-child)::after { content:"→"; position:absolute; right:-15px; top:22px; z-index:2; width:17px; text-align:center; color:var(--blue); font-size:19px; font-weight:700; }
+    .node-name { display:block; min-height:50px; font-size:16px; line-height:1.2; font-weight:700; letter-spacing:-.02em; }
+    .node small { display:block; color:var(--muted); line-height:1.35; font-size:12px; margin-top:12px; }
+    .badge { display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:750; letter-spacing:.01em; }
+    .local { background:#17374B; color:#9BE5FF; }
+    .live { background:#173A35; color:#9CEAC7; }
+    .blocked { background:#51321D; color:#FFD09C; }
+    .unknown { background:#35344B; color:#D8D5F6; }
+    .caption { margin:14px 0 0; color:var(--muted); font-size:13px; }
+    .split { display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:24px; }
+    .panel { padding:25px 27px 28px; border:1px solid var(--line); border-radius:13px; background:rgba(26,31,61,.62); }
+    .panel h3 { font-size:20px; letter-spacing:-.03em; margin-bottom:16px; }
+    .item { display:grid; grid-template-columns:12px 1fr; gap:11px; padding:10px 0; color:#D9E1F2; font-size:15px; border-top:1px solid rgba(158,174,219,.13); }
+    .item:first-of-type { border-top:0; }
+    .dot { width:7px; height:7px; margin-top:8px; border-radius:50%; background:var(--blue); }
+    .dot.warn { background:var(--orange); }
+    .dot.dim { background:#7987AE; }
+    .item strong { color:var(--white); font-weight:670; }
+    .types { display:flex; flex-wrap:wrap; gap:8px; margin-top:22px; }
+    .type { padding:9px 12px; border:1px solid var(--line); background:#151A31; border-radius:7px; color:#D9E2F6; font-size:13px; }
+    .roadmap { margin-top:23px; display:grid; grid-template-columns:repeat(4,1fr); gap:0; }
+    .step { padding:0 22px 0 0; margin-right:22px; border-right:1px solid var(--line); }
+    .step:last-child { border:0; margin-right:0; padding-right:0; }
+    .step-num { display:block; color:var(--blue); font-size:13px; font-weight:800; margin-bottom:13px; }
+    .step:first-child .step-num { color:var(--orange); }
+    .step h3 { margin-bottom:8px; font-size:17px; letter-spacing:-.025em; }
+    .step p { color:var(--muted); font-size:13px; line-height:1.5; margin:0; }
+    .blocker { display:grid; grid-template-columns:1fr auto; gap:20px; align-items:center; margin-top:66px; padding:24px 27px; border:1px solid #66513D; border-radius:13px; background:#201B22; }
+    .blocker h2 { font-size:23px; margin-bottom:8px; }
+    .blocker p { margin:0; color:#D4C7C6; font-size:14px; max-width:760px; }
+    .blocker a { white-space:nowrap; text-decoration:none; color:#fff; font-weight:700; font-size:14px; padding:11px 16px; border-radius:7px; background:#A84F00; }
+    .blocker a:hover { background:#C45E00; }
+    footer { display:flex; flex-wrap:wrap; gap:10px 25px; border-top:1px solid var(--line); padding:22px 0 40px; color:var(--muted); font-size:12px; }
+    footer a { color:#BCD5FF; }
+    @media(max-width:850px) { .system { grid-template-columns:repeat(2,1fr); } .node:not(:last-child)::after { display:none; } .roadmap { grid-template-columns:repeat(2,1fr); gap:26px; } .step:nth-child(2) { border-right:0; } }
+    @media(max-width:600px) { .wrap { width:min(100% - 32px, 440px); } .topbar { min-height:70px; } main { padding-top:42px; } h1 { font-size:clamp(35px, 9vw, 42px); } h1 br { display:none; } .date { font-size:11px; } .section { margin-top:52px; } .section-head { display:block; } .section-note { margin-top:8px; } .split { grid-template-columns:1fr; gap:14px; } .system { gap:8px; } .node { padding:14px; } .node-name { font-size:14px; min-height:40px; } .blocker { grid-template-columns:1fr; margin-top:52px; } .roadmap { gap:20px 10px; } .step { margin-right:0; padding-right:12px; } .step h3 { font-size:15px; } }
+    @media(max-width:350px) { .system { grid-template-columns:1fr; } .node-name { min-height:0; margin-bottom:8px; } .roadmap { grid-template-columns:1fr; } .step { border-right:0; border-bottom:1px solid var(--line); padding:0 0 16px; } }
+    @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+    @media print { body { background:#fff; color:#13182C; } body::before { display:none; } .panel,.node,.type,.blocker { background:#fff; color:#13182C; border-color:#BAC0CA; } h1,h2,h3,.item strong { color:#13182C; } .lead,.caption,.section-note,.item,.step p,.node small,.blocker p { color:#444D60; } .brand,.date,footer { color:#13182C; } .blocker a { display:none; } }
+  </style>
+</head>
+<body>
+  <header><div class="wrap topbar"><a class="brand" href="#top"><img src="chekmi-status-mark.png" alt="" width="38" height="38">Chekmi</a><span class="date">Project status<br>26 October 2026</span></div></header>
+  <main id="top" class="wrap">
+    <h1>One payment engine.<br> Five workspace paths.<br> One live connection to finish.</h1>
+    <p class="lead">The app and receipt archive have advanced substantially. The new owned bank relay is locally tested, but the API subdomain's DNS failure is blocking its HTTPS launch and the genuine Mesob payment acceptance test.</p>
+    <div class="statusline" role="status">Current release position: controlled internal testing only</div>
+
+    <section class="section" aria-labelledby="path"><div class="section-head"><h2 id="path">How a payment moves</h2><p class="section-note">Status describes observed evidence, not feature ambition.</p></div>
+      <div class="system">
+        <div class="node"><span class="node-name">Flutter<br>app</span><span class="badge local">Local build</span><small>Entry, workspace, capture, history and review UI</small></div>
+        <div class="node"><span class="node-name">Supabase<br>Edge</span><span class="badge live">Live: Veritas</span><small>Existing verifier responds; owned switch is prepared</small></div>
+        <div class="node"><span class="node-name">Chekmi<br>Node API</span><span class="badge blocked">Not running</span><small>Package extracted on separate Plesk subdomain</small></div>
+        <div class="node"><span class="node-name">PHP bank<br>relay</span><span class="badge blocked">DNS issue</span><small>Friend's relay; public authority is timing out</small></div>
+        <div class="node"><span class="node-name">Bank<br>response</span><span class="badge unknown">Not verified</span><small>No fresh authorized payment through this path yet</small></div>
+      </div>
+      <p class="caption">A healthy endpoint or passing test double is not a bank-confirmed payment. Supabase must still enforce account, amount, duplicate and financial rules when the owned path is enabled.</p>
+    </section>
+
+    <section class="section" aria-labelledby="work"><div class="section-head"><h2 id="work">Where the product stands</h2><p class="section-note">Native app, browser preview and backend kept distinct.</p></div>
+      <div class="split">
+        <div class="panel"><h3>Built in source</h3>
+          <div class="item"><span class="dot"></span><span><strong>Five-category onboarding</strong> with subtype and tailored workflow presets in Flutter source.</span></div>
+          <div class="item"><span class="dot"></span><span><strong>Workspace access</strong> with code-first connection, staff permissions and preserved restaurant flow.</span></div>
+          <div class="item"><span class="dot"></span><span><strong>Receipt flow</strong> with camera/gallery input, manual reference, amount checks, history, details and upload retry code.</span></div>
+          <div class="item"><span class="dot"></span><span><strong>Financial foundations</strong> for duplicate protection, separate bank verification and business completion, private evidence metadata and immutable history.</span></div>
+          <div class="item"><span class="dot"></span><span><strong>Local evidence:</strong> 72 backend tests, 3 proxy preflight tests and TypeScript build passed in the last Phase 2 run.</span></div>
+        </div>
+        <div class="panel"><h3>Still unproven or incomplete</h3>
+          <div class="item"><span class="dot warn"></span><span><strong>Owned relay live path:</strong> DNS, HTTPS, Node readiness, Edge connection and real provider result.</span></div>
+          <div class="item"><span class="dot warn"></span><span><strong>Original evidence:</strong> authorized image upload, private retrieval, interrupted retry and two-workspace denial on the deployed service.</span></div>
+          <div class="item"><span class="dot warn"></span><span><strong>Financial acceptance:</strong> genuine Mesob receipt, wrong destination, duplicate concurrency and totals after retry.</span></div>
+          <div class="item"><span class="dot dim"></span><span><strong>Customer readiness:</strong> owner login remains email/password; phone-first identity, recovery, billing proof and deletion need work.</span></div>
+          <div class="item"><span class="dot dim"></span><span><strong>Release readiness:</strong> native visual consistency, physical-device QA, signed store builds, retention and store disclosures remain.</span></div>
+        </div>
+      </div>
+      <div class="types" aria-label="Business presets"><span class="type">Shop & Retail</span><span class="type">Food & Hospitality</span><span class="type">Services & Professionals</span><span class="type">General & Personal</span><span class="type">Events & Venues</span></div>
+      <p class="caption">These are onboarding presets in current Flutter source, not five separate payment engines. Events payment operations and reporting still need backend and device acceptance. The richer browser preview is illustrative.</p>
+    </section>
+
+    <section class="section" aria-labelledby="next"><div class="section-head"><h2 id="next">The next four moves</h2><p class="section-note">Only move a status forward with an actual test.</p></div>
+      <div class="roadmap">
+        <div class="step"><span class="step-num">01 · Relay developer</span><h3>Repair public DNS</h3><p>Restore authoritative answers for parent and API domains, then issue the API certificate.</p></div>
+        <div class="step"><span class="step-num">02 · Hosting</span><h3>Start Node safely</h3><p>Configure private variables on the separate subdomain. Pass health, ready and connectivity checks.</p></div>
+        <div class="step"><span class="step-num">03 · Chekmi</span><h3>Prove payment integrity</h3><p>Review the Edge rollout; test one authorized Mesob payment, receipt evidence, duplicate and tenant isolation.</p></div>
+        <div class="step"><span class="step-num">04 · Product</span><h3>Prepare publication</h3><p>Finish identity, billing, native polish, device QA, release operations and store requirements.</p></div>
+      </div>
+    </section>
+
+    <aside class="blocker"><div><h2>Relay handoff is ready</h2><p>The co-developer can take the DNS and Plesk work now. Our local work can continue on receipt recovery tests and the Mesob acceptance checklist without creating bank-confirmed data.</p></div><a href="RELAY_HANDOFF_2026-10-26.md">Open handoff</a></aside>
+  </main>
+  <footer class="wrap"><span>Chekmi project status · 26 October 2026</span><a href="PHASE_2_PAYMENT_EVIDENCE_REPORT.md">Phase 2 evidence</a><a href="RELAY_HANDOFF_2026-10-26.md">Relay handoff</a><span>No readiness percentage or simulated successful payment shown.</span></footer>
+</body>
+</html>
