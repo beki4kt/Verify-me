@@ -40,6 +40,7 @@ migrate_working_dir/
 /config/development.json
 /config/preview.json
 /config/iphone-test.json
+/supabase/.temp/
 /android/key.properties
 *.jks
 *.keystore

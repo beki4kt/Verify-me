@@ -4,6 +4,8 @@
 
 > **Read-only current-project probe, 24 October:** `chekmi-verify` returned 200/ready with engine `veritas`; `chekmi-demo` and `chekmi-receipt-evidence` returned 404. The latter two remain deployment gaps. The prepared source verifier reports `owned`, so a blanket deploy of all three functions would change the working verifier engine and is not authorized by this pilot plan.
 
+> **26 October CLI preflight:** Local CLI login and project linking succeeded. Remote migration history records none of the 22 checked-in migrations; `db push --dry-run` would attempt all 22. This may reflect earlier manual SQL application. No migration was applied; reconcile actual schema before any push.
+
 **Preflight status, 24 October 2026: blocked by the Phase 1 staging gate. Phase 2 implementation and financial integration testing have not begun.** No payment, SMS, migration, Storage write, or production deployment was performed. The current best iPhone source/build remains commit `f2e199b`.
 
 The owner confirmed on 24 October that a separate staging Supabase project and backend have **not** been provisioned.
