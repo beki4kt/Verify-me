@@ -77,11 +77,11 @@ class PlanCatalog {
   static const pro = PlanDefinition(
     id: 'pro',
     name: 'Pro',
-    tagline: 'Full financial visibility and team control for growing service.',
+    tagline: 'Full financial visibility and team control for growing teams.',
     verificationLimit: null,
     staffLimit: null,
-    monthlyPriceEtb: null,
-    quarterlyPriceEtb: null,
+    monthlyPriceEtb: 3000,
+    quarterlyPriceEtb: 8100,
     recommended: true,
     features: {
       PlanFeature.paymentVerification,
