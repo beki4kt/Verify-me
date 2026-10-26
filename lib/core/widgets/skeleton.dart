@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../theme/app_motion.dart';
 import '../theme/app_shapes.dart';
 
 /// A single shimmer skeleton block. Used while lists/streams load instead of
@@ -19,17 +20,20 @@ class Skeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-          width: width,
-          height: height,
-          decoration: ShapeDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHigh
-                .withValues(alpha: .7),
-            shape: shape,
-          ),
-        )
+    final scheme = Theme.of(context).colorScheme;
+    final base = scheme.surfaceContainerHighest.withValues(alpha: .7);
+    final highlight = scheme.brightness == Brightness.dark
+        ? const Color(0x22FFFFFF)
+        : Colors.white.withValues(alpha: .75);
+    final block = Container(
+      width: width,
+      height: height,
+      decoration: ShapeDecoration(color: base, shape: shape),
+    );
+    if (!AppMotion.loopingAnimationsAllowed) return block;
+    return block
         .animate(onPlay: (c) => c.repeat())
-        .shimmer(duration: 1200.ms, color: const Color(0x22FFFFFF));
+        .shimmer(duration: 1200.ms, color: highlight);
   }
 }
 

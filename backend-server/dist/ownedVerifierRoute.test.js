@@ -99,7 +99,8 @@ const express_1 = __importDefault(require("express"));
         const data = body.data;
         strict_1.default.equal(data.amount, 1500);
         strict_1.default.equal(data.receiverAccount, "0911000099");
-        strict_1.default.equal(data.tipAmount, 300);
+        strict_1.default.equal(data.unresolvedExcess, 300);
+        strict_1.default.equal(data.tipAmount, undefined);
     }
     finally {
         await Promise.all([

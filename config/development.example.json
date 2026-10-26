@@ -1,0 +1,7 @@
+{
+  "CHEKMI_ENV": "development",
+  "VERIFY_ME_API_URL": "http://127.0.0.1:3000/api",
+  "CHEKMI_VERIFICATION_URL": "http://127.0.0.1:54321/functions/v1/chekmi-verify",
+  "CHEKMI_SUPABASE_URL": "http://127.0.0.1:54321",
+  "CHEKMI_SUPABASE_PUBLISHABLE_KEY": "CHANGE_ME_LOCAL_ANON_KEY"
+}

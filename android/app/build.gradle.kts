@@ -24,7 +24,7 @@ if (buildingRelease && !releaseKeystoreFile.exists() && !buildingTest2) {
 }
 
 android {
-    namespace = "com.leulverify.verify_me"
+    namespace = "com.chekmi.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -36,9 +36,9 @@ android {
 
     defaultConfig {
         applicationId = if (buildingTest2) {
-            "com.leulverify.verify_me.test2"
+            "com.chekmi.app.test2"
         } else {
-            "com.leulverify.verify_me"
+            "com.chekmi.app"
         }
         minSdk = 24
         targetSdk = flutter.targetSdkVersion

@@ -13,8 +13,9 @@ begin
   if not found then
     raise exception 'Staging seed is missing MESOB-DEMO';
   end if;
-  if not demo_business.is_active or not demo_business.has_cashier_module then
-    raise exception 'MESOB-DEMO is not active with the cashier module enabled';
+  if not public.subscription_has_access(demo_business) or
+     not demo_business.has_cashier_module then
+    raise exception 'MESOB-DEMO subscription cannot access the cashier module';
   end if;
 
   select count(*) into active_demo_staff
@@ -30,6 +31,16 @@ begin
     raise exception 'Expected three active, password-hashed demo staff accounts; found %',active_demo_staff;
   end if;
 
+  if not exists (
+    select 1 from public.businesses b join public.staff s
+      on s.business_id=b.business_id
+    where b.business_code='ISOLATION-DEMO-B' and b.business_id<>demo_business.business_id
+      and s.staff_number='9004' and s.is_active and s.password is null
+      and s.password_hash is not null
+  ) then
+    raise exception 'Second synthetic workspace/member is missing';
+  end if;
+
   if to_regprocedure('public.lookup_business(text)') is null or
      to_regprocedure('public.login_staff(uuid,text,text)') is null or
      to_regprocedure('public.list_tickets(text,text)') is null or
@@ -38,6 +49,30 @@ begin
      to_regprocedure('public.transition_verified_ticket(text,uuid,text,text)') is null or
      to_regprocedure('public.service_operator_snapshot()') is null then
     raise exception 'One or more required CHEKMI RPC functions are missing';
+  end if;
+
+  if to_regprocedure('public.request_owner_workspace(text,text,text,text,text,text,boolean,text,text,text,text)') is null or
+     to_regprocedure('public.get_verified_receipt_detail(text,uuid)') is null or
+     to_regprocedure('public.reserve_receipt_original(text,uuid,text,integer,text,text)') is null or
+     to_regprocedure('public.finish_receipt_original(text,uuid,text)') is null or
+     to_regprocedure('public.service_get_receipt_original_locator(text,uuid)') is null then
+    raise exception 'Owner registration or receipt-evidence RPCs are missing';
+  end if;
+
+  if not exists (
+    select 1 from storage.buckets
+    where id='receipt-evidence' and public=false
+      and file_size_limit=6291456
+  ) then
+    raise exception 'Private receipt-evidence bucket is missing or misconfigured';
+  end if;
+
+  if not exists (
+    select 1 from public.workspace_profiles
+    where business_id=demo_business.business_id
+      and use_case='restaurant' and review_policy='review_required'
+  ) then
+    raise exception 'MESOB-DEMO restaurant workflow is not configured';
   end if;
 end $$;
 

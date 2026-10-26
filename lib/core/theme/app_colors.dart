@@ -1,35 +1,34 @@
 import 'package:flutter/material.dart';
 
-/// CHEKMI's premium hospitality-fintech palette.
+/// CHEKMI's hospitality-fintech palette.
 ///
-/// The palette is derived from the supplied glass-morphism reference: vivid
-/// orchid, aqua, coral, and citrus color fields over neutral plum/graphite.
-/// There is deliberately no navy or blue-black foundation.
+/// Near-black graphite is the foundation. Violet and cyan are reserved for
+/// meaning, focus, and ambient light instead of being used as surface colors.
 class AppColors {
   AppColors._();
 
-  static const Color primary = Color(0xFFC64CFF);
-  static const Color primaryDeep = Color(0xFF8E2FC6);
-  static const Color primarySoft = Color(0xFFE3A7FF);
-  static const Color violet = Color(0xFF9B5CFF);
-  static const Color brandBlue = Color(0xFF21D4C2);
-  static const Color brandOrange = Color(0xFFFF7D66);
-  static const Color success = Color(0xFF15B98F);
-  static const Color warning = Color(0xFFF5A623);
-  static const Color danger = Color(0xFFF04F78);
-  static const Color aqua = Color(0xFF35D8E8);
-  static const Color pink = Color(0xFFFF4FB8);
-  static const Color citrus = Color(0xFFD7ED59);
+  static const Color primary = Color(0xFF8B5CF6);
+  static const Color primaryDeep = Color(0xFF6D28D9);
+  static const Color primarySoft = Color(0xFFC4B5FD);
+  static const Color violet = Color(0xFF7C3AED);
+  static const Color brandBlue = Color(0xFF22D3EE);
+  static const Color brandOrange = Color(0xFFFB7185);
+  static const Color success = Color(0xFF34D399);
+  static const Color warning = Color(0xFFFBBF24);
+  static const Color danger = Color(0xFFFB7185);
+  static const Color aqua = Color(0xFF22D3EE);
+  static const Color pink = Color(0xFFA78BFA);
+  static const Color citrus = Color(0xFFBEF264);
 
   // Night palette.
-  static const Color bg = Color(0xFF171018);
-  static const Color surface = Color(0xFF241A25);
-  static const Color surfaceLow = Color(0xFF1D151E);
-  static const Color surfaceContainer = Color(0xFF2B202D);
-  static const Color surfaceContainerHigh = Color(0xFF352739);
-  static const Color surfaceHighest = Color(0xFF49364B);
-  static const Color surfaceContainerLowest = Color(0xFF100B11);
-  static const Color glass = Color(0x662F2332);
+  static const Color bg = Color(0xFF08090B);
+  static const Color surface = Color(0xFF0E1015);
+  static const Color surfaceLow = Color(0xFF0B0D12);
+  static const Color surfaceContainer = Color(0xFF131620);
+  static const Color surfaceContainerHigh = Color(0xFF1A1E2B);
+  static const Color surfaceHighest = Color(0xFF242938);
+  static const Color surfaceContainerLowest = Color(0xFF050607);
+  static const Color glass = Color(0x8A11141C);
 
   // Day palette. Warm neutrals prevent the washed-out "white sheet" look.
   static const Color lightBg = Color(0xFFFFF3F7);
@@ -46,10 +45,10 @@ class AppColors {
   static const Color hairlineStrong = Color(0x30FFFFFF);
   static const Color topHighlight = Color(0x24FFFFFF);
   static const Color textPrimary = Colors.white;
-  static const Color textSecondary = Color(0xFFF1DFEE);
-  static const Color textMuted = Color(0xFFC7AECA);
-  static const Color textFaint = Color(0xFF9E879D);
-  static const Color textDisabled = Color(0xFF745F73);
+  static const Color textSecondary = Color(0xFFD8DCE7);
+  static const Color textMuted = Color(0xFFA6ADBD);
+  static const Color textFaint = Color(0xFF737B8E);
+  static const Color textDisabled = Color(0xFF555D70);
 
   static const Color telebirr = Color(0xFF21C7D9);
   static const Color cbe = Color(0xFFA45BEC);

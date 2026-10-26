@@ -1,0 +1,58 @@
+name: iPhone offline preview IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['build/iphone-preview-*']
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Show Apple toolchain
+        run: xcodebuild -version
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+      - name: Install Flutter packages
+        run: flutter pub get
+      - name: Build offline iPhone preview
+        run: >-
+          flutter build ios --release --no-codesign
+          --build-number=${{ github.run_number }}
+          --dart-define=CHEKMI_ENV=preview
+          --dart-define=CHEKMI_UI_PREVIEW=true
+          --dart-define=CHEKMI_IPHONE_UI=true
+          --dart-define=CHEKMI_TEST2=true
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=build/ios/iphoneos/Runner.app
+          test -f "$APP/Runner"
+          file "$APP/Runner" | grep arm64
+          /usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$APP/Info.plist"
+          mkdir -p build/offline-ipa/Payload
+          ditto "$APP" build/offline-ipa/Payload/Runner.app
+          cd build/offline-ipa
+          /usr/bin/zip -qry Chekmi-iPhone-Offline-Preview.ipa Payload
+          shasum -a 256 Chekmi-iPhone-Offline-Preview.ipa > Chekmi-iPhone-Offline-Preview.ipa.sha256
+          printf 'Source commit: %s\nBuild: %s\nMode: offline UI preview. No live authentication, receipt verification, or evidence upload.\nUnsigned IPA: sign/install using AltStore.\n' "$GITHUB_SHA" "$GITHUB_RUN_NUMBER" > BUILD-INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Chekmi-iPhone-Offline-Preview
+          path: |
+            build/offline-ipa/Chekmi-iPhone-Offline-Preview.ipa
+            build/offline-ipa/Chekmi-iPhone-Offline-Preview.ipa.sha256
+            build/offline-ipa/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 7

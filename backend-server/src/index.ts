@@ -2,9 +2,13 @@ import express from "express";
 import cors from "cors";
 import { ACTIVE_VERIFIER_MODE, verifyRouter } from "./routes/verifyRoute";
 import { operatorRouter } from "./routes/operatorRoute";
+import { providerLookupRouter } from "./routes/providerLookupRoute";
 import { requestLogger, requireProductionHttps, verificationRateLimit } from "./productionMiddleware";
-import { ownedVerifierConfiguration } from "./ownedVerifier";
+import { verifierConfiguration } from "./veritasVerifier";
+import { hostDiagnostics, startHostDiagnostics } from "./hostDiagnostics";
+import { validateBackendEnvironment } from "./deploymentEnvironment";
 
+validateBackendEnvironment(process.env);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
@@ -12,6 +16,11 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
 
 app.set("trust proxy", 1);
 app.use(requestLogger);
+// Alet probes containers over internal HTTP before the public TLS proxy.
+// Only this liveness response is exempt; API routes still require HTTPS.
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 app.use(requireProductionHttps);
 app.use(cors({
   origin(origin, callback) {
@@ -27,20 +36,22 @@ app.use(express.json({ limit: "3mb" }));
 
 // Verification routes (mounted at /api → /api/verify, /api/verify/:provider)
 app.use("/api", operatorRouter);
+app.use("/api", providerLookupRouter);
 app.use("/api", verificationRateLimit, verifyRouter);
 
-// Liveness probe.
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
 app.get("/ready", (_req, res) => {
-  const ownedVerifier = ownedVerifierConfiguration();
+  const ownedVerifier = verifierConfiguration();
   const verifierConfigured =
     ACTIVE_VERIFIER_MODE === "fixtures" || ownedVerifier.configured;
   const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && verifierConfigured);
   const operatorConfigured = Boolean(process.env.OPERATOR_EMAIL && (process.env.OPERATOR_PASSWORD_HASH || (process.env.NODE_ENV !== "production" && process.env.OPERATOR_PASSWORD)));
   res.status(configured ? 200 : 503).json({ status: configured ? "ready" : "not_ready", verifierMode: ACTIVE_VERIFIER_MODE, verifier: ownedVerifier, operatorConfigured, timestamp: new Date().toISOString() });
+});
+
+// Cached startup diagnostics; requests never trigger probes or receipt lookups.
+app.get("/connectivity", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(hostDiagnostics);
 });
 
 // 404 → JSON (no HTML fallbacks).
@@ -55,9 +66,10 @@ app.use(((err, _req, res, _next) => {
 }) as express.ErrorRequestHandler);
 
 app.listen(PORT, "0.0.0.0", () => {
+  startHostDiagnostics();
   const gate = process.env.VERIFY_API_KEY ? "ON" : "OFF (dev)";
   console.log(`CHEKMI API running on http://0.0.0.0:${PORT}`);
-  console.log(`  verifier: owned (${ownedVerifierConfiguration().mode})`);
+  console.log(`  verifier: ${verifierConfiguration().engine} (${verifierConfiguration().mode})`);
   console.log(`  api-key gate: ${gate}`);
 });
 

@@ -3,9 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.extractNewCbeToken = extractNewCbeToken;
-exports.isLegacyCbeReference = isLegacyCbeReference;
-exports.extractLegacyCbeUrlData = extractLegacyCbeUrlData;
+exports.extractLegacyCbeUrlData = exports.isLegacyCbeReference = exports.extractNewCbeToken = void 0;
 exports.parseCbeText = parseCbeText;
 exports.parseCbePdf = parseCbePdf;
 exports.verifyCbeOwned = verifyCbeOwned;
@@ -13,39 +11,11 @@ const axios_1 = __importDefault(require("axios"));
 const pdf_parse_1 = __importDefault(require("pdf-parse"));
 const common_1 = require("./common");
 const types_1 = require("./types");
-const LEGACY_REFERENCE = /^FT[A-Z0-9]{10}$/i;
-const LEGACY_COMBINED_ID = /^(FT[A-Z0-9]{10})(\d{8})$/i;
-const NEW_CBE_URL = /^https?:\/\/mbreciept\.cbe\.com\.et\/([A-Za-z0-9-]+)\/?$/i;
-const NEW_CBE_TOKEN = /^[A-Za-z0-9-]{15,80}$/;
-function extractNewCbeToken(input) {
-    const trimmed = input.trim();
-    const urlMatch = trimmed.match(NEW_CBE_URL);
-    if (urlMatch)
-        return urlMatch[1] ?? null;
-    if (!trimmed.toUpperCase().startsWith("FT") && NEW_CBE_TOKEN.test(trimmed)) {
-        return trimmed;
-    }
-    return null;
-}
-function isLegacyCbeReference(input) {
-    return LEGACY_REFERENCE.test(input.trim());
-}
-function extractLegacyCbeUrlData(input) {
-    try {
-        const url = new URL(input.trim());
-        if (url.hostname.toLowerCase() !== "apps.cbe.com.et")
-            return null;
-        if (url.port && url.port !== "100")
-            return null;
-        const match = url.searchParams.get("id")?.trim().match(LEGACY_COMBINED_ID);
-        if (!match)
-            return null;
-        return { reference: (match[1] ?? "").toUpperCase(), suffix: match[2] ?? "" };
-    }
-    catch {
-        return null;
-    }
-}
+const receiptFormat_1 = require("../receiptFormat");
+var receiptFormat_2 = require("../receiptFormat");
+Object.defineProperty(exports, "extractNewCbeToken", { enumerable: true, get: function () { return receiptFormat_2.extractNewCbeToken; } });
+Object.defineProperty(exports, "isLegacyCbeReference", { enumerable: true, get: function () { return receiptFormat_2.isLegacyCbeReference; } });
+Object.defineProperty(exports, "extractLegacyCbeUrlData", { enumerable: true, get: function () { return receiptFormat_2.extractLegacyCbeUrlData; } });
 function parseCbeText(rawText) {
     const text = rawText.replace(/\s+/g, " ").trim();
     const accounts = [
@@ -104,6 +74,26 @@ function mapNewReceipt(payload) {
         date: (0, common_1.ethiopianLocalDate)(dateTimes[0]),
         reference: (0, common_1.nonEmpty)(raw.id),
         reason: (0, common_1.nonEmpty)(paymentDetails.join(" ")),
+        raw: (0, common_1.safeRaw)(raw),
+    };
+}
+function mapLegacyRelayReceipt(payload) {
+    if (!payload || typeof payload !== "object")
+        return null;
+    const envelope = payload;
+    if (envelope.success === false)
+        return null;
+    const raw = envelope.data && typeof envelope.data === "object"
+        ? envelope.data : envelope;
+    return {
+        payerName: (0, common_1.nonEmpty)(raw.payerName),
+        payerAccount: (0, common_1.nonEmpty)(raw.payerAccount),
+        receiverName: (0, common_1.nonEmpty)(raw.receiverName),
+        receiverAccount: (0, common_1.nonEmpty)(raw.receiverAccount),
+        amount: (0, common_1.numberFrom)(raw.amount ?? raw.transferredAmount),
+        date: (0, common_1.ethiopianLocalDate)(raw.date ?? raw.paymentDate),
+        reference: (0, common_1.nonEmpty)(raw.reference ?? raw.receiptNo),
+        reason: (0, common_1.nonEmpty)(raw.reason),
         raw: (0, common_1.safeRaw)(raw),
     };
 }
@@ -168,9 +158,19 @@ async function fetchLegacyRelay(combinedId) {
         responseType: "arraybuffer",
         timeout: (0, common_1.configuredTimeout)(),
         maxContentLength: common_1.MAX_PROVIDER_RESPONSE_BYTES,
-        headers: { Accept: "application/pdf", "User-Agent": "CHEKMI-Verifier/1.0" },
+        maxRedirects: 0,
+        headers: { Accept: "application/json,application/pdf", "User-Agent": "CHEKMI-Verifier/1.0" },
     });
-    return parseCbePdf(Buffer.from(response.data));
+    const bytes = Buffer.from(response.data);
+    if (bytes.subarray(0, 5).toString() === "%PDF-")
+        return parseCbePdf(bytes);
+    try {
+        const receipt = mapLegacyRelayReceipt(JSON.parse(bytes.toString("utf8")));
+        if (receipt)
+            return receipt;
+    }
+    catch { /* A non-JSON relay response is invalid. */ }
+    throw new types_1.OwnedVerifierError("CBE relay returned an invalid legacy receipt.", "PROVIDER_UNAVAILABLE", 502, true);
 }
 async function fetchNewDirect(token) {
     const appId = process.env.CBE_APP_ID?.trim();
@@ -199,23 +199,27 @@ async function fetchNewRelay(token) {
     const response = await axios_1.default.get(url, {
         timeout: (0, common_1.configuredTimeout)(),
         maxContentLength: common_1.MAX_PROVIDER_RESPONSE_BYTES,
+        maxRedirects: 0,
         headers: { Accept: "application/json", "User-Agent": "CHEKMI-Verifier/1.0" },
     });
     return mapNewReceipt(response.data);
 }
 async function verifyCbeOwned(rawReference, rawSuffix) {
     const submittedReference = rawReference.trim();
-    const embeddedLegacy = extractLegacyCbeUrlData(submittedReference);
-    const newToken = extractNewCbeToken(submittedReference);
+    const embeddedLegacy = (0, receiptFormat_1.extractLegacyCbeUrlData)(submittedReference);
+    const newToken = (0, receiptFormat_1.extractNewCbeToken)(submittedReference);
     const reference = embeddedLegacy?.reference ?? submittedReference.toUpperCase();
     const suffix = (rawSuffix?.trim() || embeddedLegacy?.suffix || "").trim();
-    if (!newToken && (!LEGACY_REFERENCE.test(reference) || !/^\d{8}$/.test(suffix))) {
+    if (!newToken && (!(0, receiptFormat_1.isLegacyCbeReference)(reference) || !/^\d{8}$/.test(suffix))) {
         return {
             ok: false,
             provider: "cbe",
             error: "Legacy CBE verification requires an FT reference and 8-digit account suffix.",
             code: "INVALID_REFERENCE",
         };
+    }
+    if (!newToken && process.env.CBE_LEGACY_ENABLED?.trim().toLowerCase() === "false") {
+        throw new types_1.OwnedVerifierError("Legacy CBE receipt verification is temporarily unavailable. Use a new-format CBE receipt or another payment method.", "PROVIDER_UNAVAILABLE", 503, true);
     }
     let lastError = null;
     const tryDirect = (0, common_1.shouldUseDirectProvider)();

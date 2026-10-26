@@ -1,0 +1,39 @@
+name: Supabase production deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply pending migrations and deploy Edge Functions
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: lpbdxtzyzlaioggefscc
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link production project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Show pending migrations
+        run: supabase db push --dry-run
+      - name: Apply migrations
+        if: ${{ inputs.apply }}
+        run: supabase db push
+      - name: Deploy Edge Functions
+        if: ${{ inputs.apply }}
+        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID"

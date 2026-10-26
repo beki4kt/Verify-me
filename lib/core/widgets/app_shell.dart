@@ -1,10 +1,12 @@
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:verify_me/core/theme/app_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../localization_service.dart';
+import '../config/app_variant.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_spacing.dart';
@@ -26,6 +28,9 @@ class AppBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (AppVariant.usesIPhoneUi) {
+      return _IPhoneAppBackdrop(maxWidth: maxWidth, child: child);
+    }
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
     final background = dark ? AppColors.bg : AppColors.lightBg;
@@ -42,9 +47,9 @@ class AppBackdrop extends StatelessWidget {
                   end: Alignment.bottomRight,
                   colors: dark
                       ? const [
-                          Color(0xFF160F18),
-                          Color(0xFF2A1428),
-                          Color(0xFF1A1119),
+                          Color(0xFF08090B),
+                          Color(0xFF0B0C11),
+                          Color(0xFF07080A),
                         ]
                       : const [
                           Color(0xFFFFF4F7),
@@ -56,54 +61,26 @@ class AppBackdrop extends StatelessWidget {
               ),
             ),
             const Positioned(
-              top: -170,
-              left: -120,
-              child: _AmbientOrb(size: 470, color: AppColors.pink),
+              top: -190,
+              left: -150,
+              child: _AmbientOrb(size: 480, color: AppColors.violet),
             ),
             Positioned(
-              top: entry ? 120 : 40,
-              right: -170,
+              top: entry ? 80 : 30,
+              right: -190,
               child: _AmbientOrb(
-                size: entry ? 500 : 420,
-                color: dark ? AppColors.aqua : const Color(0xFF61E7DC),
+                size: entry ? 520 : 430,
+                color: AppColors.aqua,
               ),
             ),
             Positioned(
-              bottom: -240,
-              left: constraints.maxWidth * .18,
+              bottom: -280,
+              left: constraints.maxWidth * .24,
               child: _AmbientOrb(
-                size: 520,
+                size: 560,
                 color: dark ? AppColors.violet : const Color(0xFFC69BFF),
               ),
             ),
-            Positioned(
-              bottom: constraints.maxHeight * .12,
-              right: constraints.maxWidth * .08,
-              child: const _AmbientOrb(size: 280, color: AppColors.brandOrange),
-            ),
-            Positioned(
-              top: constraints.maxHeight * .38,
-              left: constraints.maxWidth * .06,
-              child: const _AmbientOrb(size: 220, color: AppColors.citrus),
-            ),
-            if (entry) ...[
-              Positioned(
-                left: constraints.maxWidth * .18,
-                bottom: 110,
-                child: const _ColorBubble(
-                  size: 74,
-                  colors: [AppColors.aqua, AppColors.violet],
-                ),
-              ),
-              Positioned(
-                right: constraints.maxWidth * .18,
-                top: 120,
-                child: const _ColorBubble(
-                  size: 94,
-                  colors: [AppColors.pink, AppColors.brandOrange],
-                ),
-              ),
-            ],
             Positioned.fill(
               child: IgnorePointer(
                 child: RepaintBoundary(
@@ -139,6 +116,67 @@ class AppBackdrop extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A calmer, edge-to-edge canvas for the iPhone presentation. The desktop
+/// experience keeps the expressive CHEKMI pattern, while the phone uses broad
+/// tonal depth so content—not decoration—sets the hierarchy.
+class _IPhoneAppBackdrop extends StatelessWidget {
+  const _IPhoneAppBackdrop({required this.child, required this.maxWidth});
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return ColoredBox(
+      color: dark ? const Color(0xFF090A0F) : const Color(0xFFF5F6FA),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: dark
+                    ? const [Color(0xFF10121A), Color(0xFF090A0F)]
+                    : const [Color(0xFFFAFAFD), Color(0xFFF2F3F8)],
+              ),
+            ),
+          ),
+          Positioned(
+            top: -240,
+            right: -190,
+            child: IgnorePointer(
+              child: Container(
+                width: 430,
+                height: 430,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      AppColors.primary.withValues(alpha: dark ? .12 : .09),
+                      AppColors.primary.withValues(alpha: 0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: child,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -288,24 +326,11 @@ class _ChekmiPatternPainter extends CustomPainter {
       )
       ..style = PaintingStyle.fill;
 
-    const spacing = 44.0;
-    for (double y = 22; y < size.height; y += spacing) {
-      for (double x = 22; x < size.width; x += spacing) {
-        canvas.drawCircle(Offset(x, y), 1.05, dotPaint);
+    const spacing = 34.0;
+    for (double y = 17; y < size.height; y += spacing) {
+      for (double x = 17; x < size.width; x += spacing) {
+        canvas.drawCircle(Offset(x, y), .9, dotPaint);
       }
-    }
-
-    final ringPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.25;
-    final rings = <(Offset, double, Color)>[
-      (Offset(size.width * .11, size.height * .20), 42, AppColors.aqua),
-      (Offset(size.width * .88, size.height * .68), 58, AppColors.pink),
-      (Offset(size.width * .72, size.height * .12), 28, AppColors.citrus),
-    ];
-    for (final ring in rings) {
-      ringPaint.color = ring.$3.withValues(alpha: dark ? .17 : .20);
-      canvas.drawCircle(ring.$1, ring.$2, ringPaint);
     }
   }
 
@@ -321,7 +346,7 @@ class _AmbientOrb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final alpha = Theme.of(context).brightness == Brightness.dark ? .46 : .50;
+    final alpha = Theme.of(context).brightness == Brightness.dark ? .16 : .28;
     return Container(
       width: size,
       height: size,
@@ -336,42 +361,6 @@ class _AmbientOrb extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ColorBubble extends StatelessWidget {
-  const _ColorBubble({required this.size, required this.colors});
-
-  final double size;
-  final List<Color> colors;
-
-  @override
-  Widget build(BuildContext context) => Opacity(
-    opacity: Theme.of(context).brightness == Brightness.dark ? .62 : .72,
-    child: Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: colors.first.withValues(alpha: .32),
-            blurRadius: 30,
-            spreadRadius: 2,
-          ),
-          BoxShadow(
-            color: Colors.white.withValues(alpha: .28),
-            blurRadius: 9,
-            offset: const Offset(-5, -6),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 /// Adaptive frosted surface used by cards, menus, sheets, and trial content.
@@ -404,70 +393,83 @@ class GlassPanel extends StatelessWidget {
     final radius = BorderRadius.circular(borderRadius);
     final tint = dark ? AppColors.surfaceContainer : AppColors.lightSurface;
     final border = accent ?? (dark ? Colors.white : AppColors.lightInk);
+    final optimizedForIPhone = AppVariant.usesIPhoneUi;
+    final iphoneSurface = dark
+        ? const Color(0xFF161821)
+        : const Color(0xFFFFFFFF);
+    final panel = Material(
+      color: optimizedForIPhone
+          ? iphoneSurface.withValues(alpha: .96)
+          : tint.withValues(alpha: opacity ?? (dark ? .46 : .44)),
+      child: InkWell(
+        onTap: onTap,
+        splashColor: (accent ?? theme.colorScheme.primary).withValues(
+          alpha: .08,
+        ),
+        highlightColor: Colors.transparent,
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: Border.all(
+              color: border.withValues(
+                alpha: optimizedForIPhone
+                    ? (accent == null ? (dark ? .07 : .055) : .22)
+                    : accent == null
+                    ? (dark ? .12 : .42)
+                    : (dark ? .40 : .42),
+              ),
+            ),
+            gradient: optimizedForIPhone
+                ? null
+                : LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withValues(alpha: dark ? .055 : .54),
+                      tint.withValues(alpha: dark ? .18 : .14),
+                      (accent ?? theme.colorScheme.primary).withValues(
+                        alpha: dark ? .055 : .06,
+                      ),
+                    ],
+                    stops: const [0, .48, 1],
+                  ),
+          ),
+          child: child,
+        ),
+      ),
+    );
     return Container(
       margin: margin,
       decoration: BoxDecoration(
         borderRadius: radius,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? .26 : .09),
-            blurRadius: dark ? 28 : 24,
-            offset: const Offset(0, 14),
-          ),
-          BoxShadow(
-            color: Colors.white.withValues(alpha: dark ? .07 : .70),
-            blurRadius: 12,
-            offset: const Offset(-7, -7),
+            color: Colors.black.withValues(
+              alpha: optimizedForIPhone
+                  ? (dark ? .18 : .055)
+                  : (dark ? .42 : .09),
+            ),
+            blurRadius: optimizedForIPhone ? 16 : (dark ? 34 : 24),
+            offset: Offset(0, optimizedForIPhone ? 6 : 18),
           ),
           if (accent != null)
             BoxShadow(
-              color: accent!.withValues(alpha: dark ? .12 : .10),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
+              color: accent!.withValues(alpha: dark ? .18 : .10),
+              blurRadius: 34,
+              spreadRadius: -4,
+              offset: const Offset(0, 12),
             ),
         ],
       ),
       child: ClipRRect(
         borderRadius: radius,
-        child: BackdropFilter.grouped(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: Material(
-            color: tint.withValues(alpha: opacity ?? (dark ? .38 : .44)),
-            child: InkWell(
-              onTap: onTap,
-              splashColor: (accent ?? theme.colorScheme.primary).withValues(
-                alpha: .08,
+        child: optimizedForIPhone
+            ? panel
+            : BackdropFilter.grouped(
+                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                child: panel,
               ),
-              highlightColor: Colors.transparent,
-              child: Container(
-                padding: padding,
-                decoration: BoxDecoration(
-                  borderRadius: radius,
-                  border: Border.all(
-                    color: border.withValues(
-                      alpha: accent == null
-                          ? (dark ? .24 : .42)
-                          : (dark ? .48 : .42),
-                    ),
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withValues(alpha: dark ? .16 : .54),
-                      tint.withValues(alpha: dark ? .08 : .14),
-                      (accent ?? theme.colorScheme.primary).withValues(
-                        alpha: dark ? .08 : .06,
-                      ),
-                    ],
-                    stops: const [0, .48, 1],
-                  ),
-                ),
-                child: child,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -556,6 +558,184 @@ class BrandLockup extends StatelessWidget {
   );
 }
 
+/// A centered, floating navigation island shared by public-facing screens.
+class FloatingNavIsland extends StatelessWidget {
+  const FloatingNavIsland({
+    super.key,
+    required this.leading,
+    this.navigation = const [],
+    this.trailing = const [],
+  });
+
+  final Widget leading;
+  final List<Widget> navigation;
+  final List<Widget> trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? .42 : .10),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
+          ),
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: dark ? .08 : .05),
+            blurRadius: 28,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter.grouped(
+          filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+          child: Container(
+            height: 64,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: (dark ? AppColors.surfaceLow : Colors.white).withValues(
+                alpha: dark ? .78 : .70,
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: (dark ? Colors.white : AppColors.lightInk).withValues(
+                  alpha: dark ? .12 : .12,
+                ),
+              ),
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final showNavigation =
+                    constraints.maxWidth >= 720 && navigation.isNotEmpty;
+                return Row(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: leading,
+                    ),
+                    if (showNavigation)
+                      Expanded(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: navigation,
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    ...trailing,
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Violet-to-cyan text used sparingly for product-level declarations.
+class GradientText extends StatelessWidget {
+  const GradientText(
+    this.text, {
+    super.key,
+    required this.style,
+    this.textAlign = TextAlign.start,
+    this.gradient = const LinearGradient(
+      colors: [Color(0xFFF8FAFC), AppColors.primarySoft, AppColors.aqua],
+    ),
+  });
+
+  final String text;
+  final TextStyle? style;
+  final TextAlign textAlign;
+  final Gradient gradient;
+
+  @override
+  Widget build(BuildContext context) => ShaderMask(
+    blendMode: BlendMode.srcIn,
+    shaderCallback: (bounds) => gradient.createShader(bounds),
+    child: Text(
+      text,
+      textAlign: textAlign,
+      style: style?.copyWith(color: Colors.white),
+    ),
+  );
+}
+
+/// Compact product announcement shown directly above a hero headline.
+class HeroPillBadge extends StatelessWidget {
+  const HeroPillBadge({
+    super.key,
+    required this.label,
+    this.icon = AppIcons.sparkle,
+  });
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+    decoration: BoxDecoration(
+      color: AppColors.primary.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: AppColors.primarySoft.withValues(alpha: .24)),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primary.withValues(alpha: .12),
+          blurRadius: 22,
+        ),
+      ],
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: AppColors.primarySoft),
+        const SizedBox(width: 7),
+        Text(
+          label,
+          style: AppTypography.microLabel(color: AppColors.primarySoft)
+              .copyWith(letterSpacing: 1),
+        ),
+      ],
+    ),
+  );
+}
+
+/// High-contrast shadow blast for the most important action on a screen.
+class PrimaryGlow extends StatelessWidget {
+  const PrimaryGlow({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(AppSpacing.radius),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primary.withValues(alpha: .42),
+          blurRadius: 30,
+          spreadRadius: -5,
+          offset: const Offset(0, 15),
+        ),
+        BoxShadow(
+          color: AppColors.aqua.withValues(alpha: .18),
+          blurRadius: 34,
+          spreadRadius: -10,
+          offset: const Offset(8, 12),
+        ),
+      ],
+    ),
+    child: child,
+  );
+}
+
 /// Larger centered brand treatment for entry and authentication screens.
 class BrandHero extends StatelessWidget {
   const BrandHero({super.key, this.subtitle, this.onLogoTap});
@@ -565,7 +745,6 @@ class BrandHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Semantics(
       header: true,
       label: subtitle == null ? 'CHEKMI' : 'CHEKMI. $subtitle',
@@ -575,10 +754,9 @@ class BrandHero extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(
+            child: GradientText(
               'CHEKMI',
               style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                color: colors.onSurface,
                 fontSize: 38,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 4.2,
@@ -586,27 +764,15 @@ class BrandHero extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 34,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: AppColors.brandBlue,
-                  borderRadius: BorderRadius.circular(99),
-                ),
+          Container(
+            width: 52,
+            height: 3,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, AppColors.aqua],
               ),
-              const SizedBox(width: 5),
-              Container(
-                width: 14,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: AppColors.brandOrange,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ],
+              borderRadius: BorderRadius.circular(99),
+            ),
           ),
           if (subtitle != null) ...[
             const SizedBox(height: AppSpacing.md),
@@ -623,7 +789,9 @@ class BrandHero extends StatelessWidget {
 }
 
 class GlassThemeToggleButton extends StatelessWidget {
-  const GlassThemeToggleButton({super.key});
+  const GlassThemeToggleButton({super.key, this.iPhoneStyle});
+
+  final bool? iPhoneStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -635,17 +803,26 @@ class GlassThemeToggleButton extends StatelessWidget {
       label: tooltip,
       child: Tooltip(
         message: tooltip,
-        child: _AnimatedThemeOrb(isDark: theme.isDark, onTap: theme.toggle),
+        child: _AnimatedThemeOrb(
+          isDark: theme.isDark,
+          onTap: theme.toggle,
+          compact: iPhoneStyle ?? AppVariant.usesIPhoneUi,
+        ),
       ),
     );
   }
 }
 
 class _AnimatedThemeOrb extends StatefulWidget {
-  const _AnimatedThemeOrb({required this.isDark, required this.onTap});
+  const _AnimatedThemeOrb({
+    required this.isDark,
+    required this.onTap,
+    required this.compact,
+  });
 
   final bool isDark;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   State<_AnimatedThemeOrb> createState() => _AnimatedThemeOrbState();
@@ -662,7 +839,7 @@ class _AnimatedThemeOrbState extends State<_AnimatedThemeOrb>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 760),
+      duration: AppMotion.slow,
       value: widget.isDark ? 1 : 0,
     );
   }
@@ -677,8 +854,8 @@ class _AnimatedThemeOrbState extends State<_AnimatedThemeOrb>
     }
     _controller.animateTo(
       widget.isDark ? 1 : 0,
-      duration: const Duration(milliseconds: 760),
-      curve: Curves.easeInOutCubicEmphasized,
+      duration: AppMotion.slow,
+      curve: AppMotion.easeOutCustom,
     );
   }
 
@@ -689,67 +866,117 @@ class _AnimatedThemeOrbState extends State<_AnimatedThemeOrb>
   }
 
   @override
-  Widget build(BuildContext context) => MouseRegion(
-    cursor: SystemMouseCursors.click,
-    onEnter: (_) => setState(() => _hovered = true),
-    onExit: (_) => setState(() => _hovered = false),
-    child: Listener(
-      onPointerDown: (_) => setState(() => _pressed = true),
-      onPointerUp: (_) => setState(() => _pressed = false),
-      onPointerCancel: (_) => setState(() => _pressed = false),
-      child: MotorScale(
-        scale: _pressed ? .9 : (_hovered ? 1.06 : 1),
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkResponse(
-            onTap: widget.onTap,
-            radius: 20,
-            containedInkWell: true,
-            customBorder: const CircleBorder(),
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                final progress = _controller.value;
-                final pulse = 1 - .1 * _sinPulse(progress);
-                final glow = Color.lerp(
-                  const Color(0xFFFFB21A),
-                  const Color(0xFF4169E8),
-                  progress,
-                )!;
-                return Transform.scale(
-                  scale: pulse,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: .72),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: glow.withValues(alpha: _hovered ? .42 : .27),
-                          blurRadius: _hovered ? 22 : 15,
-                          offset: const Offset(0, 7),
+  Widget build(BuildContext context) {
+    if (widget.compact) return _buildCompactControl(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Listener(
+        onPointerDown: (_) => setState(() => _pressed = true),
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: MotorScale(
+          scale: _pressed ? .9 : (_hovered ? 1.06 : 1),
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkResponse(
+              onTap: widget.onTap,
+              radius: 22,
+              containedInkWell: true,
+              customBorder: const CircleBorder(),
+              child: SizedBox.square(
+                dimension: 44,
+                child: Center(
+                  child: AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      final progress = _controller.value;
+                      final pulse = 1 - .1 * _sinPulse(progress);
+                      final glow = Color.lerp(
+                        const Color(0xFFFFB21A),
+                        const Color(0xFF4169E8),
+                        progress,
+                      )!;
+                      return Transform.scale(
+                        scale: pulse,
+                        child: Container(
+                          width: widget.compact ? 30 : 34,
+                          height: widget.compact ? 30 : 34,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: .72),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: glow.withValues(
+                                  alpha: _hovered ? .42 : .27,
+                                ),
+                                blurRadius: widget.compact
+                                    ? 8
+                                    : (_hovered ? 22 : 15),
+                                offset: Offset(0, widget.compact ? 2 : 7),
+                              ),
+                              if (!widget.compact)
+                                BoxShadow(
+                                  color: Colors.white.withValues(alpha: .35),
+                                  blurRadius: 7,
+                                  offset: const Offset(-3, -3),
+                                ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: CustomPaint(
+                              painter: _ThemeOrbPainter(progress: progress),
+                            ),
+                          ),
                         ),
-                        BoxShadow(
-                          color: Colors.white.withValues(alpha: .35),
-                          blurRadius: 7,
-                          offset: const Offset(-3, -3),
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: CustomPaint(
-                        painter: _ThemeOrbPainter(progress: progress),
-                      ),
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactControl(BuildContext context) => CupertinoButton(
+    padding: EdgeInsets.zero,
+    minimumSize: const Size.square(44),
+    onPressed: widget.onTap,
+    child: AnimatedContainer(
+      duration: AppMotion.base,
+      curve: AppMotion.easeOutCustom,
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: AnimatedSwitcher(
+        duration: AppMotion.base,
+        switchInCurve: AppMotion.easeOutCustom,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: RotationTransition(
+            turns: Tween<double>(begin: -.08, end: 0).animate(animation),
+            child: child,
+          ),
+        ),
+        child: Icon(
+          widget.isDark
+              ? CupertinoIcons.sun_max_fill
+              : CupertinoIcons.moon_fill,
+          key: ValueKey(widget.isDark),
+          size: 17,
+          color: widget.isDark
+              ? const Color(0xFFFFB020)
+              : const Color(0xFF7057D9),
         ),
       ),
     ),
@@ -872,69 +1099,116 @@ class _ThemeOrbPainter extends CustomPainter {
 }
 
 class GlassLanguageToggleButton extends StatelessWidget {
-  const GlassLanguageToggleButton({super.key});
+  const GlassLanguageToggleButton({super.key, this.iPhoneStyle});
+
+  final bool? iPhoneStyle;
 
   @override
   Widget build(BuildContext context) {
     final localization = context.watch<LocalizationService>();
     final tooltip = context.tr('Language');
+    final control = (iPhoneStyle ?? AppVariant.usesIPhoneUi)
+        ? _IPhoneLanguageToggle(
+            isAmharic: localization.isAmharic,
+            onTap: localization.toggleLanguage,
+          )
+        : _GlassActionPill(
+            width: 80,
+            accent: const [AppColors.aqua, AppColors.primary],
+            onTap: localization.toggleLanguage,
+            child: Stack(
+              children: [
+                AnimatedAlign(
+                  duration: AppMotion.slow,
+                  curve: AppMotion.easeOutBack,
+                  alignment: localization.isAmharic
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Container(
+                    width: 35,
+                    height: 32,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      gradient: const LinearGradient(
+                        colors: [AppColors.aqua, AppColors.primary],
+                      ),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: .62),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.aqua.withValues(alpha: .28),
+                          blurRadius: 11,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    _LanguageOption(
+                      label: 'EN',
+                      selected: !localization.isAmharic,
+                    ),
+                    _LanguageOption(
+                      label: 'አማ',
+                      selected: localization.isAmharic,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
     return Semantics(
       button: true,
       label: tooltip,
-      child: Tooltip(
-        message: tooltip,
-        child: _GlassActionPill(
-          width: 72,
-          accent: const [AppColors.aqua, AppColors.primary],
-          onTap: localization.toggleLanguage,
-          child: Stack(
-            children: [
-              AnimatedAlign(
-                duration: AppMotion.slow,
-                curve: AppMotion.easeOutBack,
-                alignment: localization.isAmharic
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
-                child: Container(
-                  width: 31,
-                  height: 24,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(99),
-                    gradient: const LinearGradient(
-                      colors: [AppColors.aqua, AppColors.primary],
-                    ),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: .62),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.aqua.withValues(alpha: .28),
-                        blurRadius: 11,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  _LanguageOption(
-                    label: 'EN',
-                    selected: !localization.isAmharic,
-                  ),
-                  _LanguageOption(
-                    label: 'አማ',
-                    selected: localization.isAmharic,
-                  ),
-                ],
-              ),
-            ],
+      child: Tooltip(message: tooltip, child: control),
+    );
+  }
+}
+
+class _IPhoneLanguageToggle extends StatelessWidget {
+  const _IPhoneLanguageToggle({required this.isAmharic, required this.onTap});
+
+  final bool isAmharic;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => CupertinoButton(
+    padding: EdgeInsets.zero,
+    minimumSize: const Size.square(44),
+    onPressed: onTap,
+    child: AnimatedContainer(
+      duration: AppMotion.base,
+      curve: AppMotion.easeOutCustom,
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: CupertinoColors.tertiarySystemFill.resolveFrom(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: AnimatedSwitcher(
+        duration: AppMotion.fast,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
+        ),
+        child: Text(
+          isAmharic ? 'አማ' : 'EN',
+          key: ValueKey(isAmharic),
+          style: TextStyle(
+            color: CupertinoColors.label.resolveFrom(context),
+            fontSize: isAmharic ? 10 : 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: isAmharic ? 0 : .3,
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _LanguageOption extends StatelessWidget {
@@ -1007,7 +1281,7 @@ class _GlassActionPillState extends State<_GlassActionPill> {
           scale: _pressed ? .94 : (_hovered ? 1.035 : 1),
           child: Container(
             width: widget.width,
-            height: 32,
+            height: 40,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(99),
               boxShadow: [
@@ -1027,38 +1301,33 @@ class _GlassActionPillState extends State<_GlassActionPill> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(99),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: widget.onTap,
-                    splashColor: glow.withValues(alpha: .12),
-                    highlightColor: Colors.transparent,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(
-                          color: Colors.white.withValues(
-                            alpha: dark ? .24 : .62,
-                          ),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.white.withValues(alpha: dark ? .15 : .62),
-                            widget.accent.first.withValues(
-                              alpha: dark ? .11 : .09,
-                            ),
-                            widget.accent.last.withValues(
-                              alpha: dark ? .16 : .11,
-                            ),
-                          ],
-                        ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: widget.onTap,
+                  splashColor: glow.withValues(alpha: .12),
+                  highlightColor: Colors.transparent,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: dark ? .24 : .62),
                       ),
-                      child: widget.child,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withValues(alpha: dark ? .15 : .62),
+                          widget.accent.first.withValues(
+                            alpha: dark ? .11 : .09,
+                          ),
+                          widget.accent.last.withValues(
+                            alpha: dark ? .16 : .11,
+                          ),
+                        ],
+                      ),
                     ),
+                    child: widget.child,
                   ),
                 ),
               ),

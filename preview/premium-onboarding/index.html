@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1020">
+  <meta name="description" content="Chekmi premium onboarding design preview. No live authentication or payments.">
+  <title>Chekmi · Design preview</title>
+  <link rel="icon" href="../../assets/branding/chekmi_mark_256.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="presets.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="preview-studio">
+    <header class="studio-bar" aria-label="Preview controls">
+      <div class="studio-brand"><span class="studio-dot"></span><span>Chekmi</span><span class="studio-muted">Design preview</span></div>
+      <div class="studio-actions">
+        <label class="viewport-select-label" for="viewport">Viewport</label>
+        <select id="viewport" aria-label="Preview viewport">
+          <option value="390">iPhone · 390</option>
+          <option value="320">Small · 320</option>
+          <option value="375">iPhone · 375</option>
+          <option value="430">Large · 430</option>
+        </select>
+        <button id="replay" class="studio-button" type="button">Replay splash</button>
+      </div>
+    </header>
+    <div class="preview-stage">
+      <div id="phone" class="phone" aria-label="Interactive Chekmi iPhone preview">
+        <div class="phone-screen">
+          <div class="status-bar" aria-hidden="true"><span>9:41</span><span class="status-icons"><svg viewBox="0 0 28 14" fill="none"><path d="M2 10.5h2.5v2H2zm4-2.5h2.5v4.5H6zm4-3h2.5v7.5H10zm4-3h2.5v10.5H14z" fill="currentColor"/><path d="M21 3.5h4.5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H21a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor"/><path d="M22 5h3v4h-3z" fill="currentColor"/></svg></span></div>
+          <main id="app" class="app-screen" aria-live="polite"></main>
+          <div class="home-indicator" aria-hidden="true"></div>
+          <div id="splash" class="splash" aria-hidden="false"><div class="splash-light"></div><img class="splash-mark" src="../../assets/branding/chekmi_mark.png" alt="Chekmi receipt and checkmark logo"></div>
+        </div>
+      </div>
+    </div>
+    <p class="studio-note">Interactive visual prototype · No account, payment, or subscription data is sent.</p>
+  </div>
+</body>
+</html>

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeAccount = normalizeAccount;
 exports.matchesReceivingAccount = matchesReceivingAccount;
+exports.matchesTelebirrReceivingAccount = matchesTelebirrReceivingAccount;
 exports.matchesCbeReceivingAccount = matchesCbeReceivingAccount;
 exports.authoritativeAbyssiniaSuffix = authoritativeAbyssiniaSuffix;
 exports.authoritativeAccountSuffix = authoritativeAccountSuffix;
@@ -34,6 +35,18 @@ function matchesReceivingAccount(configuredAccount, verifiedAccount, minimumStab
     return (configured === verified ||
         configured.endsWith(verified) ||
         verified.endsWith(configured));
+}
+/** Telebirr hides the middle of wallet numbers with four literal asterisks.
+ * This checks the provider's visible prefix and final four digits, not the
+ * hidden digits. Never apply this rule to other providers or merchant IDs.
+ */
+function matchesTelebirrReceivingAccount(configuredAccount, verifiedAccount) {
+    const raw = String(verifiedAccount ?? "").trim().replace(/[\s()+-]/g, "");
+    if (!raw.includes("*"))
+        return matchesReceivingAccount(configuredAccount, verifiedAccount);
+    const mask = /^251([79])\*{4}([0-9]{4})$/.exec(raw);
+    const configured = authoritativeEthiopianPhone(configuredAccount);
+    return Boolean(mask && configured && configured.startsWith(`251${mask[1]}`) && configured.endsWith(mask[2]));
 }
 /** Match CBE's first-character plus final-four account mask. */
 function matchesCbeReceivingAccount(configuredAccount, verifiedAccount) {
