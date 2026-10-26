@@ -88,10 +88,15 @@ export function referencesMatch(left: unknown, right: unknown): boolean {
 
 /** Keep evidence useful without storing multi-megabyte PDF/base64 fields. */
 export function safeRaw(raw: Record<string, unknown>): Record<string, unknown> {
-  const copy = { ...raw };
-  delete copy.base64Data;
-  delete copy.pdf;
-  return copy;
+  const sanitize = (value: unknown, depth: number): unknown => {
+    if (depth > 8) return '[nested provider data omitted]';
+    if (Array.isArray(value)) return value.map(item => sanitize(item, depth + 1));
+    if (value === null || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !/^(?:base64Data|pdf|imageBase64|receiptImageBase64)$/i.test(key))
+      .map(([key, item]) => [key, sanitize(item, depth + 1)]));
+  };
+  return sanitize(raw, 0) as Record<string, unknown>;
 }
 
 

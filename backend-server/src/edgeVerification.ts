@@ -1,6 +1,7 @@
-import { extractLegacyCbeUrlData, extractNewCbeToken, isLegacyCbeReference } from "./receiptFormat";
+import { extractLegacyCbeUrlData, extractNewCbeToken, isLegacyCbeReference, safeRaw } from "./receiptFormat";
 import { authoritativeAccountSuffix, authoritativeEthiopianPhone, matchesCbeReceivingAccount, matchesTelebirrReceivingAccount, matchesReceivingAccount, positiveAmount, validateTransactionFreshness } from "./paymentSecurity";
 import type { OwnedVerificationData, Provider } from "./ownedVerifier/types";
+import { normalizeVeritas, veritasRequest } from "./veritasProtocol";
 
 type Json = Record<string, unknown>;
 type Env = Record<string, string | undefined>;
@@ -28,14 +29,21 @@ async function readJson(body: Request | Response, limit: number): Promise<unknow
 }
 
 // Web-standard handler: the same code is exercised in Node tests and bundled
-// without dependencies for Supabase's Deno runtime. No Alet request occurs here.
+// without dependencies for Supabase's Deno runtime. An explicit engine setting
+// controls rollout; absent one, the existing Veritas key keeps that provider
+// while the owned relay is configured. Both use one financial commit path.
 export function createEdgeVerificationHandler(env: Env, transport: typeof fetch = fetch) {
   const limits = new Map<string, { count: number; until: number }>();
   const inFlight = new Set<string>();
   const backend = env.CHEKMI_BACKEND_URL?.trim() || "";
+  const engine = (env.CHEKMI_VERIFICATION_ENGINE?.trim().toLowerCase() ||
+    (env.VERITAS_API_KEY?.trim() ? "veritas" : "owned"));
+  const ownedReady = Boolean(env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() &&
+    /^https:\/\/[^/?#]+\/api$/.test(backend));
+  const veritasReady = Boolean(env.VERITAS_API_KEY?.trim());
   const configured = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY &&
-    env.CHEKMI_INTERNAL_LOOKUP_KEY?.trim() && /^https:\/\/[^/?#]+\/api$/.test(backend));
-  const fixtureMode = env.CHEKMI_ENV === "staging" && env.CHEKMI_VERIFIER_MODE === "fixtures";
+    ((engine === "owned" && ownedReady) || (engine === "veritas" && veritasReady)));
+  const fixtureMode = engine === "owned" && env.CHEKMI_ENV === "staging" && env.CHEKMI_VERIFIER_MODE === "fixtures";
   return async (req: Request): Promise<Response> => {
     const requestId = crypto.randomUUID();
     const origin = req.headers.get("origin");
@@ -53,8 +61,8 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
     if (req.method === "GET") return respond(configured ? 200 : 503, {
       status: configured ? "ready" : "not_ready", verifierMode: fixtureMode ? "fixtures" : "live",
-      verifier: { engine: "owned", mode: "transaction-id", configured, imageVerification: false },
-      service: "chekmi-verify", version: "2026-10-15.1",
+      verifier: { engine, mode: "transaction-id", configured, imageVerification: false },
+      service: "chekmi-verify", version: "2026-10-26.1",
     });
     if (req.method !== "POST") return respond(405, { success: false, code: "METHOD_NOT_ALLOWED", error: "Use POST." });
     const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
@@ -141,6 +149,7 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
       const outgoing = fixtureMode
         ? { provider, ...lookup, expectedAmount: expected, receivingAccount: account }
         : { provider, ...lookup };
+      const veritas = engine === "veritas" ? veritasRequest(provider, lookup) : null;
       let upstream: Response | undefined; let payload: unknown;
       // One bounded retry of the read-only provider lookup absorbs short
       // outages. Never retry a database commit or a rejected receipt.
@@ -151,16 +160,20 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
         upstream = undefined;
         let failed = false;
         try {
-          upstream = await transport(`${backend}/internal/provider-lookup`, {
-            method: "POST", headers: { "x-chekmi-lookup-key": env.CHEKMI_INTERNAL_LOOKUP_KEY!.trim(), "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(outgoing), redirect: "error", signal: AbortSignal.any([deadline, AbortSignal.timeout(timeout)]),
+          upstream = await transport(veritas
+            ? `https://verifyapi.leulzenebe.pro${veritas.path}`
+            : `${backend}/internal/provider-lookup`, {
+            method: "POST", headers: veritas
+              ? { "x-api-key": env.VERITAS_API_KEY!.trim(), "Content-Type": "application/json", Accept: "application/json" }
+              : { "x-chekmi-lookup-key": env.CHEKMI_INTERNAL_LOOKUP_KEY!.trim(), "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(veritas ? veritas.body : outgoing), redirect: "error", signal: AbortSignal.any([deadline, AbortSignal.timeout(timeout)]),
           });
           // Check status before JSON parsing: a gateway may return an HTML
           // access/credit/rate-limit error, which must keep its real category.
           if ([500, 502, 503, 504].includes(upstream.status)) {
             failed = true;
             await upstream.body?.cancel();
-          } else if ([401, 403, 429].includes(upstream.status)) {
+          } else if ([401, 402, 403, 429].includes(upstream.status)) {
             await upstream.body?.cancel();
           } else {
             payload = await readJson(upstream, 1_000_000);
@@ -168,7 +181,7 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
         } catch { failed = true; }
         // Structured operational evidence only: no key, token, account,
         // reference, receipt body or raw transport exception in logs.
-        console.info(JSON.stringify({ event: "owned_provider_lookup", requestId, provider,
+        console.info(JSON.stringify({ event: "provider_lookup", requestId, engine, provider,
           attempt, httpStatus: upstream?.status ?? null, elapsedMs: Date.now() - attemptStart,
           outcome: failed ? "transient_failure" : "response" }));
         if (!failed) break;
@@ -176,14 +189,21 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
         if (attempt < 2 && !deadline.aborted) await new Promise(resolve => setTimeout(resolve, 400));
       }
       if (!upstream) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider did not respond after a second check. Keep this receipt and try again shortly.", 503, true);
-      if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The Chekmi backend lookup key needs attention.", 503);
+      if (upstream.status === 401 || upstream.status === 403) throw new Failure("VERIFIER_CONFIGURATION_ERROR", "The payment lookup credential needs attention.", 503);
+      if (upstream.status === 402) throw new Failure("VERIFICATION_ALLOWANCE_EXHAUSTED", "The payment lookup allowance is exhausted.", 503);
       if (upstream.status === 429) throw new Failure("PROVIDER_RATE_LIMIT", "The provider is busy. Wait a minute.", 429, true);
       if (upstream.status >= 500) throw new Failure("PROVIDER_UNAVAILABLE", "The payment provider is temporarily unavailable. Keep this receipt and try again shortly.", 503, true);
-      const verified = json(payload);
-      if (!upstream.ok || verified?.ok !== true) throw new Failure("NOT_VERIFIED", String(verified?.error ?? "The provider could not verify this reference."));
+      if (!upstream.ok) throw new Failure("NOT_VERIFIED", "The provider could not verify this reference.");
+      const verified = veritas ? normalizeVeritas(provider, reference, payload) : json(payload);
+      if (!verified || verified.ok !== true) {
+        const providerError = verified && "error" in verified ? verified.error : null;
+        throw new Failure("NOT_VERIFIED", String(providerError ?? "The provider could not verify this reference."));
+      }
       const data = json(verified.data) as (Json & OwnedVerificationData) | null;
       if (!data || typeof data.reference !== "string" || typeof data.amount !== "number" || typeof data.currency !== "string") throw new Failure("INVALID_SERVICE_RESPONSE", "The Chekmi backend returned an incomplete receipt.", 503, true);
-      if (data.amount + .001 < expected!) throw new Failure("UNDERPAID", `Payment is ${data.amount} ETB; amount due is ${expected} ETB.`);
+      const verifiedAmount = positiveAmount(data.amount);
+      if (verifiedAmount === null || data.currency.toUpperCase() !== "ETB") throw new Failure("INVALID_SERVICE_RESPONSE", "The payment service returned an invalid amount or currency.", 503, true);
+      if (Math.round(verifiedAmount * 100) < Math.round(expected! * 100)) throw new Failure("UNDERPAID", `Payment is ${verifiedAmount} ETB; amount due is ${expected} ETB.`);
       const destinationMatches = provider === "cbe" ? matchesCbeReceivingAccount(account, data.receiverAccount)
         : provider === "telebirr" ? matchesTelebirrReceivingAccount(account, data.receiverAccount)
         : matchesReceivingAccount(account, data.receiverAccount);
@@ -197,11 +217,14 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
       canonicalReference = data.reference.toUpperCase();
       const committed = json(await rpc("commit_verified_payment", {
         p_token: token, p_provider: provider, p_transaction_ref: canonicalReference,
-        p_table_number: businessReference, p_expected_amount: expected, p_verified_amount: data.amount,
-        p_currency: data.currency, p_receiver_account: suffixProof ? account : data.receiverAccount,
+        p_table_number: businessReference, p_expected_amount: expected, p_verified_amount: verifiedAmount,
+        p_currency: "ETB", p_receiver_account: suffixProof ? account : data.receiverAccount,
         p_receiver_name: data.receiverName ?? null, p_payer_account: data.payerAccount ?? null, p_payer_name: data.payerName ?? null,
         p_provider_transaction_at: freshness.transactionDate.toISOString(), p_provider_status: data.status,
-        p_provider_payload: { ...data, verificationRequest: { submittedReference: inputReference, engine: "owned", host: "supabase-edge", method: "transaction-id" }, ...(suffixProof ? { destinationProof: { method: "server_configured_account_suffix" } } : {}) },
+        p_provider_payload: { ...data,
+          ...(veritas ? { providerEnvelope: safeRaw(json(payload) ?? {}) } : {}),
+          verificationRequest: { submittedReference: inputReference, engine, host: "supabase-edge", method: "transaction-id" },
+          ...(suffixProof ? { destinationProof: { method: "server_configured_account_suffix" } } : {}) },
         // Image archival is a separate operation. Never let a storage failure
         // roll back a provider-confirmed payment or its immutable evidence.
         p_receipt_image_base64: null,
@@ -209,7 +232,7 @@ export function createEdgeVerificationHandler(env: Env, transport: typeof fetch 
       if (!committed?.ticket_id) throw new Failure("COMMIT_NOT_CONFIRMED", "No saved payment confirmation was returned. Check payment history before retrying.", 503, true);
       // Tip allocation is a workspace policy decision made by the database.
       // A bank amount above the sale amount is never itself evidence of a tip.
-      return respond(201, { success: true, data: { ...committed, amount: data.amount, expectedAmount: expected, tipAmount: Number(committed.tip_amount ?? 0), unresolvedExcess: Number(committed.unresolved_excess ?? 0), currency: data.currency } });
+      return respond(201, { success: true, data: { ...committed, amount: verifiedAmount, expectedAmount: expected, tipAmount: Number(committed.tip_amount ?? 0), unresolvedExcess: Number(committed.unresolved_excess ?? 0), currency: "ETB" } });
     } catch (error) {
       const failure = error instanceof Failure ? error : new Failure("VERIFICATION_UNAVAILABLE", "Payment verification could not finish. Check payment history before retrying.", 503, true);
       if (failure.code === "DUPLICATE_PAYMENT") {

@@ -13,15 +13,22 @@ test('readiness labels isolated staging fixtures truthfully', async () => {
 const receipt = (change = {}) => ({ ok: true, data: {
   reference: "DHU5AM9UB3", amount: 600, txnDate: new Date().toISOString(), status: "completed", receiverAccount: "0911000099", currency: "ETB", ...change,
 } });
-function setup() {
+function setup(engine: "owned" | "veritas" = "owned") {
+  const configuredEnv = engine === "veritas"
+    ? { ...env, CHEKMI_VERIFICATION_ENGINE: "veritas", VERITAS_API_KEY: "private-provider-key" }
+    : env;
   const upstreamResponses: Response[] = [];
   const state = { calls: 0, commits: [] as Record<string, unknown>[], existing: false, upstreamStatus: 200, payload: receipt() as unknown, sessionValid: true, unavailable: false, badCommit: false, provider: "telebirr", role: "waiter", account: "0911000099", outgoing: {} as Record<string, unknown>, onUpstream: null as (() => Promise<void>) | null };
   const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const transport = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input); const body = JSON.parse(String(init?.body));
-    if (url === 'https://backend.example/api/internal/provider-lookup') {
+    if (url === 'https://backend.example/api/internal/provider-lookup' || url === 'https://verifyapi.leulzenebe.pro/verify-telebirr') {
       state.calls++; state.outgoing = body;
-      assert.equal(new Headers(init?.headers).get('x-chekmi-lookup-key'), env.CHEKMI_INTERNAL_LOOKUP_KEY);
+      if (engine === "veritas") {
+        assert.equal(new Headers(init?.headers).get('x-api-key'), 'private-provider-key');
+      } else {
+        assert.equal(new Headers(init?.headers).get('x-chekmi-lookup-key'), env.CHEKMI_INTERNAL_LOOKUP_KEY);
+      }
       assert.ok(!JSON.stringify(body).includes('receiptImage'));
       assert.equal(init?.redirect, 'error');
       if (state.onUpstream) await state.onUpstream();
@@ -41,7 +48,7 @@ function setup() {
     if (url.endsWith('/service_record_failed_verification')) return respond(null);
     throw Error('Unexpected endpoint '+url);
   }) as typeof fetch;
-  const handler = createEdgeVerificationHandler(env, transport);
+  const handler = createEdgeVerificationHandler(configuredEnv, transport);
   const request = (extra = {}, auth = true) => new Request('https://database.example/functions/v1/chekmi-verify', {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: 'Bearer '+'t'.repeat(64) } : {}) },
     body: JSON.stringify({ provider: state.provider, reference: 'DHU5AM9UB3', expectedAmount: 550, tableNumber: 'Invoice: INV-1042', ...extra }),
@@ -117,6 +124,18 @@ test('Edge rejects wrong destination, underpayment, stale and mismatched receipt
   }
 });
 
+test('Edge rejects fractional cents and a non-ETB provider amount without a financial commit', async () => {
+  const expected = setup();
+  assert.equal((await expected.send({ expectedAmount: 10.001 })).body.code, 'INVALID_PAYMENT');
+  assert.equal(expected.state.calls, 0);
+  for (const changes of [{ amount: 600.001 }, { currency: 'USD' }]) {
+    const caseOne = setup();
+    caseOne.state.payload = receipt(changes);
+    assert.equal((await caseOne.send()).body.code, 'INVALID_SERVICE_RESPONSE');
+    assert.equal(caseOne.state.commits.length, 0);
+  }
+});
+
 test('Edge reports upstream outages and missing commit confirmations without success', async () => {
   for (const [status, code] of [[401, 'VERIFIER_CONFIGURATION_ERROR'], [429, 'PROVIDER_RATE_LIMIT'], [503, 'PROVIDER_UNAVAILABLE']] as const) {
     const { state, send } = setup(); state.upstreamStatus = status;
@@ -188,4 +207,42 @@ test('Edge reports deployment readiness without revealing secrets', async () => 
   const text = await r.text(); assert.equal(r.status, 200); assert.ok(text.includes('"engine":"owned"')); assert.ok(!text.includes('private-'));
   const missing = createEdgeVerificationHandler({});
   assert.equal((await missing(new Request('https://database.example/functions/v1/chekmi-verify'))).status, 503);
+});
+
+test('Veritas compatibility keeps cashier authorization, generic references and zero automatic tips', async () => {
+  const { state, send, handler } = setup("veritas");
+  state.role = "cashier";
+  state.payload = { success: true, data: { ...receipt().data, pdf: 'not-financial-evidence', nested: { base64Data: 'not-financial-evidence' } } };
+  const health = await handler(new Request('https://database.example/functions/v1/chekmi-verify'));
+  assert.equal(health.status, 200);
+  assert.equal((await health.json() as any).verifier.engine, 'veritas');
+  const result = await send({ tableNumber: '', receiptImageBase64: 'cGhvdG8=' });
+  assert.equal(result.status, 201, JSON.stringify(result.body));
+  assert.deepEqual(state.outgoing, { reference: 'DHU5AM9UB3' });
+  assert.equal(state.commits.length, 1);
+  assert.equal(state.commits[0].p_table_number, 'Payment: DHU5AM9UB3');
+  assert.equal(state.commits[0].p_receipt_image_base64, null);
+  assert.equal(result.body.data.tipAmount, 0);
+  assert.equal(result.body.data.unresolvedExcess, 50);
+  assert.equal((state.commits[0].p_provider_payload as any).verificationRequest.engine, 'veritas');
+  assert.equal((state.commits[0].p_provider_payload as any).providerEnvelope.success, true);
+  assert.ok(!JSON.stringify(state.commits[0].p_provider_payload).includes('not-financial-evidence'));
+  assert.equal((await send()).status, 200);
+  assert.equal(state.calls, 1);
+});
+
+test('Veritas rejection, wrong destination and unknown response cannot create a payment', async () => {
+  for (const payload of [
+    { success: false, error: 'Rejected' },
+    { success: true, data: receipt({ receiverAccount: '0911999999' }).data },
+    { success: true, data: receipt({ status: 'pending' }).data },
+    { success: true, data: { ...receipt().data, amount: null } },
+  ]) {
+    const { state, send } = setup('veritas');
+    state.payload = payload;
+    const result = await send();
+    assert.equal(result.body.success, false, JSON.stringify(result.body));
+    assert.equal(state.commits.length, 0);
+    assert.equal(state.calls, 1);
+  }
 });

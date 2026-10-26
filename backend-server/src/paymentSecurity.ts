@@ -153,6 +153,11 @@ export function validateTransactionFreshness(
 }
 
 export function positiveAmount(value: unknown): number | null {
+  if (typeof value === "string" && !/^\d+(?:\.\d{1,2})?$/.test(value.trim())) return null;
+  if (typeof value !== "string" && typeof value !== "number") return null;
   const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  const minor = Math.round(parsed * 100);
+  if (!Number.isSafeInteger(minor) || Math.abs(parsed * 100 - minor) > 1e-7) return null;
+  return minor / 100;
 }

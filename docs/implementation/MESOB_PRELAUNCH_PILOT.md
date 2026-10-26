@@ -1,5 +1,7 @@
 # Chekmi prelaunch pilot: Mesob on the current project
 
+> **26 October status:** The master schema reconciliation is complete and the read-only Mesob readiness query passed. The private receipt-evidence function is now reachable; the deployed verifier still reports Veritas, and the demo endpoint still returns 404. The current implementation and remaining live tests are recorded in [PHASE_2_PAYMENT_EVIDENCE_REPORT.md](PHASE_2_PAYMENT_EVIDENCE_REPORT.md). Earlier dated preflight observations below are historical.
+
 **Decision, 24 October 2026:** The owner chose to use Chekmi's current Supabase project and backend for prelaunch testing, with `MESOB-DEMO` as the first full-feature pilot workspace. A separate staging project and backend are no longer a prerequisite for Phase 2. The optional staging tooling remains available but must not be pointed at the current project or described as an isolated environment.
 
 This is a **single-project pilot**, not proof of environment isolation. Apply the normal production code path and keep the financial record truthful. Mesob may exercise Pro entitlements, but an `active` subscription flag alone does not prove that a subscription invoice was paid. Do not create a fake subscription payment or call a synthetic provider response bank-confirmed evidence.

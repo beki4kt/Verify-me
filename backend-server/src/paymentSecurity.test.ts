@@ -70,6 +70,12 @@ test("amount validation rejects client edge cases", () => {
   assert.equal(positiveAmount(0), null);
   assert.equal(positiveAmount(Number.NaN), null);
   assert.equal(positiveAmount("not-money"), null);
+  assert.equal(positiveAmount(0.001), null);
+  assert.equal(positiveAmount(1.005), null);
+  assert.equal(positiveAmount(90071992547410), null);
+  assert.equal(positiveAmount("0x10"), null);
+  assert.equal(positiveAmount("1e3"), null);
+  assert.equal(positiveAmount("12.345"), null);
 });
 
 test("transaction freshness rejects missing, stale, invalid, and future dates", () => {
