@@ -15,11 +15,12 @@ function chunk(type: string, data: Buffer): Buffer {
   const checksum = Buffer.alloc(4); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
   return Buffer.concat([size, content, checksum]);
 }
-function png(): Buffer {
+function png(firstPixel = 0): Buffer {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(200, 0); header.writeUInt32BE(200, 4);
   header[8] = 8; header[9] = 6;
   const pixels = Buffer.alloc(200 * (1 + 200 * 4));
+  pixels[1] = firstPixel;
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk("IHDR", header), chunk("IDAT", deflateSync(pixels)), chunk("IEND", Buffer.alloc(0)),
@@ -33,7 +34,10 @@ const sha = createHash("sha256").update(image).digest("hex");
 
 function setup() {
   const state = { stored: false, image: null as Buffer | null, uploadFails: false,
-    finishFails: false, reserves: 0, completions: 0, accesses: 0, financialWrites: 0 };
+    storedSha: null as string | null, pendingSha: null as string | null,
+    finishFails: false, dropUploadResponse: false,
+    uploadWrites: 0, failures: 0,
+    reserves: 0, completions: 0, accesses: 0, financialWrites: 0 };
   const objectKey = `business/${ticket}/receipt/original.png`;
   const transport = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input);
@@ -43,16 +47,22 @@ function setup() {
       if (body.p_ticket_id !== ticket || body.p_token !== token) return Response.json({ code: "42501" }, { status: 403 });
       if (name === "reserve_receipt_original") {
         state.reserves++;
-        assert.equal(body.p_sha256, sha); assert.equal(body.p_mime_type, "image/png");
-        return Response.json({ status: state.stored ? "stored" : "pending_upload", receipt_id: "receipt", storage_object_key: objectKey });
+        assert.match(body.p_sha256, /^[a-f0-9]{64}$/);
+        assert.equal(body.p_mime_type, "image/png");
+        if (!state.stored) state.pendingSha = body.p_sha256;
+        return Response.json({ status: state.stored
+          ? body.p_sha256 === state.storedSha ? "stored" : "replacement_denied"
+          : "pending_upload", receipt_id: "receipt", storage_object_key: objectKey });
       }
       if (name === "finish_receipt_original") {
         if (state.finishFails) return Response.json({ code: "55000" }, { status: 503 });
         assert.ok(state.image);
-        state.stored = true; state.completions++;
+        assert.equal(body.p_sha256, state.pendingSha);
+        assert.equal(createHash("sha256").update(state.image).digest("hex"), body.p_sha256);
+        state.stored = true; state.storedSha = body.p_sha256; state.completions++;
         return Response.json({ status: "stored", receipt_id: "receipt" });
       }
-      if (name === "fail_receipt_original") return Response.json(null);
+      if (name === "fail_receipt_original") { state.failures++; return Response.json(null); }
       if (name === "service_get_receipt_original_locator") {
         state.accesses++;
         return Response.json(state.stored ? { storage_object_key: objectKey, mime_type: "image/png" } : null);
@@ -65,6 +75,11 @@ function setup() {
         if (state.uploadFails) return Response.json({ error: "unavailable" }, { status: 503 });
         if (state.image) return Response.json({ error: "duplicate" }, { status: 409 });
         state.image = Buffer.from(init.body as Uint8Array);
+        state.uploadWrites++;
+        if (state.dropUploadResponse) {
+          state.dropUploadResponse = false;
+          throw new Error("Connection closed after storage accepted the original");
+        }
         return Response.json({ Key: objectKey });
       }
       return state.image ? new Response(new Uint8Array(state.image)) : new Response(null, { status: 404 });
@@ -114,6 +129,51 @@ test("finalization timeout recovers an existing object without overwriting it", 
   assert.equal((await post()).status, 201);
   assert.equal(state.completions, 1);
   assert.deepEqual(state.image, image);
+});
+
+test("lost upload response recovers the saved original without a second object write", async () => {
+  const { state, post, get } = setup();
+  state.dropUploadResponse = true;
+  const interrupted = await post();
+  assert.equal(interrupted.status, 503);
+  const interruptedBody = await interrupted.json() as { code: string };
+  assert.equal(interruptedBody.code, "EVIDENCE_UNAVAILABLE");
+  assert.deepEqual(state.image, image);
+  assert.equal(state.stored, false);
+  assert.equal((await post()).status, 201);
+  assert.equal(state.uploadWrites, 1);
+  assert.equal(state.completions, 1);
+  assert.equal(state.financialWrites, 0);
+  assert.deepEqual(Buffer.from(await (await get()).arrayBuffer()), image);
+});
+
+test("a conflicting object with different bytes cannot finalize as this original", async () => {
+  const { state, post } = setup();
+  state.image = Buffer.from(image);
+  state.image[state.image.length - 1] ^= 1;
+  const response = await post();
+  assert.equal(response.status, 503);
+  const body = await response.json() as { code: string };
+  assert.equal(body.code, "UPLOAD_FAILED");
+  assert.equal(state.stored, false);
+  assert.equal(state.completions, 0);
+  assert.equal(state.failures, 1);
+  assert.equal(state.financialWrites, 0);
+});
+
+test("an archived original cannot be replaced by a different valid image", async () => {
+  const { state, post, get } = setup();
+  const replacement = png(1);
+  assert.deepEqual(inspectOriginal(replacement), { mime: "image/png", width: 200, height: 200 });
+  assert.notEqual(createHash("sha256").update(replacement).digest("hex"), sha);
+  assert.equal((await post()).status, 201);
+  const response = await post(replacement);
+  assert.equal(response.status, 409);
+  const body = await response.json() as { code: string };
+  assert.equal(body.code, "ORIGINAL_IMMUTABLE");
+  assert.equal(state.uploadWrites, 1);
+  assert.equal(state.completions, 1);
+  assert.deepEqual(Buffer.from(await (await get()).arrayBuffer()), image);
 });
 
 test("cross-workspace, bad sessions, corrupt images and missing originals are denied", async () => {
