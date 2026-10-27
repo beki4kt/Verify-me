@@ -13,6 +13,7 @@ import 'staff_login_screen.dart';
 import 'core/config/app_environment.dart';
 import 'core/config/app_variant.dart';
 import 'core/session/session_controller.dart';
+import 'core/session/entry_route.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'localization_service.dart';
@@ -132,33 +133,43 @@ class _ChekmiBootstrapState extends State<_ChekmiBootstrap>
       ApiService.currentBusinessId = lockedBusiness['id'];
     }
     ApiService.configureSession(_session);
-    if (_needsOwnerRecovery) {
-      _initialDestination = const OwnerPasswordRecoveryScreen();
-      _recoveryShown = true;
-    } else if (ApiService.hasOwnerAuth) {
-      final registration = await ApiService.getOwnerRegistration();
-      if (registration != null) {
-        if (registration['is_active'] == true &&
-            await ApiService.startOwnerWorkspaceSession()) {
-          final profile = ApiService.currentWorkspaceProfile;
-          _initialDestination = profile != null && !profile.isRestaurant
-              ? WorkspaceHomeScreen(profile: profile)
-              : const AdminDashboard();
-        } else {
-          _initialDestination = OwnerActivationScreen(
-            registration: registration,
-          );
-        }
-      } else {
-        _initialDestination = const BusinessRegistrationScreen();
+    final ownerAuthenticated = ApiService.hasOwnerAuth;
+    final registration = ownerAuthenticated
+        ? await ApiService.getOwnerRegistration()
+        : null;
+    var ownerReady = false;
+    if (registration != null && registration['is_active'] == true) {
+      try {
+        ownerReady = await ApiService.startOwnerWorkspaceSession();
+      } catch (_) {
+        // A restored Auth identity alone does not authorize a workspace.
+        // The status view can retry after a network or policy failure.
       }
-    } else if (DeviceStorage.getOnboardingDraft() != null) {
-      _initialDestination = const BusinessRegistrationScreen();
-    } else {
-      _initialDestination = lockedBusiness['id'] != null
-          ? const StaffLoginScreen()
-          : const WelcomeScreen();
     }
+    final entry = EntryRouter.resolve(
+      recoveryRequested: _needsOwnerRecovery,
+      ownerAuthenticated: ownerAuthenticated,
+      ownerRegistrationExists: registration != null,
+      ownerWorkspaceSessionAccepted: ownerReady,
+      hasDraft: DeviceStorage.getOnboardingDraft() != null,
+      hasLockedBusiness: lockedBusiness['id'] != null,
+    );
+    _initialDestination = switch (entry) {
+      EntryRoute.recovery => const OwnerPasswordRecoveryScreen(),
+      EntryRoute.ownerWorkspace => () {
+        final profile = ApiService.currentWorkspaceProfile;
+        return profile != null && !profile.isRestaurant
+            ? WorkspaceHomeScreen(profile: profile)
+            : const AdminDashboard();
+      }(),
+      EntryRoute.ownerStatus => OwnerActivationScreen(
+        registration: registration!,
+      ),
+      EntryRoute.registration => const BusinessRegistrationScreen(),
+      EntryRoute.staffLogin => const StaffLoginScreen(),
+      EntryRoute.welcome => const WelcomeScreen(),
+    };
+    if (entry == EntryRoute.recovery) _recoveryShown = true;
   }
 
   @override

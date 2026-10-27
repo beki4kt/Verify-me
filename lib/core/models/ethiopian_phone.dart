@@ -1,5 +1,23 @@
 typedef EthiopianPhoneParts = ({String prefix, String subscriber});
 
+/// Converts Ethiopian mobile numbers to Supabase Auth's E.164 form.
+/// A local number, 251 prefix, or +251 prefix are accepted; other countries
+/// are rejected until the business rules and SMS provider support them.
+String normalizeEthiopianPhone(String value) {
+  final compact = value.replaceAll(RegExp(r'[\s()\-]'), '');
+  final candidate = compact.startsWith('+251')
+      ? compact
+      : compact.startsWith('251')
+      ? '+$compact'
+      : compact.startsWith('0')
+      ? '+251${compact.substring(1)}'
+      : '+251$compact';
+  if (!RegExp(r'^\+251[79]\d{8}$').hasMatch(candidate)) {
+    throw const FormatException('Enter a valid Ethiopian mobile number.');
+  }
+  return candidate;
+}
+
 EthiopianPhoneParts splitEthiopianPhone(String value) {
   final normalized = value.replaceAll(RegExp(r'\s'), '');
   final match = RegExp(r'^\+251([79])(\d{8})$').firstMatch(normalized);

@@ -10,7 +10,10 @@ import 'core/config/app_environment.dart';
 import 'core/config/app_variant.dart';
 import 'core/models/verification_result.dart';
 import 'core/models/workspace_profile.dart';
+import 'core/models/workspace_code.dart';
+import 'core/models/ethiopian_phone.dart';
 import 'core/services/payment_verification_client.dart';
+import 'core/services/owner_registration_recovery.dart';
 import 'core/services/dashboard_polling.dart';
 import 'core/session/session_controller.dart';
 import 'core/widgets/dashboard_refresh_status.dart';
@@ -31,9 +34,49 @@ class ApiService {
     return response.session != null;
   }
 
+  static Future<bool> signUpOwnerPhone(String phone, String password) async {
+    if (!AppVariant.phoneOwnerAuthAvailable ||
+        !AppVariant.selfRegistrationAvailable) {
+      throw StateError('Phone registration is not available yet.');
+    }
+    final response = await _ownerClient.auth.signUp(
+      phone: normalizeEthiopianPhone(phone),
+      password: password,
+    );
+    return response.session != null;
+  }
+
+  static Future<void> verifyOwnerPhoneOtp(String phone, String token) async {
+    if (!AppVariant.phoneOwnerAuthAvailable ||
+        !AppVariant.selfRegistrationAvailable) {
+      throw StateError('Phone verification is not available yet.');
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(token.trim())) {
+      throw const FormatException('Enter the six-digit code.');
+    }
+    final response = await _ownerClient.auth.verifyOTP(
+      phone: normalizeEthiopianPhone(phone),
+      token: token.trim(),
+      type: OtpType.sms,
+    );
+    if (response.session == null) {
+      throw StateError('Phone verification is still pending.');
+    }
+  }
+
   static Future<void> signInOwner(String email, String password) async {
     await _ownerClient.auth.signInWithPassword(
       email: email.trim().toLowerCase(),
+      password: password,
+    );
+  }
+
+  static Future<void> signInOwnerPhone(String phone, String password) async {
+    if (!AppVariant.phoneOwnerAuthAvailable) {
+      throw StateError('Phone sign-in is not available yet.');
+    }
+    await _ownerClient.auth.signInWithPassword(
+      phone: normalizeEthiopianPhone(phone),
       password: password,
     );
   }
@@ -59,6 +102,29 @@ class ApiService {
     return response == null ? null : Map<String, dynamic>.from(response as Map);
   }
 
+  static Future<List<Map<String, dynamic>>> ownerHistoricalReceipts() async {
+    if (!AppVariant.ownerArchiveAvailable || !hasOwnerAuth) {
+      throw StateError('Read-only history is not available yet.');
+    }
+    final response = await _ownerClient.rpc('owner_historical_receipts');
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>?> ownerHistoricalReceiptDetail(
+    String ticketId,
+  ) async {
+    if (!AppVariant.ownerArchiveAvailable || !hasOwnerAuth) {
+      throw StateError('Read-only history is not available yet.');
+    }
+    final response = await _ownerClient.rpc(
+      'owner_historical_receipt_detail',
+      params: {'p_ticket_id': ticketId},
+    );
+    return response == null ? null : Map<String, dynamic>.from(response as Map);
+  }
+
   static Future<Map<String, dynamic>> requestOwnerWorkspace({
     required String businessName,
     required String ownerName,
@@ -72,23 +138,28 @@ class ApiService {
     required String provider,
     required String receivingAccount,
   }) async {
-    final response = await _ownerClient.rpc(
-      'request_owner_workspace',
-      params: {
-        'p_name': businessName,
-        'p_owner_name': ownerName,
-        'p_owner_phone': ownerPhone,
-        'p_use_case': useCase,
-        'p_reference_kind': referenceKind,
-        'p_review_policy': reviewPolicy,
-        'p_team': team,
-        'p_plan': plan,
-        'p_billing_period': billingPeriod,
-        'p_provider': provider,
-        'p_receiving_account': receivingAccount,
+    return requestOwnerWorkspaceIdempotently(
+      lookup: getOwnerRegistration,
+      create: () async {
+        final response = await _ownerClient.rpc(
+          'request_owner_workspace',
+          params: {
+            'p_name': businessName,
+            'p_owner_name': ownerName,
+            'p_owner_phone': ownerPhone,
+            'p_use_case': useCase,
+            'p_reference_kind': referenceKind,
+            'p_review_policy': reviewPolicy,
+            'p_team': team,
+            'p_plan': plan,
+            'p_billing_period': billingPeriod,
+            'p_provider': provider,
+            'p_receiving_account': receivingAccount,
+          },
+        );
+        return Map<String, dynamic>.from(response as Map);
       },
     );
-    return Map<String, dynamic>.from(response as Map);
   }
 
   static Future<bool> startOwnerWorkspaceSession() async {
@@ -116,6 +187,7 @@ class ApiService {
   static String? currentStaffNumber;
   static String? currentUserRole;
   static String? _staffSessionToken;
+  static DateTime? _staffSessionExpiresAt;
   static int? currentBusinessMaxStaff;
   static bool? currentBusinessHasCashier;
   static WorkspaceProfile? currentWorkspaceProfile;
@@ -195,7 +267,8 @@ class ApiService {
   // --- 1. AUTHENTICATION & BUSINESS LAYER ---
 
   static Future<Map<String, dynamic>?> verifyBusinessCode(String code) async {
-    final normalizedCode = code.trim().toUpperCase();
+    final normalizedCode = WorkspaceCode.normalize(code);
+    if (normalizedCode == null) return null;
     dynamic response;
     try {
       response = await _supabase.rpc(
@@ -207,18 +280,7 @@ class ApiService {
           error.code == 'PGRST202' && error.message.contains('lookup_business');
       if (!lookupRpcMissing) rethrow;
 
-      // Compatibility path for installations that still use the original
-      // CHEKMI schema. The restricted RPC remains the primary path; this
-      // selects only the four public fields it would have returned.
-      try {
-        response = await _supabase
-            .from('businesses')
-            .select('business_id,name,business_code,is_active')
-            .eq('business_code', normalizedCode)
-            .maybeSingle();
-      } on PostgrestException {
-        throw Exception('Workspace service is unavailable.');
-      }
+      throw Exception('Workspace service is unavailable.');
     }
 
     if (response == null) throw Exception("Invalid Business Code.");
@@ -251,25 +313,38 @@ class ApiService {
 
   static Future<bool> _acceptStaffSession(dynamic response) async {
     final staff = Map<String, dynamic>.from(response as Map);
-    currentBusinessId = staff['business_id']?.toString();
-    currentStaffNumber = staff['staff_number']?.toString();
-    currentUserRole = staff['role']?.toString();
-    _staffSessionToken = staff['token']?.toString();
+    final businessId = staff['business_id']?.toString();
+    final staffNumber = staff['staff_number']?.toString();
+    final role = staff['role']?.toString();
+    final token = staff['token']?.toString();
+    final expiry = DateTime.tryParse(staff['expires_at']?.toString() ?? '');
+    if (businessId == null ||
+        businessId.isEmpty ||
+        staffNumber == null ||
+        staffNumber.isEmpty ||
+        role == null ||
+        role.isEmpty ||
+        token == null ||
+        token.length < 32 ||
+        expiry == null ||
+        !DateTime.now().isBefore(expiry)) {
+      return false;
+    }
+    currentBusinessId = businessId;
+    currentStaffNumber = staffNumber;
+    currentUserRole = role;
+    _staffSessionToken = token;
+    _staffSessionExpiresAt = expiry;
     _resetStreamCaches();
     currentBusinessMaxStaff = (staff['max_staff_limit'] as num?)?.toInt() ?? 0;
     currentBusinessHasCashier = staff['has_cashier_module'] == true;
-    if (currentBusinessId == null ||
-        currentStaffNumber == null ||
-        currentUserRole == null ||
-        _staffSessionToken == null) {
-      return false;
-    }
     _session?.startStaffSession(
-      businessId: currentBusinessId!,
-      staffNumber: currentStaffNumber!,
-      role: currentUserRole!,
+      businessId: businessId,
+      staffNumber: staffNumber,
+      role: role,
       maxStaff: currentBusinessMaxStaff!,
       hasCashier: currentBusinessHasCashier!,
+      expiresAt: expiry,
     );
     // An older deployment has no profile RPC. Keep its restaurant navigation
     // until the additive migration is available, without granting permissions
@@ -277,8 +352,14 @@ class ApiService {
     try {
       currentWorkspaceProfile = await getWorkspaceProfile();
     } on PostgrestException catch (error) {
-      if (error.code != 'PGRST202') rethrow;
+      if (error.code != 'PGRST202') {
+        unbindSession();
+        rethrow;
+      }
       currentWorkspaceProfile = null;
+    } catch (_) {
+      unbindSession();
+      rethrow;
     }
     return true;
   }
@@ -380,6 +461,7 @@ class ApiService {
       }
     }
     _staffSessionToken = null;
+    _staffSessionExpiresAt = null;
     _resetStreamCaches();
     currentStaffNumber = null;
     currentUserRole = null;
@@ -392,6 +474,7 @@ class ApiService {
   static void unbindSession() {
     currentBusinessId = null;
     _staffSessionToken = null;
+    _staffSessionExpiresAt = null;
     _resetStreamCaches();
     currentStaffNumber = null;
     currentUserRole = null;
@@ -790,7 +873,10 @@ class ApiService {
 
   static String _requireSessionToken() {
     final token = _staffSessionToken;
-    if (token == null) {
+    if (token == null ||
+        _staffSessionExpiresAt == null ||
+        !DateTime.now().isBefore(_staffSessionExpiresAt!)) {
+      if (token != null) unbindSession();
       throw Exception('Session expired. Please sign in again.');
     }
     return token;

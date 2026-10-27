@@ -92,6 +92,22 @@ class SyncManager {
 class DeviceStorage {
   static const String _boxName = 'device_settings';
   static const String _onboardingKey = 'owner_onboarding_draft';
+  static const Set<String> _draftFields = {
+    'onboarding_version',
+    'step',
+    'category_id',
+    'subtype_id',
+    'workflow_id',
+    'use_case',
+    'team',
+    'review',
+    'reference',
+    'plan',
+    'period',
+    'provider',
+    'confirmation_pending',
+    'identity_method',
+  };
   static Future<String>? _demoTokenFuture;
 
   static Future<String> demoInstallationToken() =>
@@ -111,19 +127,42 @@ class DeviceStorage {
   }
 
   static Future<void> init() async {
-    await Hive.openBox(_boxName);
+    final box = await Hive.openBox(_boxName);
+    final oldDraft = box.get(_onboardingKey);
+    if (oldDraft is Map) {
+      final safeDraft = sanitizeOnboardingDraft(
+        Map<String, dynamic>.from(oldDraft),
+      );
+      if (safeDraft.length != oldDraft.length) {
+        await box.put(_onboardingKey, safeDraft);
+        await box.compact();
+      }
+    }
+  }
+
+  /// Keep setup choices only. Names, contact details, account numbers,
+  /// passwords and OTPs must never enter the unencrypted device settings box.
+  static Map<String, dynamic> sanitizeOnboardingDraft(
+    Map<String, dynamic> draft,
+  ) {
+    return {
+      for (final key in _draftFields)
+        if (draft.containsKey(key)) key: draft[key],
+    };
   }
 
   static Map<String, dynamic>? getOnboardingDraft() {
     if (!Hive.isBoxOpen(_boxName)) return null;
     final value = Hive.box(_boxName).get(_onboardingKey);
-    return value is Map ? Map<String, dynamic>.from(value) : null;
+    return value is Map
+        ? sanitizeOnboardingDraft(Map<String, dynamic>.from(value))
+        : null;
   }
 
   static Future<void> saveOnboardingDraft(Map<String, dynamic> draft) async {
     if (!Hive.isBoxOpen(_boxName)) return;
-    // Credentials are never persisted in the onboarding draft.
-    await Hive.box(_boxName).put(_onboardingKey, draft);
+    await Hive.box(_boxName)
+        .put(_onboardingKey, sanitizeOnboardingDraft(draft));
   }
 
   static Future<void> clearOnboardingDraft() async {

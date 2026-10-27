@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'admin_dashboard.dart';
 import 'api_service.dart';
 import 'business_registration_screen.dart';
+import 'core/config/app_variant.dart';
 import 'core/theme/app_colors.dart';
 import 'core/widgets/entry_components.dart';
 import 'iphone/interactive_preview_screen.dart';
 import 'iphone/entry_auth_flow.dart';
+import 'owner_historical_receipts_screen.dart';
 export 'iphone/entry_auth_flow.dart'
     show WorkspaceConnectScreen, OwnerSignInScreen;
 import 'workspace_home_screen.dart';
@@ -300,6 +302,18 @@ class _OwnerActivationScreenState extends State<OwnerActivationScreen> {
   bool busy = false;
   String? error;
 
+  String get statusMessage => switch (registration['subscription_status']) {
+    'pending_activation' => 'Registration received. Plan activation is pending. No payment was charged in the app.',
+    'overdue' || 'grace_period' =>
+      'Your subscription needs attention. Contact support to renew.',
+    'cancelled' ||
+    'suspended' => 'Workspace access is paused. Contact support.',
+    _ =>
+      registration['is_active'] == true
+          ? 'Workspace access is unavailable. Check its status or contact support.'
+          : 'Workspace access is restricted. Contact support.',
+  };
+
   Future<void> _refresh() async {
     setState(() {
       busy = true;
@@ -356,9 +370,7 @@ class _OwnerActivationScreenState extends State<OwnerActivationScreen> {
                     ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
-              Text(
-                registration['is_active'] == true ? 'Your workspace is ready.' : 'Registration received. Your selected plan is awaiting activation. No payment has been charged in the app.',
-              ),
+              Text(statusMessage),
               const SizedBox(height: 18),
               SelectableText(
                 'Workspace code: ${registration['business_code'] ?? '—'}',
@@ -376,8 +388,19 @@ class _OwnerActivationScreenState extends State<OwnerActivationScreen> {
               const SizedBox(height: 30),
               FilledButton(
                 onPressed: busy ? null : _refresh,
-                child: Text(busy ? 'Checking…' : 'Check activation'),
+                child: Text(busy ? 'Checking…' : 'Check status'),
               ),
+              if (AppVariant.ownerArchiveAvailable) ...[
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    CupertinoPageRoute<void>(
+                      builder: (_) => const OwnerHistoricalReceiptsScreen(),
+                    ),
+                  ),
+                  child: const Text('View past receipts'),
+                ),
+              ],
               TextButton(
                 onPressed: () async {
                   await ApiService.signOutOwner();

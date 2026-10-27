@@ -1,11 +1,15 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../admin_dashboard.dart';
 import '../api_service.dart';
 import '../business_registration_screen.dart';
 import '../core/config/app_variant.dart';
+import '../core/models/workspace_code.dart';
+import '../core/models/ethiopian_phone.dart';
+import '../core/config/legal_links.dart';
 import '../core/widgets/entry_components.dart';
 import '../launch_experience.dart' show OwnerActivationScreen;
 import '../offline_storage.dart';
@@ -33,9 +37,10 @@ class _WorkspaceConnectScreenState extends State<WorkspaceConnectScreen> {
   }
 
   Future<void> _continue() async {
-    final normalized = code.text.trim().toUpperCase();
-    if (normalized.isEmpty) {
-      setState(() => error = 'Enter your workspace code.');
+    if (busy) return;
+    final normalized = WorkspaceCode.normalize(code.text);
+    if (normalized == null) {
+      setState(() => error = 'Enter a valid workspace code.');
       return;
     }
     if (AppVariant.isUiPreview) {
@@ -55,17 +60,19 @@ class _WorkspaceConnectScreenState extends State<WorkspaceConnectScreen> {
       if (workspace == null) throw Exception('Check the code and try again.');
       await DeviceStorage.lockDeviceToBusiness(
         workspace['business_id'].toString(),
-        workspace['name'].toString(),
-        workspace['business_code'].toString(),
+        'Workspace',
+        normalized,
       );
       await HapticFeedback.selectionClick();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         CupertinoPageRoute<void>(builder: (_) => const StaffLoginScreen()),
       );
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
-        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+        setState(
+          () => error = 'Could not connect. Check the code and try again.',
+        );
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -246,23 +253,47 @@ class _OwnerSignInScreenState extends State<OwnerSignInScreen> {
       setState(() => message = 'Owner sign-in needs the functional build.');
       return;
     }
-    if (!legacyEmail) {
+    if (!legacyEmail && !AppVariant.phoneOwnerAuthAvailable) {
       setState(
-        () => message = 'Phone sign-in is not configured yet. Existing owners can use email sign-in.',
+        () => message = 'Phone sign-in is being prepared. Existing owners can use email sign-in.',
       );
       return;
     }
-    if (!email.text.trim().contains('@') || password.text.isEmpty) {
-      setState(() => message = 'Enter your owner email and password.');
+    if (password.text.isEmpty) {
+      setState(() => message = 'Enter your password.');
       return;
+    }
+    if (legacyEmail && !email.text.trim().contains('@')) {
+      setState(() => message = 'Enter your owner email.');
+      return;
+    }
+    if (!legacyEmail) {
+      try {
+        normalizeEthiopianPhone(phone.text);
+      } on FormatException catch (e) {
+        setState(() => message = e.message);
+        return;
+      }
     }
     setState(() {
       busy = true;
       message = null;
     });
     try {
-      await ApiService.signInOwner(email.text, password.text);
+      if (legacyEmail) {
+        await ApiService.signInOwner(email.text, password.text);
+      } else {
+        await ApiService.signInOwnerPhone(phone.text, password.text);
+      }
       final registration = await ApiService.getOwnerRegistration();
+      var workspaceReady = false;
+      if (registration != null && registration['is_active'] == true) {
+        try {
+          workspaceReady = await ApiService.startOwnerWorkspaceSession();
+        } catch (_) {
+          // Supabase Auth success never grants workspace access by itself.
+        }
+      }
       if (!mounted) return;
       if (registration == null) {
         Navigator.of(context).pushReplacement(
@@ -270,8 +301,7 @@ class _OwnerSignInScreenState extends State<OwnerSignInScreen> {
             builder: (_) => const BusinessRegistrationScreen(),
           ),
         );
-      } else if (registration['is_active'] == true &&
-          await ApiService.startOwnerWorkspaceSession()) {
+      } else if (workspaceReady) {
         if (!mounted) return;
         final profile = ApiService.currentWorkspaceProfile;
         Navigator.of(context).pushAndRemoveUntil(
@@ -302,7 +332,7 @@ class _OwnerSignInScreenState extends State<OwnerSignInScreen> {
   Future<void> _recover() async {
     if (!legacyEmail) {
       setState(
-        () => message = 'Phone recovery is not configured yet. Use email recovery if you have an existing account.',
+        () => message = 'Phone account recovery requires an ownership review. Use Contact support below.',
       );
       return;
     }
@@ -337,8 +367,8 @@ class _OwnerSignInScreenState extends State<OwnerSignInScreen> {
               builder: (context, constraints) => SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(23, 18, 23, 24),
                 child: SizedBox(
-                  height: constraints.maxHeight < 620
-                      ? 620
+                  height: constraints.maxHeight < 820
+                      ? 820
                       : constraints.maxHeight - 42,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -383,8 +413,9 @@ class _OwnerSignInScreenState extends State<OwnerSignInScreen> {
                           keyboardType: TextInputType.phone,
                           autofillHints: const [AutofillHints.telephoneNumber],
                           decoration: const InputDecoration(
-                            hintText: '+251 9…',
+                            hintText: '9…',
                             prefixIcon: Icon(CupertinoIcons.phone),
+                            prefixText: '+251  ',
                           ),
                         ),
                       const SizedBox(height: 21),
@@ -421,6 +452,24 @@ class _OwnerSignInScreenState extends State<OwnerSignInScreen> {
                           child: const Text('Forgot password?'),
                         ),
                       ),
+                      if (!legacyEmail)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () async {
+                              if (!await launchUrl(
+                                    LegalLinks.support,
+                                    mode: LaunchMode.externalApplication,
+                                  ) &&
+                                  mounted) {
+                                setState(
+                                  () => message = 'Support is unavailable. Try again later.',
+                                );
+                              }
+                            },
+                            child: const Text('Lost phone? Contact support'),
+                          ),
+                        ),
                       if (message != null)
                         Text(
                           message!,

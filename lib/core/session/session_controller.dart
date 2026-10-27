@@ -20,6 +20,7 @@ class SessionController extends ChangeNotifier {
   String? _role;
   int? _maxStaff;
   bool? _hasCashier;
+  DateTime? _expiresAt;
 
   String? get businessId => _businessId;
   String? get businessName => _businessName;
@@ -27,8 +28,13 @@ class SessionController extends ChangeNotifier {
   String? get role => _role;
   int? get maxStaff => _maxStaff;
   bool? get hasCashier => _hasCashier;
+  DateTime? get expiresAt => _expiresAt;
 
-  bool get isAuthenticated => _staffNumber != null && _role != null;
+  bool get isAuthenticated =>
+      _staffNumber != null &&
+      _role != null &&
+      _expiresAt != null &&
+      DateTime.now().isBefore(_expiresAt!);
   bool get hasCashierModule => _hasCashier == true;
   bool get isSuperAdmin => _role == Role.superAdmin;
   bool get isAdmin => _role == Role.admin;
@@ -40,12 +46,14 @@ class SessionController extends ChangeNotifier {
     required String role,
     required int maxStaff,
     required bool hasCashier,
+    required DateTime expiresAt,
   }) {
     _businessId = businessId;
     _staffNumber = staffNumber;
     _role = role;
     _maxStaff = maxStaff;
     _hasCashier = hasCashier;
+    _expiresAt = expiresAt;
     notifyListeners();
   }
 
@@ -66,6 +74,7 @@ class SessionController extends ChangeNotifier {
     _role = null;
     _maxStaff = null;
     _hasCashier = null;
+    _expiresAt = null;
     notifyListeners();
   }
 
@@ -77,6 +86,7 @@ class SessionController extends ChangeNotifier {
     _role = null;
     _maxStaff = null;
     _hasCashier = null;
+    _expiresAt = null;
     notifyListeners();
   }
 }

@@ -12,6 +12,26 @@ abstract final class AppVariant {
   static const bool webCameraTest = bool.fromEnvironment(
     'CHEKMI_WEB_CAMERA_TEST',
   );
+  // Both switches must be explicitly set after the phone-aware owner RPCs
+  // and Supabase Auth phone provider have been independently accepted.
+  static const bool _phoneOwnerAuthRequested = bool.fromEnvironment(
+    'CHEKMI_PHONE_OWNER_AUTH',
+  );
+  static const bool _phoneOwnerBackendReady = bool.fromEnvironment(
+    'CHEKMI_PHONE_OWNER_BACKEND_READY',
+  );
+  static bool get phoneOwnerAuthAvailable =>
+      _phoneOwnerAuthRequested && _phoneOwnerBackendReady && !isUiPreview;
+  static const bool _selfRegistrationRequested = bool.fromEnvironment(
+    'CHEKMI_SELF_REGISTRATION_ENABLED',
+  );
+  static bool get selfRegistrationAvailable =>
+      _selfRegistrationRequested && !isUiPreview;
+  static const bool _ownerArchiveBackendReady = bool.fromEnvironment(
+    'CHEKMI_OWNER_ARCHIVE_BACKEND_READY',
+  );
+  static bool get ownerArchiveAvailable =>
+      _ownerArchiveBackendReady && !isUiPreview;
   static const bool usesMinimalCopy = bool.fromEnvironment(
     'CHEKMI_MINIMAL_UI',
     defaultValue: true,

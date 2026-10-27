@@ -57,6 +57,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('owner login remains scrollable on a narrow phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const MaterialApp(home: OwnerSignInScreen()));
+    await tester.ensureVisible(find.text('Lost phone? Contact support'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lost phone? Contact support'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('subtype and workflow lead to the real plan choice', (
     tester,
   ) async {

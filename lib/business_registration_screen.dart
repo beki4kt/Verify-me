@@ -5,6 +5,7 @@ import 'api_service.dart';
 import 'core/config/app_variant.dart';
 import 'core/config/payment_context.dart';
 import 'core/models/business_presets.dart';
+import 'core/models/ethiopian_phone.dart';
 import 'core/widgets/entry_components.dart';
 import 'iphone/interactive_preview_screen.dart';
 import 'launch_experience.dart';
@@ -41,7 +42,10 @@ class _BusinessRegistrationScreenState
   final phone = TextEditingController();
   final email = TextEditingController();
   final password = TextEditingController();
+  final otp = TextEditingController();
   final account = TextEditingController();
+
+  bool get phoneIdentity => AppVariant.phoneOwnerAuthAvailable;
 
   @override
   void initState() {
@@ -81,17 +85,11 @@ class _BusinessRegistrationScreenState
           ? BillingPeriod.quarterly
           : BillingPeriod.monthly;
       provider = draft['provider']?.toString() ?? provider;
-      business.text = draft['business']?.toString() ?? '';
-      owner.text = draft['owner']?.toString() ?? '';
-      phone.text = draft['phone']?.toString() ?? '';
-      email.text = draft['email']?.toString() ?? '';
-      account.text = draft['account']?.toString() ?? '';
-      awaitingConfirmation = draft['confirmation_pending'] == true;
+      awaitingConfirmation =
+          draft['confirmation_pending'] == true &&
+          draft['identity_method'] == (phoneIdentity ? 'phone' : 'email');
     } else {
       _applyWorkflow();
-    }
-    for (final field in [business, owner, phone, email, account]) {
-      field.addListener(_saveDraft);
     }
   }
 
@@ -109,18 +107,22 @@ class _BusinessRegistrationScreenState
       'plan': plan,
       'period': period.name,
       'provider': provider,
-      'business': business.text,
-      'owner': owner.text,
-      'phone': phone.text,
-      'email': email.text,
-      'account': account.text,
       'confirmation_pending': awaitingConfirmation,
+      'identity_method': phoneIdentity ? 'phone' : 'email',
     });
   }
 
   @override
   void dispose() {
-    for (final field in [business, owner, phone, email, password, account]) {
+    for (final field in [
+      business,
+      owner,
+      phone,
+      email,
+      password,
+      otp,
+      account,
+    ]) {
       field.dispose();
     }
     super.dispose();
@@ -199,14 +201,36 @@ class _BusinessRegistrationScreenState
       setState(() => error = 'Registration needs the functional build.');
       return;
     }
+    if (!AppVariant.selfRegistrationAvailable) {
+      setState(
+        () => error = 'Business registration is not open yet. Your setup choices are saved on this device.',
+      );
+      return;
+    }
+    String normalizedPhone;
+    try {
+      normalizedPhone = normalizeEthiopianPhone(phone.text);
+    } on FormatException {
+      setState(() => error = 'Enter a valid Ethiopian mobile number.');
+      return;
+    }
+    final credentialsNeeded = !ApiService.hasOwnerAuth;
     if (business.text.trim().length < 2 ||
         owner.text.trim().length < 2 ||
-        !RegExp(r'^\+251[79]\d{8}$').hasMatch(phone.text.trim()) ||
-        !email.text.trim().contains('@') ||
-        password.text.length < 10 ||
+        (credentialsNeeded &&
+            !phoneIdentity &&
+            !email.text.trim().contains('@')) ||
+        (credentialsNeeded &&
+            !(phoneIdentity && awaitingConfirmation) &&
+            password.text.length < 10) ||
+        (credentialsNeeded &&
+            phoneIdentity &&
+            awaitingConfirmation &&
+            !RegExp(r'^\d{6}$').hasMatch(otp.text.trim())) ||
         account.text.trim().length < 6) {
       setState(
-        () => error = 'Complete every field. Use a +251 phone and a password of at least 10 characters.',
+        () => error =
+            'Complete the required fields and check your sign-in details.',
       );
       return;
     }
@@ -217,12 +241,15 @@ class _BusinessRegistrationScreenState
     try {
       if (!ApiService.hasOwnerAuth) {
         if (awaitingConfirmation) {
-          await ApiService.signInOwner(email.text, password.text);
+          if (phoneIdentity) {
+            await ApiService.verifyOwnerPhoneOtp(phone.text, otp.text);
+          } else {
+            await ApiService.signInOwner(email.text, password.text);
+          }
         } else {
-          final signedIn = await ApiService.signUpOwner(
-            email.text,
-            password.text,
-          );
+          final signedIn = phoneIdentity
+              ? await ApiService.signUpOwnerPhone(phone.text, password.text)
+              : await ApiService.signUpOwner(email.text, password.text);
           if (!signedIn) {
             if (!mounted) return;
             setState(() => awaitingConfirmation = true);
@@ -234,7 +261,7 @@ class _BusinessRegistrationScreenState
       final result = await ApiService.requestOwnerWorkspace(
         businessName: business.text.trim(),
         ownerName: owner.text.trim(),
-        ownerPhone: phone.text.trim(),
+        ownerPhone: normalizedPhone,
         useCase: useCase,
         referenceKind: reference,
         reviewPolicy: review,
@@ -569,33 +596,47 @@ class _BusinessRegistrationScreenState
         keyboardType: TextInputType.phone,
         decoration: const InputDecoration(
           labelText: 'Phone number',
-          hintText: '+2519…',
+          hintText: '9…',
+          prefixText: '+251  ',
         ),
       ),
       const SizedBox(height: 13),
-      TextField(
-        controller: email,
-        keyboardType: TextInputType.emailAddress,
-        autofillHints: const [AutofillHints.email],
-        decoration: const InputDecoration(labelText: 'Owner email for sign-in'),
-      ),
-      const SizedBox(height: 13),
-      TextField(
-        controller: password,
-        obscureText: hidePassword,
-        autofillHints: const [AutofillHints.newPassword],
-        decoration: InputDecoration(
-          labelText: 'Password',
-          helperText: 'At least 10 characters',
-          suffixIcon: IconButton(
-            tooltip: hidePassword ? 'Show password' : 'Hide password',
-            onPressed: () => setState(() => hidePassword = !hidePassword),
-            icon: Icon(
-              hidePassword ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+      if (!phoneIdentity) ...[
+        TextField(
+          controller: email,
+          keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.email],
+          decoration: const InputDecoration(
+            labelText: 'Owner email for sign-in',
+          ),
+        ),
+        const SizedBox(height: 13),
+      ],
+      if (phoneIdentity && awaitingConfirmation)
+        TextField(
+          controller: otp,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          autofillHints: const [AutofillHints.oneTimeCode],
+          decoration: const InputDecoration(labelText: 'SMS verification code'),
+        )
+      else
+        TextField(
+          controller: password,
+          obscureText: hidePassword,
+          autofillHints: const [AutofillHints.newPassword],
+          decoration: InputDecoration(
+            labelText: 'Password',
+            helperText: 'At least 10 characters',
+            suffixIcon: IconButton(
+              tooltip: hidePassword ? 'Show password' : 'Hide password',
+              onPressed: () => setState(() => hidePassword = !hidePassword),
+              icon: Icon(
+                hidePassword ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+              ),
             ),
           ),
         ),
-      ),
       const SizedBox(height: 22),
       const Text(
         'Receiving account',
@@ -630,7 +671,7 @@ class _BusinessRegistrationScreenState
         const Padding(
           padding: EdgeInsets.only(top: 16),
           child: Text(
-            'Confirm your email, then continue here.',
+            'Confirm your identity, then continue here.',
             style: TextStyle(color: EntryColors.muted),
           ),
         ),
@@ -722,10 +763,21 @@ class _BusinessRegistrationScreenState
                         ],
                         if (step == 4) ...[
                           const SizedBox(height: 16),
-                          const Text(
-                            'Email confirms ownership. Your plan starts only after activation.',
-                            style: TextStyle(color: EntryColors.muted),
+                          Text(
+                            phoneIdentity
+                                ? 'Verify your phone. Your plan begins only after activation.'
+                                : 'Confirm your email. Your plan begins only after activation.',
+                            style: const TextStyle(color: EntryColors.muted),
                           ),
+                          if (awaitingConfirmation)
+                            TextButton(
+                              onPressed: () => Navigator.of(context).push(
+                                CupertinoPageRoute<void>(
+                                  builder: (_) => const OwnerSignInScreen(),
+                                ),
+                              ),
+                              child: const Text('Already confirmed? Sign in'),
+                            ),
                         ],
                       ],
                     ),
@@ -735,7 +787,9 @@ class _BusinessRegistrationScreenState
                     child: EntryActionButton(
                       label: step == 4
                           ? awaitingConfirmation
-                                ? 'I’ve confirmed my email'
+                                ? phoneIdentity
+                                      ? 'Verify phone'
+                                      : 'I’ve confirmed my email'
                                 : 'Request activation'
                           : step == 2 &&
                                 (category.previewOnly || useCase == 'personal')

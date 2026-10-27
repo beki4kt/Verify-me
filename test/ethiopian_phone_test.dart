@@ -22,4 +22,15 @@ void main() {
     expect(() => formatEthiopianPhone('8', '12345678'), throwsFormatException);
     expect(() => formatEthiopianPhone('9', '1234'), throwsFormatException);
   });
+
+  test('normalizes local mobile input for phone authentication', () {
+    expect(normalizeEthiopianPhone('0912345678'), '+251912345678');
+    expect(normalizeEthiopianPhone('912 345 678'), '+251912345678');
+    expect(normalizeEthiopianPhone('251712345678'), '+251712345678');
+    expect(normalizeEthiopianPhone('+251 7 1234 5678'), '+251712345678');
+    expect(
+      () => normalizeEthiopianPhone('+14155550123'),
+      throwsFormatException,
+    );
+  });
 }
