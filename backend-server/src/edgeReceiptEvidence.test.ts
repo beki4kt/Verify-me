@@ -35,7 +35,7 @@ const sha = createHash("sha256").update(image).digest("hex");
 function setup() {
   const state = { stored: false, image: null as Buffer | null, uploadFails: false,
     storedSha: null as string | null, pendingSha: null as string | null,
-    finishFails: false, dropUploadResponse: false,
+    finishFails: false, dropUploadResponse: false, dropFinishResponse: false,
     uploadWrites: 0, failures: 0,
     reserves: 0, completions: 0, accesses: 0, financialWrites: 0 };
   const objectKey = `business/${ticket}/receipt/original.png`;
@@ -60,6 +60,10 @@ function setup() {
         assert.equal(body.p_sha256, state.pendingSha);
         assert.equal(createHash("sha256").update(state.image).digest("hex"), body.p_sha256);
         state.stored = true; state.storedSha = body.p_sha256; state.completions++;
+        if (state.dropFinishResponse) {
+          state.dropFinishResponse = false;
+          throw new Error("Connection closed after finalization committed");
+        }
         return Response.json({ status: "stored", receipt_id: "receipt" });
       }
       if (name === "fail_receipt_original") { state.failures++; return Response.json(null); }
@@ -129,6 +133,20 @@ test("finalization timeout recovers an existing object without overwriting it", 
   assert.equal((await post()).status, 201);
   assert.equal(state.completions, 1);
   assert.deepEqual(state.image, image);
+});
+
+test("lost finalization response recovers the committed archive without another write", async () => {
+  const { state, post, get } = setup();
+  state.dropFinishResponse = true;
+  const interrupted = await post();
+  assert.equal(interrupted.status, 503);
+  assert.equal(state.stored, true);
+  assert.equal(state.completions, 1);
+  assert.equal((await post()).status, 200);
+  assert.equal(state.uploadWrites, 1);
+  assert.equal(state.completions, 1);
+  assert.equal(state.financialWrites, 0);
+  assert.deepEqual(Buffer.from(await (await get()).arrayBuffer()), image);
 });
 
 test("lost upload response recovers the saved original without a second object write", async () => {

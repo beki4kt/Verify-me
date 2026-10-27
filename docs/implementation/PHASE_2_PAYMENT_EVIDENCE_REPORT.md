@@ -47,7 +47,7 @@ After the owner confirmed the changed SSH fingerprint through the provider conso
 
 | Command or check | Result | Limit |
 |---|---|---|
-| Backend npm test | **75 passed, 0 failed** after receipt retry test additions on 27 October | Local provider, DB and Storage doubles. Covers both engines, relay JSON/PDF selection, deterministic relay errors, placeholder key rejection, destination, date, money, duplicate recovery, upload/retry/checksum and two synthetic tenants. Added cases prove local recovery when Storage accepted bytes but the HTTP response was lost, rejection when a conflicting object at the reserved path has different bytes, and refusal to replace an archived original. No live Storage acceptance is implied. |
+| Backend npm test | **76 passed, 0 failed** after receipt retry test additions on 27 October | Local provider, DB and Storage doubles. Covers both engines, relay JSON/PDF selection, deterministic relay errors, placeholder key rejection, destination, date, money, duplicate recovery, upload/retry/checksum and two synthetic tenants. Added cases prove local recovery when Storage or database finalization succeeded but its HTTP response was lost, rejection when a conflicting object at the reserved path has different bytes, and refusal to replace an archived original. No live Storage acceptance is implied. |
 | Backend npx tsc --noEmit | **Exit 0** on 27 October | Type-check without regenerating the deployment bundle. |
 | node --test backend-server/scripts/preflight-targets.test.mjs | **3 passed, 0 failed** | Validates proxy target selection, placeholder rejection and HTTPS port handling locally, without bank requests. |
 | Backend npm run build | **Exit 0** | TypeScript compilation only. |
