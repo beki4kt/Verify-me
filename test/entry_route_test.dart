@@ -39,8 +39,9 @@ void main() {
     );
   });
 
-  test('resumes a draft before a locked staff connection', () {
-    expect(route(draft: true, locked: true), EntryRoute.registration);
+  test('a saved draft still exposes welcome and workspace connection', () {
+    expect(route(draft: true, locked: true), EntryRoute.welcome);
+    expect(route(draft: true), EntryRoute.welcome);
     expect(route(locked: true), EntryRoute.staffLogin);
     expect(route(), EntryRoute.welcome);
   });

@@ -25,6 +25,27 @@ void main() {
     expect(find.text('Events & Venues'), findsOneWidget);
   });
 
+  testWidgets('registration opened as the root can return to welcome', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      const MaterialApp(home: BusinessRegistrationScreen()),
+    );
+    expect(find.text('Choose your business'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.byType(WelcomeScreen), findsOneWidget);
+    expect(find.text('Connect Workspace'), findsOneWidget);
+    await tester.tap(find.text('Connect Workspace'));
+    await tester.pumpAndSettle();
+    expect(find.byType(WorkspaceConnectScreen), findsOneWidget);
+    expect(find.text('Workspace code'), findsWidgets);
+  });
+
   testWidgets('workspace connection asks only for a code before staff login', (
     tester,
   ) async {

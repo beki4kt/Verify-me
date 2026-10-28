@@ -186,7 +186,14 @@ class _BusinessRegistrationScreenState
 
   void _back() {
     if (step == 0) {
-      Navigator.maybePop(context);
+      final navigator = Navigator.of(context);
+      if (navigator.canPop()) {
+        navigator.pop();
+      } else {
+        navigator.pushReplacement(
+          CupertinoPageRoute<void>(builder: (_) => const WelcomeScreen()),
+        );
+      }
       return;
     }
     setState(() {

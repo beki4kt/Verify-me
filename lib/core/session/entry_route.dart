@@ -25,7 +25,9 @@ abstract final class EntryRouter {
           ? EntryRoute.ownerWorkspace
           : EntryRoute.ownerStatus;
     }
-    if (hasDraft) return EntryRoute.registration;
+    // A saved setup draft is resumed when the person chooses Get Started.
+    // It must not replace the signed-out welcome and connection choices.
+    if (hasDraft) return EntryRoute.welcome;
     if (hasLockedBusiness) return EntryRoute.staffLogin;
     return EntryRoute.welcome;
   }
