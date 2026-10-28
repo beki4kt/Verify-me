@@ -23,12 +23,16 @@ jobs:
           cache: true
       - name: Install Flutter packages
         run: flutter pub get
-      - name: Confirm Mesob pilot target and build key
+      - name: Confirm Mesob pilot build key
         env:
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
           test -n "$SUPABASE_PUBLISHABLE_KEY"
+      - name: Probe self-hosted verifier from macOS runner
+        continue-on-error: true
+        run: |
+          set -euo pipefail
           curl --fail --silent --show-error --retry 2 --connect-timeout 8 --max-time 20 \
             https://api.chekmiverifier.com.et/health \
             | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{if(JSON.parse(s).status!=="ok")process.exit(1)})'
