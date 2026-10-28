@@ -1,4 +1,4 @@
-name: iPhone IPA for AltStore
+name: iPhone IPA for AltStore — Mesob relay pilot
 
 on:
   workflow_dispatch:
@@ -11,7 +11,6 @@ permissions:
 jobs:
   ipa:
     runs-on: macos-26
-    environment: staging
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -24,26 +23,39 @@ jobs:
           cache: true
       - name: Install Flutter packages
         run: flutter pub get
-      - name: Reject production project in test build
+      - name: Confirm Mesob pilot target and build key
         env:
-          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
-          STAGING_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
-          STAGING_CHEKMI_BACKEND_URL: ${{ vars.STAGING_CHEKMI_BACKEND_URL }}
-        run: node scripts/check_staging_target.mjs
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_PUBLISHABLE_KEY"
+          curl --fail --silent --show-error --retry 2 --connect-timeout 8 --max-time 20 \
+            https://api.chekmiverifier.com.et/health \
+            | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{if(JSON.parse(s).status!=="ok")process.exit(1)})'
+          curl --fail --silent --show-error --retry 2 --connect-timeout 8 --max-time 20 \
+            https://api.chekmiverifier.com.et/ready \
+            | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const x=JSON.parse(s);if(x.status!=="ready"||x.verifierMode!=="live"||x.verifier?.engine!=="owned")process.exit(1);console.log(`Node verifier: ${x.verifier.engine}/${x.verifier.mode}`)})'
+      - name: Test the compiled verification route
+        env:
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
+        run: >-
+          flutter test test/app_environment_test.dart
+          --dart-define=CHEKMI_ENV=production
+          --dart-define=CHEKMI_RELAY_PILOT=true
+          --dart-define=VERIFY_ME_API_URL=https://api.chekmiverifier.com.et/api
+          --dart-define=CHEKMI_SUPABASE_URL=https://lpbdxtzyzlaioggefscc.supabase.co
+          --dart-define=CHEKMI_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
       - name: Build native release for physical iPhone
         env:
-          SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
-          STAGING_BACKEND_URL: ${{ vars.STAGING_CHEKMI_BACKEND_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.CHEKMI_SUPABASE_PUBLISHABLE_KEY }}
         run: >-
           flutter build ios --release --no-codesign
           --build-number=${{ github.run_number }}
-          --dart-define=CHEKMI_ENV=staging
+          --dart-define=CHEKMI_ENV=production
           --dart-define=CHEKMI_TEST2=true
-          --dart-define=VERIFY_ME_API_URL="$STAGING_BACKEND_URL"
-          --dart-define=CHEKMI_SUPABASE_URL="$SUPABASE_URL"
+          --dart-define=VERIFY_ME_API_URL=https://api.chekmiverifier.com.et/api
+          --dart-define=CHEKMI_SUPABASE_URL=https://lpbdxtzyzlaioggefscc.supabase.co
           --dart-define=CHEKMI_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
-          --dart-define=CHEKMI_VERIFICATION_URL="$SUPABASE_URL/functions/v1/chekmi-verify"
       - name: Package unsigned IPA for AltStore signing
         shell: bash
         run: |
@@ -57,7 +69,7 @@ jobs:
           cd build/altstore
           /usr/bin/zip -qry Chekmi-iPhone.ipa Payload
           shasum -a 256 Chekmi-iPhone.ipa > Chekmi-iPhone.ipa.sha256
-          printf 'Source commit: %s\nBuild: %s\nUnsigned release IPA: install using AltStore to sign with your Apple account.\n' "$GITHUB_SHA" "$GITHUB_RUN_NUMBER" > BUILD-INFO.txt
+          printf 'Source commit: %s\nBuild: %s\nEnvironment: production Supabase project, Mesob pilot UI\nVerification endpoint: https://api.chekmiverifier.com.et/api/verify-and-create\nNo Supabase Edge verification URL is compiled into this build.\nUnsigned release IPA: install using AltStore to sign with your Apple account.\n' "$GITHUB_SHA" "$GITHUB_RUN_NUMBER" > BUILD-INFO.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Chekmi-iPhone-AltStore

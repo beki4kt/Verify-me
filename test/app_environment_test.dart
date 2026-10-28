@@ -2,6 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:verify_me/core/config/app_environment.dart';
 
 void main() {
+  test('Mesob iPhone relay pilot cannot silently use the Edge verifier', () {
+    expect(AppEnvironment.isProduction, isTrue);
+    expect(AppEnvironment.usesEdgeVerification, isFalse);
+    expect(
+      AppEnvironment.verificationUrl,
+      'https://api.chekmiverifier.com.et/api/verify-and-create',
+    );
+    expect(
+      AppEnvironment.validationErrors(
+        environment: AppEnvironment.environmentName,
+        apiUrl: AppEnvironment.apiBaseUrl,
+        supabaseUrl: AppEnvironment.supabaseUrl,
+        supabasePublishableKey: AppEnvironment.supabasePublishableKey,
+      ),
+      isEmpty,
+    );
+  }, skip: !const bool.fromEnvironment('CHEKMI_RELAY_PILOT'));
+
   group('AppEnvironment validation', () {
     test('verification endpoint stays within the configured Supabase project', () {
       List<String> validate(String url) => AppEnvironment.validationErrors(
