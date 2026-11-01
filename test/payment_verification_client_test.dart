@@ -132,4 +132,47 @@ void main() {
     expect(result.errorCode, 'TIMEOUT');
     expect(result.displayErrorMessage, contains('No payment confirmation'));
   });
+
+  test(
+    'Node timeout checks saved status without sending a Supabase key',
+    () async {
+      final sent = <Map<String, dynamic>>[];
+      final transport = MockClient((request) async {
+        expect(request.url.host, 'api.chekmiverifier.com.et');
+        expect(request.headers.containsKey('apikey'), false);
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        sent.add(body);
+        if (body['action'] != 'status') {
+          throw TimeoutException('simulated lost Node response');
+        }
+        return http.Response(
+          '{"success":true,"data":{"ticket_id":"saved","recovered":true}}',
+          200,
+        );
+      });
+      final result =
+          await PaymentVerificationClient(
+            client: transport,
+            endpoint: Uri.parse(
+              'https://api.chekmiverifier.com.et/api/verify-and-create',
+            ),
+            supportsStatus: true,
+          ).verify(
+            token: 'staff-session',
+            publicKey: '',
+            body: {
+              'reference': 'TEST-REFERENCE',
+              'provider': 'telebirr',
+              'expectedAmount': 30,
+            },
+          );
+      expect(result.isSuccess, true);
+      expect(sent, hasLength(2));
+      expect(sent.last, {
+        'action': 'status',
+        'provider': 'telebirr',
+        'reference': 'TEST-REFERENCE',
+      });
+    },
+  );
 }

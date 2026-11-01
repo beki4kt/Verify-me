@@ -29,7 +29,7 @@ class PaymentVerificationClient {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'Authorization': 'Bearer $token',
-      if (supportsStatus) 'apikey': publicKey,
+      if (publicKey.isNotEmpty) 'apikey': publicKey,
     };
     VerificationResult result;
     try {
@@ -60,8 +60,8 @@ class PaymentVerificationClient {
           'VERIFICATION_IN_PROGRESS',
           'INVALID_SERVICE_RESPONSE',
         }.contains(result.errorCode)) {
-      // Recovery only reads an existing payment. It never repeats the paid
-      // Veritas lookup or accepts an uncommitted provider receipt as success.
+      // Recovery only reads an existing payment. It never repeats a provider
+      // lookup or accepts an uncommitted receipt as success.
       try {
         final response = await client
             .post(

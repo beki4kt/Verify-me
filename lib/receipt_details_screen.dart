@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'api_service.dart';
+import 'core/services/receipt_upload_response.dart';
 import 'core/theme/app_colors.dart';
 
 /// A shared, tenant-authorized receipt detail for every business preset.
@@ -22,6 +23,8 @@ class _ReceiptDetailsScreenState extends State<ReceiptDetailsScreen> {
   String? _error;
   bool _loading = true;
   bool _uploading = false;
+  Uint8List? _pendingOriginal;
+  String? _pendingSource;
 
   @override
   void initState() {
@@ -65,9 +68,22 @@ class _ReceiptDetailsScreenState extends State<ReceiptDetailsScreen> {
   }
 
   Future<void> _attach(ImageSource source) async {
-    final file = await ImagePicker().pickImage(source: source);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
+    if (_uploading || _pendingOriginal != null) return;
+    Uint8List bytes;
+    try {
+      final file = await ImagePicker().pickImage(source: source);
+      if (file == null) return;
+      bytes = await file.readAsBytes();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open that image. Try again.'),
+          ),
+        );
+      }
+      return;
+    }
     if (bytes.isEmpty || bytes.length > 6 * 1024 * 1024) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -78,14 +94,35 @@ class _ReceiptDetailsScreenState extends State<ReceiptDetailsScreen> {
       }
       return;
     }
+    if (!mounted) return;
+    _pendingOriginal = bytes;
+    _pendingSource = source == ImageSource.camera ? 'camera' : 'photo_library';
+    await _retryPendingOriginal();
+  }
+
+  Future<void> _retryPendingOriginal() async {
+    final bytes = _pendingOriginal;
+    final source = _pendingSource;
+    if (_uploading || bytes == null || source == null) return;
     setState(() => _uploading = true);
     try {
       await ApiService.uploadReceiptOriginal(
         ticketId: widget.ticketId,
         bytes: bytes,
-        source: source == ImageSource.camera ? 'camera' : 'photo_library',
+        source: source,
       );
+      _pendingOriginal = null;
+      _pendingSource = null;
       await _load();
+    } on ReceiptUploadException catch (error) {
+      if (!error.retryable) {
+        _pendingOriginal = null;
+        _pendingSource = null;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -328,20 +365,26 @@ class _ReceiptDetailsScreenState extends State<ReceiptDetailsScreen> {
                     )
                   else ...[
                     OutlinedButton.icon(
-                      onPressed: _uploading
+                      onPressed: _uploading || _pendingOriginal != null
                           ? null
                           : () => _attach(ImageSource.camera),
                       icon: const Icon(Icons.camera_alt_outlined),
                       label: const Text('Take photo'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _uploading
+                      onPressed: _uploading || _pendingOriginal != null
                           ? null
                           : () => _attach(ImageSource.gallery),
                       icon: const Icon(Icons.photo_library_outlined),
                       label: const Text('Choose photo'),
                     ),
                     if (_uploading) const LinearProgressIndicator(),
+                    if (_pendingOriginal != null && !_uploading)
+                      OutlinedButton.icon(
+                        onPressed: _retryPendingOriginal,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry same image'),
+                      ),
                   ],
                 ],
                 const SizedBox(height: 20),

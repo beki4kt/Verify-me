@@ -13,6 +13,7 @@ import 'core/models/workspace_profile.dart';
 import 'core/models/workspace_code.dart';
 import 'core/models/ethiopian_phone.dart';
 import 'core/services/payment_verification_client.dart';
+import 'core/services/receipt_upload_response.dart';
 import 'core/services/owner_registration_recovery.dart';
 import 'core/services/dashboard_polling.dart';
 import 'core/session/session_controller.dart';
@@ -610,10 +611,12 @@ class ApiService {
           await PaymentVerificationClient(
             client: client,
             endpoint: Uri.parse(AppEnvironment.verificationUrl),
-            supportsStatus: AppEnvironment.usesEdgeVerification,
+            supportsStatus: true,
           ).verify(
             token: _requireSessionToken(),
-            publicKey: AppEnvironment.supabasePublishableKey,
+            publicKey: AppEnvironment.usesEdgeVerification
+                ? AppEnvironment.supabasePublishableKey
+                : '',
             body: {
               'reference': transactionId.trim(),
               'provider': normalizedProvider,
@@ -702,11 +705,7 @@ class ApiService {
           body: bytes,
         )
         .timeout(const Duration(seconds: 45));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(
-        'Original image was not saved. Retry from receipt details.',
-      );
-    }
+    requireStoredReceiptResponse(response.statusCode, response.body);
     refreshDashboardData();
   }
 
