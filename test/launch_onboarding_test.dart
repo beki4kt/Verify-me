@@ -84,7 +84,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Choose your plan'), findsOneWidget);
     expect(find.textContaining('1200 ETB'), findsOneWidget);
-    expect(find.textContaining('Price arranged at activation'), findsOneWidget);
+    // Pro pricing is defined (ETB 3,000/month), so the plan row shows a real
+    // price instead of the old "Price arranged at activation" placeholder.
+    expect(find.textContaining('3000 ETB'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
