@@ -3,6 +3,38 @@ import 'package:verify_me/receipt_parser.dart';
 
 void main() {
   group('ReceiptParser', () {
+    test('Dashen accepts 16-digit references, but not a phone number', () {
+      expect(
+        ReceiptParser.extractTransactionId(
+          'Transaction Reference: 1234567890123456',
+          'Dashen',
+        ),
+        '1234567890123456',
+      );
+      expect(
+        ReceiptParser.extractTransactionId(
+          'Reference: 123ABC4567890123',
+          'Dashen',
+        ),
+        '123ABC4567890123',
+      );
+      expect(
+        ReceiptParser.extractTransactionId('Phone: 251911223344', 'Dashen'),
+        isNull,
+      );
+    });
+    test(
+      'CBE receipt URL and standalone token preserve their original case',
+      () {
+        const token = 'aB3dE5fG7hI9jK1Lm';
+        const url = 'https://mbreciept.cbe.com.et/$token';
+        expect(
+          ReceiptParser.extractTransactionId('Receipt\n$url\nThank you', 'CBE'),
+          url,
+        );
+        expect(ReceiptParser.extractTransactionId(token, 'CBE'), token);
+      },
+    );
     test('extracts an anchored Telebirr reference', () {
       const text =
           'Payment successful\nTransaction ID: CJU5RZ5NM3\nAmount 250.00 ETB';

@@ -1,0 +1,71 @@
+name: Encrypted database backup and restore rehearsal
+
+on:
+  schedule:
+    - cron: '17 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: restore-test
+          POSTGRES_DB: chekmi_restore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      PGPASSWORD: restore-test
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Dump roles, schema, and data
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL"
+          mkdir -p "$RUNNER_TEMP/chekmi-backup"
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f "$RUNNER_TEMP/chekmi-backup/roles.sql" --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f "$RUNNER_TEMP/chekmi-backup/schema.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f "$RUNNER_TEMP/chekmi-backup/data.sql" --data-only --use-copy
+          test -s "$RUNNER_TEMP/chekmi-backup/schema.sql"
+          test -s "$RUNNER_TEMP/chekmi-backup/data.sql"
+      - name: Restore into an ephemeral database
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U postgres -d chekmi_restore -v ON_ERROR_STOP=1 -q -c 'create schema if not exists extensions; create extension if not exists pgcrypto with schema extensions;'
+          psql -h 127.0.0.1 -U postgres -d chekmi_restore -v ON_ERROR_STOP=1 -q -f "$RUNNER_TEMP/chekmi-backup/schema.sql"
+          psql -h 127.0.0.1 -U postgres -d chekmi_restore -v ON_ERROR_STOP=1 -q -f "$RUNNER_TEMP/chekmi-backup/data.sql"
+          psql -h 127.0.0.1 -U postgres -d chekmi_restore -v ON_ERROR_STOP=1 -q -c "select count(*) from information_schema.tables where table_schema='public';" > "$RUNNER_TEMP/restore-count.txt"
+          test "$(tr -dc '0-9' < "$RUNNER_TEMP/restore-count.txt")" -gt 10
+      - name: Encrypt backup
+        run: |
+          set -euo pipefail
+          test -n "$BACKUP_PASSPHRASE"
+          tar -C "$RUNNER_TEMP" -czf - chekmi-backup | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE -out "$RUNNER_TEMP/chekmi-backup.tgz.enc"
+          sha256sum "$RUNNER_TEMP/chekmi-backup.tgz.enc" > "$RUNNER_TEMP/chekmi-backup.tgz.enc.sha256"
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: chekmi-database-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/chekmi-backup.tgz.enc
+            ${{ runner.temp }}/chekmi-backup.tgz.enc.sha256
+          if-no-files-found: error
+          retention-days: 30

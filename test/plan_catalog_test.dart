@@ -19,4 +19,10 @@ void main() {
     expect(PlanCatalog.pro.includes(PlanFeature.tipPayouts), isTrue);
     expect(PlanCatalog.pro.recommended, isTrue);
   });
+
+  test('Pro pricing is defined and beats paying three monthly cycles', () {
+    expect(PlanCatalog.pro.monthlyPriceEtb, 3000);
+    expect(PlanCatalog.pro.quarterlyPriceEtb, 8100);
+    expect(PlanCatalog.pro.quarterlySavingsEtb, 900);
+  });
 }

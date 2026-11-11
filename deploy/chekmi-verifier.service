@@ -1,0 +1,29 @@
+[Unit]
+Description=CHEKMI payment verifier API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chekmi
+Group=chekmi
+WorkingDirectory=/opt/chekmi/backend-server
+EnvironmentFile=/etc/chekmi/verifier.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/chekmi/backend-server/dist/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

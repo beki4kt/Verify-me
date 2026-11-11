@@ -225,6 +225,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                         ),
                       ).animate().fadeIn().slideX(),
                       IconButton(
+                        tooltip: 'Close result',
                         icon: const Icon(AppIcons.close, color: Colors.white54),
                         onPressed: () {
                           Navigator.pop(context);
@@ -330,7 +331,8 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                                     transactionId: transactionId,
                                     provider: widget.targetBank,
                                     expectedAmount: enteredAmount,
-                                    tableNumber: 'TAKEAWAY',
+                                    tableNumber:
+                                        'Payment: ${transactionId.toUpperCase()}',
                                   );
 
                               if (result.isSuccess) {
@@ -349,9 +351,21 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                                   navigator.pop(); // Close sheet
                                   navigator.pop(); // Go back to Dashboard
 
-                                  String successMessage = calculatedTip > 0
-                                      ? 'Verified • +${calculatedTip.toStringAsFixed(2)} ETB tip'
-                                      : 'Verified';
+                                  final unresolved =
+                                      (data['unresolved_excess'] as num?)
+                                          ?.toDouble() ??
+                                      0;
+                                  final completion = data['completion_status']
+                                      ?.toString();
+                                  final successMessage = unresolved > 0
+                                      ? 'Payment verified · excess recorded'
+                                      : completion == 'marked_complete'
+                                      ? 'Payment verified · marked complete'
+                                      : completion == 'requires_review'
+                                      ? 'Payment verified · requires review'
+                                      : calculatedTip > 0
+                                      ? 'Payment verified · ${calculatedTip.toStringAsFixed(2)} ETB tip'
+                                      : 'Payment verified';
 
                                   messenger.showSnackBar(
                                     SnackBar(
@@ -443,6 +457,7 @@ class _ModernScannerScreenState extends State<ModernScannerScreen>
                       child: Row(
                         children: [
                           IconButton(
+                            tooltip: 'Back',
                             icon: const Icon(
                               AppIcons.back,
                               color: Colors.white,

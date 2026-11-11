@@ -69,7 +69,8 @@ test("CHEKMI legacy API route uses the owned Telebirr verifier", async () => {
     const data = body.data as Record<string, unknown>;
     assert.equal(data.amount, 1500);
     assert.equal(data.receiverAccount, "0911000099");
-    assert.equal(data.tipAmount, 300);
+    assert.equal(data.unresolvedExcess, 300);
+    assert.equal(data.tipAmount, undefined);
   } finally {
     await Promise.all([
       new Promise<void>((resolve, reject) =>

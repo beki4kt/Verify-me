@@ -15,6 +15,19 @@ const paymentSecurity_1 = require("./paymentSecurity");
     strict_1.default.equal((0, paymentSecurity_1.matchesReceivingAccount)("1000123456789", "9999456789"), false);
     strict_1.default.equal((0, paymentSecurity_1.matchesReceivingAccount)("1000123456789", "*6789"), false);
 });
+(0, node_test_1.default)("Telebirr supports its middle-masked wallet format and rejects conflicting or insufficient digits", () => {
+    for (const account of ["0911223333", "251911223333", "+251911223333"]) {
+        strict_1.default.equal((0, paymentSecurity_1.matchesTelebirrReceivingAccount)(account, "2519****3333"), true);
+        strict_1.default.equal((0, paymentSecurity_1.matchesTelebirrReceivingAccount)(account, "2519****9999"), false);
+        strict_1.default.equal((0, paymentSecurity_1.matchesTelebirrReceivingAccount)(account, "2517****3333"), false);
+        strict_1.default.equal((0, paymentSecurity_1.matchesTelebirrReceivingAccount)(account, "251922223333"), false);
+        for (const invalid of ["****3333", "2519***3333", "2519****333", "2519****3333extra", null]) {
+            strict_1.default.equal((0, paymentSecurity_1.matchesTelebirrReceivingAccount)(account, invalid), false);
+        }
+    }
+    strict_1.default.equal((0, paymentSecurity_1.matchesTelebirrReceivingAccount)("merchant3333", "2519****3333"), false);
+    strict_1.default.equal((0, paymentSecurity_1.matchesTelebirrReceivingAccount)("0911223333", "251911223333"), true);
+});
 (0, node_test_1.default)("Abyssinia suffix is derived only from the configured business account", () => {
     strict_1.default.equal((0, paymentSecurity_1.authoritativeAbyssiniaSuffix)("1000 12345 67890"), "67890");
     strict_1.default.equal((0, paymentSecurity_1.authoritativeAbyssiniaSuffix)("1234"), null);

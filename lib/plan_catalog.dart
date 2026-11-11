@@ -61,7 +61,7 @@ class PlanCatalog {
   static const basic = PlanDefinition(
     id: 'basic',
     name: 'Basic',
-    tagline: 'Everything a small restaurant needs to verify payments safely.',
+    tagline: 'Everything a small business needs to verify payments safely.',
     verificationLimit: 2500,
     staffLimit: 1,
     monthlyPriceEtb: 1200,
@@ -77,11 +77,11 @@ class PlanCatalog {
   static const pro = PlanDefinition(
     id: 'pro',
     name: 'Pro',
-    tagline: 'Full financial visibility and team control for growing service.',
+    tagline: 'Full financial visibility and team control for growing teams.',
     verificationLimit: null,
     staffLimit: null,
-    monthlyPriceEtb: null,
-    quarterlyPriceEtb: null,
+    monthlyPriceEtb: 3000,
+    quarterlyPriceEtb: 8100,
     recommended: true,
     features: {
       PlanFeature.paymentVerification,

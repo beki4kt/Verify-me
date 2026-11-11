@@ -3,61 +3,101 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_environment.dart';
+import 'core/config/app_variant.dart';
+import 'core/models/verification_result.dart';
+import 'core/models/workspace_profile.dart';
+import 'core/services/payment_verification_client.dart';
+import 'core/services/dashboard_polling.dart';
 import 'core/session/session_controller.dart';
+import 'core/widgets/dashboard_refresh_status.dart';
 
-class VerificationResult {
-  final bool isSuccess;
-  final String? errorMessage;
-  final String? errorCode;
-  final bool retryable;
-  final int? retryAfterSeconds;
-  final Map<String, dynamic>? data;
-
-  VerificationResult({
-    required this.isSuccess,
-    this.errorMessage,
-    this.errorCode,
-    this.retryable = false,
-    this.retryAfterSeconds,
-    this.data,
-  });
-
-  String get displayErrorMessage {
-    final message = errorMessage ?? 'Payment verification failed.';
-    return switch (errorCode) {
-      'SESSION_REQUIRED' || 'SESSION_EXPIRED' => 'Your staff session expired. Sign in again before verifying this payment.',
-      'RECEIVING_ACCOUNT_INVALID' =>
-        '$message Ask the restaurant administrator to update this provider account.',
-      'DESTINATION_MISMATCH' =>
-        '$message Confirm that the customer paid the restaurant account shown at checkout.',
-      'UNDERPAID' => '$message Ask the customer to pay the remaining balance.',
-      'TRANSACTION_TOO_OLD' =>
-        '$message Use a receipt inside the allowed verification window.',
-      'DUPLICATE_PAYMENT' =>
-        '$message Refresh the ticket list before attempting another verification.',
-      'RATE_LIMIT' || 'PROVIDER_RATE_LIMIT' =>
-        retryAfterSeconds == null
-            ? 'Too many attempts. Try again shortly.'
-            : 'Too many attempts. Retry in about $retryAfterSeconds seconds.',
-      'PROVIDER_UNAVAILABLE' ||
-      'VERIFIER_TEMPORARILY_UNAVAILABLE' ||
-      'VERIFIER_ERROR' =>
-        retryAfterSeconds == null
-            ? 'Payment service unavailable. Try again shortly.'
-            : 'Payment service unavailable. Retry in about $retryAfterSeconds seconds.',
-      'CONNECTION_FAILED' =>
-        'Cannot reach CHEKMI. Check your connection and try again.',
-      'TIMEOUT' => 'Still checking. Refresh tickets before retrying.',
-      _ => message,
-    };
-  }
-}
+export 'core/models/verification_result.dart';
 
 class ApiService {
   static String get baseUrl => AppEnvironment.apiBaseUrl;
+
+  static SupabaseClient get _ownerClient => Supabase.instance.client;
+  static bool get hasOwnerAuth => _ownerClient.auth.currentSession != null;
+
+  static Future<bool> signUpOwner(String email, String password) async {
+    final response = await _ownerClient.auth.signUp(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+    return response.session != null;
+  }
+
+  static Future<void> signInOwner(String email, String password) async {
+    await _ownerClient.auth.signInWithPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+  }
+
+  static Future<void> sendOwnerRecovery(String email) =>
+      _ownerClient.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        redirectTo: 'chekmi://auth/recovery',
+      );
+
+  static Future<void> updateOwnerPassword(String password) async {
+    await _ownerClient.auth.updateUser(UserAttributes(password: password));
+  }
+
+  static Future<void> signOutOwner() async {
+    await logoutStaff();
+    await _ownerClient.auth.signOut();
+  }
+
+  static Future<Map<String, dynamic>?> getOwnerRegistration() async {
+    if (!hasOwnerAuth) return null;
+    final response = await _ownerClient.rpc('my_owner_registration');
+    return response == null ? null : Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<Map<String, dynamic>> requestOwnerWorkspace({
+    required String businessName,
+    required String ownerName,
+    required String ownerPhone,
+    required String useCase,
+    required String referenceKind,
+    required String reviewPolicy,
+    required bool team,
+    required String plan,
+    required String billingPeriod,
+    required String provider,
+    required String receivingAccount,
+  }) async {
+    final response = await _ownerClient.rpc(
+      'request_owner_workspace',
+      params: {
+        'p_name': businessName,
+        'p_owner_name': ownerName,
+        'p_owner_phone': ownerPhone,
+        'p_use_case': useCase,
+        'p_reference_kind': referenceKind,
+        'p_review_policy': reviewPolicy,
+        'p_team': team,
+        'p_plan': plan,
+        'p_billing_period': billingPeriod,
+        'p_provider': provider,
+        'p_receiving_account': receivingAccount,
+      },
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<bool> startOwnerWorkspaceSession() async {
+    if (!hasOwnerAuth) return false;
+    final registration = await getOwnerRegistration();
+    if (registration == null || registration['is_active'] != true) return false;
+    final response = await _ownerClient.rpc('start_owner_workspace_session');
+    return _acceptStaffSession(response);
+  }
 
   // CHEKMI uses its own short-lived backend sessions. A bare public client is
   // sufficient for the remaining tenant RPCs and avoids an unused browser auth
@@ -78,11 +118,79 @@ class ApiService {
   static String? _staffSessionToken;
   static int? currentBusinessMaxStaff;
   static bool? currentBusinessHasCashier;
+  static WorkspaceProfile? currentWorkspaceProfile;
   static final Map<String, Stream<List<Map<String, dynamic>>>>
   _ticketStreamCache = {};
   static Stream<List<Map<String, dynamic>>>? _withdrawalRequestsStream;
   static Stream<List<Map<String, dynamic>>>? _staffRosterStream;
   static Stream<Map<String, dynamic>>? _businessStream;
+  static final StreamController<void> _dashboardRefreshes =
+      StreamController<void>.broadcast(sync: true);
+  static final ValueNotifier<DashboardRefreshState> dashboardRefreshState =
+      ValueNotifier(const DashboardRefreshState());
+  static Timer? _refreshTimeout;
+  static bool _appIsForeground = true;
+
+  /// Wakes every active dashboard poll immediately without creating duplicate
+  /// polling streams or resetting the user's current tab.
+  static void refreshDashboardData() {
+    if (_staffSessionToken == null) return;
+    dashboardRefreshState.value = dashboardRefreshState.value.copyWith(
+      isRefreshing: true,
+    );
+    _refreshTimeout?.cancel();
+    _refreshTimeout = Timer(const Duration(seconds: 18), () {
+      dashboardRefreshState.value = dashboardRefreshState.value.copyWith(
+        isRefreshing: false,
+      );
+    });
+    _dashboardRefreshes.add(null);
+  }
+
+  static void _recordDashboardUpdate() {
+    _refreshTimeout?.cancel();
+    dashboardRefreshState.value = DashboardRefreshState(
+      lastUpdated: DateTime.now(),
+    );
+  }
+
+  static void _recordDashboardFailure() {
+    if (!dashboardRefreshState.value.isRefreshing) return;
+    _refreshTimeout?.cancel();
+    dashboardRefreshState.value = dashboardRefreshState.value.copyWith(
+      isRefreshing: false,
+    );
+  }
+
+  static Future<void> _waitForRefresh(Duration duration) {
+    final completer = Completer<void>();
+    late final Timer timer;
+    late final StreamSubscription<void> subscription;
+
+    void complete() {
+      if (completer.isCompleted) return;
+      timer.cancel();
+      unawaited(subscription.cancel());
+      completer.complete();
+    }
+
+    subscription = _dashboardRefreshes.stream.listen((_) => complete());
+    timer = Timer(duration, complete);
+    return completer.future;
+  }
+
+  static void setAppForeground(bool isForeground) {
+    if (_appIsForeground == isForeground) return;
+    _appIsForeground = isForeground;
+    if (_staffSessionToken != null) _dashboardRefreshes.add(null);
+  }
+
+  static Future<void> _waitForPollingWindow(Duration duration) async {
+    if (_appIsForeground) await _waitForRefresh(duration);
+    while (!_appIsForeground && _staffSessionToken != null) {
+      await _waitForRefresh(const Duration(hours: 12));
+    }
+  }
 
   // --- 1. AUTHENTICATION & BUSINESS LAYER ---
 
@@ -137,6 +245,11 @@ class ApiService {
     );
     if (response == null) return null;
 
+    if (!await _acceptStaffSession(response)) return null;
+    return currentUserRole;
+  }
+
+  static Future<bool> _acceptStaffSession(dynamic response) async {
     final staff = Map<String, dynamic>.from(response as Map);
     currentBusinessId = staff['business_id']?.toString();
     currentStaffNumber = staff['staff_number']?.toString();
@@ -149,7 +262,7 @@ class ApiService {
         currentStaffNumber == null ||
         currentUserRole == null ||
         _staffSessionToken == null) {
-      return null;
+      return false;
     }
     _session?.startStaffSession(
       businessId: currentBusinessId!,
@@ -158,7 +271,103 @@ class ApiService {
       maxStaff: currentBusinessMaxStaff!,
       hasCashier: currentBusinessHasCashier!,
     );
-    return currentUserRole;
+    // An older deployment has no profile RPC. Keep its restaurant navigation
+    // until the additive migration is available, without granting permissions
+    // from a client-side fallback.
+    try {
+      currentWorkspaceProfile = await getWorkspaceProfile();
+    } on PostgrestException catch (error) {
+      if (error.code != 'PGRST202') rethrow;
+      currentWorkspaceProfile = null;
+    }
+    return true;
+  }
+
+  static Future<WorkspaceProfile> getWorkspaceProfile() async {
+    final response = await _supabase.rpc(
+      'get_workspace_profile',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return WorkspaceProfile.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+  }
+
+  static Future<Map<String, dynamic>> getCurrentBusiness() async {
+    final response = await _supabase.rpc(
+      'get_current_business',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<List<Map<String, dynamic>>> listWorkspaceMembers() async {
+    final response = await _supabase.rpc(
+      'list_workspace_members',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+  }
+
+  static Future<void> setMemberCapability({
+    required String staffNumber,
+    required String capability,
+    required bool allowed,
+  }) async {
+    await _supabase.rpc(
+      'set_member_capability',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_staff_number': staffNumber,
+        'p_capability': capability,
+        'p_allowed': allowed,
+      },
+    );
+  }
+
+  static Future<Map<String, dynamic>> allocatePaymentTip({
+    required String ticketId,
+    required String recipientStaffNumber,
+    required double amount,
+    required String reason,
+  }) async {
+    final response = await _supabase.rpc(
+      'allocate_payment_tip',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_ticket_id': ticketId,
+        'p_recipient_staff_number': recipientStaffNumber,
+        'p_amount': amount,
+        'p_reason': reason,
+      },
+    );
+    refreshDashboardData();
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  static Future<WorkspaceProfile> updateWorkspaceProfile({
+    required String useCase,
+    required String defaultReferenceKind,
+    required String reviewPolicy,
+    required bool tipsEnabled,
+    required String overpaymentPolicy,
+  }) async {
+    final response = await _supabase.rpc(
+      'update_workspace_profile',
+      params: {
+        'p_token': _requireSessionToken(),
+        'p_use_case': useCase,
+        'p_default_reference_kind': defaultReferenceKind,
+        'p_review_policy': reviewPolicy,
+        'p_tips_enabled': tipsEnabled,
+        'p_overpayment_policy': overpaymentPolicy,
+      },
+    );
+    return currentWorkspaceProfile = WorkspaceProfile.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   static Future<void> logoutStaff() async {
@@ -176,6 +385,7 @@ class ApiService {
     currentUserRole = null;
     currentBusinessMaxStaff = null;
     currentBusinessHasCashier = null;
+    currentWorkspaceProfile = null;
     _session?.logoutStaff();
   }
 
@@ -187,6 +397,7 @@ class ApiService {
     currentUserRole = null;
     currentBusinessMaxStaff = null;
     currentBusinessHasCashier = null;
+    currentWorkspaceProfile = null;
     _session?.logoutStaff();
     _session?.unbind();
   }
@@ -294,7 +505,6 @@ class ApiService {
     required String provider,
     required double expectedAmount,
     required String tableNumber,
-    Uint8List? receiptImageBytes,
   }) async {
     final normalizedProvider = _normalizeProvider(provider);
     if (normalizedProvider == null) {
@@ -304,56 +514,42 @@ class ApiService {
         errorCode: 'INVALID_PROVIDER',
       );
     }
+    if (!AppVariant.isPaymentProviderEnabled(normalizedProvider)) {
+      return VerificationResult(
+        isSuccess: false,
+        errorMessage: 'This payment provider is not available.',
+        errorCode: 'PROVIDER_NOT_AVAILABLE',
+      );
+    }
+    final client = http.Client();
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/verify-and-create'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': 'Bearer ${_requireSessionToken()}',
-              'User-Agent': 'CHEKMI/1.0',
-            },
-            body: jsonEncode({
-              'reference': transactionId.trim().toUpperCase(),
+      final result =
+          await PaymentVerificationClient(
+            client: client,
+            endpoint: Uri.parse(AppEnvironment.verificationUrl),
+            supportsStatus: AppEnvironment.usesEdgeVerification,
+          ).verify(
+            token: _requireSessionToken(),
+            publicKey: AppEnvironment.supabasePublishableKey,
+            body: {
+              'reference': transactionId.trim(),
               'provider': normalizedProvider,
               'expectedAmount': expectedAmount,
               'tableNumber': tableNumber.trim(),
-              if (receiptImageBytes != null)
-                'receiptImageBase64': base64Encode(receiptImageBytes),
-            }),
-          )
-          .timeout(const Duration(seconds: 35));
-      final decoded = response.body.isEmpty
-          ? <String, dynamic>{}
-          : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return VerificationResult(isSuccess: true, data: decoded);
-      }
+              // The original is uploaded after the bank result is committed.
+              // Keeping these operations separate protects a valid payment
+              // from image-storage errors.
+            },
+          );
+      refreshDashboardData();
+      return result;
+    } catch (_) {
       return VerificationResult(
         isSuccess: false,
-        errorMessage:
-            decoded['error']?.toString() ??
-            'Verification failed (${response.statusCode}).',
-        errorCode: decoded['code']?.toString(),
-        retryable: decoded['retryable'] == true,
-        retryAfterSeconds: (decoded['retryAfterSeconds'] as num?)?.toInt(),
-        data: decoded,
+        errorCode: 'SESSION_REQUIRED',
       );
-    } on TimeoutException {
-      return VerificationResult(
-        isSuccess: false,
-        errorMessage: 'Verification timed out. Check before retrying.',
-        errorCode: 'TIMEOUT',
-        retryable: true,
-      );
-    } catch (error) {
-      return VerificationResult(
-        isSuccess: false,
-        errorMessage: 'Cannot reach CHEKMI.',
-        errorCode: 'CONNECTION_FAILED',
-        retryable: true,
-      );
+    } finally {
+      client.close();
     }
   }
 
@@ -387,6 +583,64 @@ class ApiService {
       params: {'p_token': _requireSessionToken(), 'p_ticket_id': ticketId},
     );
     return response is Map ? Map<String, dynamic>.from(response) : null;
+  }
+
+  static Future<Map<String, dynamic>?> fetchVerifiedReceiptDetail(
+    String ticketId,
+  ) async {
+    final response = await _supabase.rpc(
+      'get_verified_receipt_detail',
+      params: {'p_token': _requireSessionToken(), 'p_ticket_id': ticketId},
+    );
+    return response is Map ? Map<String, dynamic>.from(response) : null;
+  }
+
+  static Uri _receiptEvidenceUri([String? ticketId]) => Uri.parse(
+    '${AppEnvironment.supabaseUrl}/functions/v1/chekmi-receipt-evidence',
+  ).replace(queryParameters: ticketId == null ? null : {'ticket': ticketId});
+
+  /// This never changes the bank result. On failure the verified payment
+  /// remains in history with an explicit incomplete evidence state.
+  static Future<void> uploadReceiptOriginal({
+    required String ticketId,
+    required Uint8List bytes,
+    required String source,
+  }) async {
+    final response = await http
+        .post(
+          _receiptEvidenceUri(),
+          headers: {
+            'authorization': 'Bearer ${_requireSessionToken()}',
+            'apikey': AppEnvironment.supabasePublishableKey,
+            'content-type': 'application/octet-stream',
+            'x-chekmi-ticket-id': ticketId,
+            'x-chekmi-source': source,
+          },
+          body: bytes,
+        )
+        .timeout(const Duration(seconds: 45));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'Original image was not saved. Retry from receipt details.',
+      );
+    }
+    refreshDashboardData();
+  }
+
+  static Future<Uint8List> fetchReceiptOriginalBytes(String ticketId) async {
+    final response = await http
+        .get(
+          _receiptEvidenceUri(ticketId),
+          headers: {
+            'authorization': 'Bearer ${_requireSessionToken()}',
+            'apikey': AppEnvironment.supabasePublishableKey,
+          },
+        )
+        .timeout(const Duration(seconds: 25));
+    if (response.statusCode != 200) {
+      throw StateError('Original image is unavailable.');
+    }
+    return response.bodyBytes;
   }
 
   /// Settlement uses the provider-confirmed amount already stored with the
@@ -434,17 +688,14 @@ class ApiService {
     );
   }
 
-  static Stream<Map<String, dynamic>> _pollCurrentBusiness() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final business = await fetchCurrentBusiness();
-      final payload = jsonEncode(business);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield business;
-      }
-      await Future<void>.delayed(const Duration(seconds: 5));
-    }
+  static Stream<Map<String, dynamic>> _pollCurrentBusiness() {
+    return _pollScoped((token) async {
+      final response = await _supabase.rpc(
+        'get_current_business',
+        params: {'p_token': token},
+      );
+      return Map<String, dynamic>.from(response as Map);
+    }, interval: const Duration(seconds: 30));
   }
 
   static Stream<List<Map<String, dynamic>>> streamTodayTickets() {
@@ -493,30 +744,15 @@ class ApiService {
     DateTime? to,
     String? staffNumber,
     String? provider,
-  }) async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
-        'list_ticket_report',
-        params: {
-          'p_token': _requireSessionToken(),
-          'p_from': from?.toUtc().toIso8601String(),
-          'p_to': to?.toUtc().toIso8601String(),
-          'p_staff_number': staffNumber,
-          'p_provider': provider,
-        },
-      );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await Future<void>.delayed(const Duration(seconds: 5));
-    }
-  }
+  }) => _pollRows(
+    'list_ticket_report',
+    parameters: {
+      'p_from': from?.toUtc().toIso8601String(),
+      'p_to': to?.toUtc().toIso8601String(),
+      'p_staff_number': staffNumber,
+      'p_provider': provider,
+    },
+  );
 
   static Future<void> recordVerificationAttempt({
     required String provider,
@@ -546,24 +782,11 @@ class ApiService {
     return _shareWhileListening(_pollVerificationAttempts());
   }
 
-  static Stream<List<Map<String, dynamic>>> _pollVerificationAttempts() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
+  static Stream<List<Map<String, dynamic>>> _pollVerificationAttempts() =>
+      _pollRows(
         'list_my_verification_attempts',
-        params: {'p_token': _requireSessionToken()},
+        interval: const Duration(seconds: 20),
       );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await Future<void>.delayed(const Duration(seconds: 5));
-    }
-  }
 
   static String _requireSessionToken() {
     final token = _staffSessionToken;
@@ -601,67 +824,81 @@ class ApiService {
     );
   }
 
-  static Stream<List<Map<String, dynamic>>> _pollTickets(String scope) async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
+  static Stream<List<Map<String, dynamic>>> _pollTickets(String scope) =>
+      _pollRows(
         'list_tickets',
-        params: {'p_token': _requireSessionToken(), 'p_scope': scope},
+        parameters: {'p_scope': scope},
+        needsFastRefresh: (row) => row['status'] == 'pending',
       );
-      final rows = (response as List)
+
+  static Stream<List<Map<String, dynamic>>> _pollRows(
+    String rpc, {
+    Map<String, dynamic> parameters = const {},
+    Duration interval = const Duration(seconds: 15),
+    Duration activeInterval = const Duration(seconds: 5),
+    bool Function(Map<String, dynamic> row)? needsFastRefresh,
+  }) => _pollScoped(
+    (token) async {
+      final response = await _supabase.rpc(
+        rpc,
+        params: {'p_token': token, ...parameters},
+      );
+      return (response as List)
           .map((row) => Map<String, dynamic>.from(row as Map))
           .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await Future<void>.delayed(const Duration(seconds: 5));
-    }
-  }
+    },
+    interval: interval,
+    intervalFor: needsFastRefresh == null
+        ? null
+        : (rows) => adaptivePollingInterval(
+            rows,
+            needsFastRefresh: needsFastRefresh,
+            active: activeInterval,
+            idle: interval,
+          ),
+  );
 
-  /// Shares one RPC poll between dashboard sections and tears it down as soon
-  /// as the route's final listener is disposed. This prevents invisible
-  /// dashboards from continuing to make requests after navigation.
-  static Stream<T> _shareWhileListening<T>(Stream<T> source) {
-    return source.asBroadcastStream(
-      onCancel: (subscription) => unawaited(subscription.cancel()),
-    );
-  }
-
-  /// Keeps a polling stream alive for the dashboard route and immediately
-  /// replays its latest value when a tab is rebuilt.
-  static Stream<T> _replayLatest<T>(Stream<T> source) {
-    late StreamController<T> controller;
-    StreamSubscription<T>? subscription;
+  static Stream<T> _pollScoped<T>(
+    Future<T> Function(String token) fetch, {
+    Duration interval = const Duration(seconds: 15),
+    Duration Function(T value)? intervalFor,
+  }) {
+    final token = _staffSessionToken;
+    if (token == null) return Stream<T>.empty();
     T? latest;
     var hasLatest = false;
-    controller = StreamController<T>.broadcast(
-      onListen: () {
-        if (hasLatest) {
-          scheduleMicrotask(() {
-            if (!controller.isClosed) controller.add(latest as T);
-          });
+    return dashboardPolling<T>(
+      fetch: () async {
+        try {
+          final value = await fetch(token).timeout(const Duration(seconds: 15));
+          latest = value;
+          hasLatest = true;
+          _recordDashboardUpdate();
+          return value;
+        } catch (_) {
+          _recordDashboardFailure();
+          rethrow;
         }
-        subscription ??= source.listen(
-          (value) {
-            latest = value;
-            hasLatest = true;
-            controller.add(value);
-          },
-          onError: controller.addError,
-          onDone: controller.close,
-        );
       },
+      isActive: () => _staffSessionToken == token,
+      wait: () => _waitForPollingWindow(
+        hasLatest && intervalFor != null ? intervalFor(latest as T) : interval,
+      ),
     );
-    return controller.stream;
   }
 
+  // Polling sources now own sharing, cancellation, recovery and per-listener replay.
+  static Stream<T> _shareWhileListening<T>(Stream<T> source) => source;
+  static Stream<T> _replayLatest<T>(Stream<T> source) => source;
+
   static void _resetStreamCaches() {
+    _dashboardRefreshes.add(null);
     _ticketStreamCache.clear();
     _withdrawalRequestsStream = null;
     _staffRosterStream = null;
     _businessStream = null;
+    _refreshTimeout?.cancel();
+    dashboardRefreshState.value = const DashboardRefreshState();
   }
 
   static Future<void> requestTipWithdrawal(double amount) async {
@@ -691,48 +928,20 @@ class ApiService {
     );
   }
 
-  static Stream<List<Map<String, dynamic>>>
-  _pollTipWithdrawalRequests() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
+  static Stream<List<Map<String, dynamic>>> _pollTipWithdrawalRequests() =>
+      _pollRows(
         'list_tip_withdrawal_requests',
-        params: {'p_token': _requireSessionToken()},
+        interval: const Duration(seconds: 20),
+        needsFastRefresh: (row) =>
+            row['status'] == 'pending' || row['status'] == 'approved',
       );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await Future<void>.delayed(const Duration(seconds: 3));
-    }
-  }
 
   static Stream<List<Map<String, dynamic>>> streamStaffRoster() {
     return _staffRosterStream ??= _replayLatest(_pollStaffRoster());
   }
 
-  static Stream<List<Map<String, dynamic>>> _pollStaffRoster() async* {
-    String? previousPayload;
-    while (_staffSessionToken != null) {
-      final response = await _supabase.rpc(
-        'list_staff_roster',
-        params: {'p_token': _requireSessionToken()},
-      );
-      final rows = (response as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      final payload = jsonEncode(rows);
-      if (payload != previousPayload) {
-        previousPayload = payload;
-        yield rows;
-      }
-      await Future<void>.delayed(const Duration(seconds: 5));
-    }
-  }
+  static Stream<List<Map<String, dynamic>>> _pollStaffRoster() =>
+      _pollRows('list_staff_roster', interval: const Duration(seconds: 30));
 
   // --- 4. TENANT & STAFF MANAGEMENT ---
   static Future<void> changeCurrentAdminPassword({
@@ -788,6 +997,35 @@ class ApiService {
     );
   }
 
+  static Future<void> deleteCurrentStaffAccount(String reason) async {
+    await _supabase.rpc(
+      'delete_current_staff_account',
+      params: {'p_token': _requireSessionToken(), 'p_reason': reason.trim()},
+    );
+  }
+
+  static Future<void> reportClientError({
+    required String area,
+    required String errorCode,
+    required String platform,
+  }) async {
+    final token = _staffSessionToken;
+    if (token == null) return;
+    try {
+      await _supabase.rpc(
+        'report_client_error',
+        params: {
+          'p_token': token,
+          'p_area': area,
+          'p_error_code': errorCode,
+          'p_platform': platform,
+        },
+      );
+    } catch (_) {
+      // Error reporting must never interrupt the user's active workflow.
+    }
+  }
+
   static Future<void> acceptLegalDocument({
     required String type,
     required String version,
@@ -800,6 +1038,28 @@ class ApiService {
         'p_version': version,
       },
     );
+  }
+
+  static Future<List<Map<String, dynamic>>> listMyLegalConsents() async {
+    final response = await _supabase.rpc(
+      'list_my_legal_consents',
+      params: {'p_token': _requireSessionToken()},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> listBusinessAuditEvents({
+    int limit = 200,
+  }) async {
+    final response = await _supabase.rpc(
+      'list_business_audit_events',
+      params: {'p_token': _requireSessionToken(), 'p_limit': limit},
+    );
+    return (response as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
   }
 
   static Future<void> updateBankAccounts(Map<String, dynamic> accounts) async {

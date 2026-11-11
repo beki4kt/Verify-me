@@ -1,0 +1,99 @@
+name: Supabase staging deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply migrations and deploy functions to the isolated staging project
+        type: boolean
+        required: true
+        default: false
+      seed_synthetic:
+        description: Seed Mesob synthetic records after applying migrations
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+      STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_CHEKMI_BACKEND_URL: ${{ vars.STAGING_CHEKMI_BACKEND_URL }}
+      STAGING_CHEKMI_INTERNAL_LOOKUP_KEY: ${{ secrets.STAGING_CHEKMI_INTERNAL_LOOKUP_KEY }}
+      STAGING_CORS_ALLOWED_ORIGINS: ${{ vars.STAGING_CORS_ALLOWED_ORIGINS }}
+      STAGING_FIXTURE_STAFF_PASSWORD: ${{ secrets.STAGING_FIXTURE_STAFF_PASSWORD }}
+      CHEKMI_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend-server/package-lock.json
+      - name: Reject production targets and missing staging credentials
+        run: |
+          set -euo pipefail
+          node scripts/check_staging_target.mjs
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_DB_PASSWORD"
+          test -n "$STAGING_DATABASE_URL"
+          test -n "$STAGING_CHEKMI_INTERNAL_LOOKUP_KEY"
+          test -n "$CHEKMI_SUPABASE_PUBLISHABLE_KEY"
+      - name: Validate deployable Edge bundles
+        run: |
+          npm --prefix backend-server ci
+          npm --prefix backend-server audit --omit=dev --audit-level=moderate
+          node backend-server/scripts/build-edge.cjs
+          git diff --exit-code -- supabase/functions
+          npm --prefix backend-server test
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link isolated project and preview migrations
+        run: |
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF"
+          supabase migration list
+          supabase db push --dry-run
+      - name: Apply migrations to staging
+        if: ${{ inputs.apply }}
+        run: supabase db push
+      - name: Configure staging-only Edge secrets
+        if: ${{ inputs.apply }}
+        run: |
+          supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
+            CHEKMI_ENV=staging \
+            CHEKMI_BACKEND_URL="$STAGING_CHEKMI_BACKEND_URL" \
+            CHEKMI_INTERNAL_LOOKUP_KEY="$STAGING_CHEKMI_INTERNAL_LOOKUP_KEY" \
+            CORS_ALLOWED_ORIGINS="$STAGING_CORS_ALLOWED_ORIGINS"
+      - name: Deploy staging Edge functions
+        if: ${{ inputs.apply }}
+        run: supabase functions deploy --project-ref "$STAGING_SUPABASE_PROJECT_REF"
+      - name: Assert staging schema and permissions
+        if: ${{ inputs.apply }}
+        run: psql "$STAGING_DATABASE_URL" --set=ON_ERROR_STOP=1 --file supabase/staging_schema_assertions.sql
+      - name: Seed synthetic Mesob workspace
+        if: ${{ inputs.apply && inputs.seed_synthetic }}
+        run: |
+          test -n "$STAGING_FIXTURE_STAFF_PASSWORD"
+          psql "$STAGING_DATABASE_URL" --set=ON_ERROR_STOP=1 --file supabase/seed.sql
+          psql "$STAGING_DATABASE_URL" --set=ON_ERROR_STOP=1 \
+            --set="fixture_password=$STAGING_FIXTURE_STAFF_PASSWORD" \
+            --file supabase/staging_isolation_seed.sql
+          psql "$STAGING_DATABASE_URL" --set=ON_ERROR_STOP=1 --file supabase/staging_verification.sql
+      - name: Check staging endpoints
+        if: ${{ inputs.apply }}
+        env:
+          CHEKMI_ENV: staging
+          CHEKMI_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+        run: node scripts/check_production_health.mjs

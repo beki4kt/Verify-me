@@ -33,21 +33,29 @@ export function ownedVerifierConfiguration(env: NodeJS.ProcessEnv = process.env)
   const rawMode = (env.CHEKMI_PROVIDER_EGRESS || "direct").trim().toLowerCase();
   const validMode = rawMode === "direct" || rawMode === "auto" || rawMode === "proxy";
   const mode = validMode ? rawMode : "invalid";
+  const validRelay = (raw: string | undefined, key: string | undefined) => {
+    if (!raw?.trim() || !key?.trim()) return false;
+    return raw.split(",").every((value) => {
+      try {
+        const url = new URL(value.trim());
+        return url.protocol === "https:" && !url.username && !url.password && !url.hash;
+      } catch { return false; }
+    });
+  };
+  const relays = {
+    telebirr: validRelay(env.TELEBIRR_PROXY_URLS || env.FALLBACK_PROXIES, env.TELEBIRR_PROXY_KEY),
+    cbe: validRelay(env.CBE_PROXY_URL, env.CBE_PROXY_KEY),
+    mpesa: validRelay(env.MPESA_PROXY_URL, env.MPESA_PROXY_KEY),
+  };
   return {
-    configured: validMode,
+    configured: validMode && (mode !== "proxy" || Object.values(relays).every(Boolean)),
     mode,
     directEthiopianEgressRequired: rawMode !== "proxy",
-    relays: {
-      telebirr: Boolean(
-        (env.TELEBIRR_PROXY_URLS || env.FALLBACK_PROXIES)?.trim() &&
-          env.TELEBIRR_PROXY_KEY?.trim(),
-      ),
-      cbe: Boolean(env.CBE_PROXY_URL?.trim() && env.CBE_PROXY_KEY?.trim()),
-      mpesa: Boolean(env.MPESA_PROXY_URL?.trim() && env.MPESA_PROXY_KEY?.trim()),
-    },
+    relays,
     newCbeDirectConfigured: Boolean(
       env.CBE_APP_ID?.trim() && env.CBE_APP_VERSION?.trim(),
     ),
+    legacyCbeEnabled: env.CBE_LEGACY_ENABLED?.trim().toLowerCase() !== "false",
   };
 }
 
@@ -128,101 +136,7 @@ export function numberFrom(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function nonEmpty(value: unknown): string | null {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
-  return text ? text : null;
-}
-
-export function titleCase(value: string | null): string | null {
-  if (!value) return null;
-  return value
-    .toLowerCase()
-    .replace(/\b\p{L}/gu, (character) => character.toUpperCase());
-}
-
-/** Provider timestamps without offsets are Ethiopian local time (UTC+3). */
-export function ethiopianLocalDate(value: unknown): string | null {
-  const text = nonEmpty(value);
-  if (!text) return null;
-
-  let match = text.match(
-    /^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/,
-  );
-  if (match) {
-    const [, day, month, year, hour, minute, second = "00"] = match;
-    return validIso(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
-  }
-
-  match = text.match(
-    /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[, ]+\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i,
-  );
-  if (match) {
-    const [, year, month, day, rawHour, minute, second = "00", meridiem] = match;
-    let hour = Number(rawHour);
-    if (meridiem) {
-      hour %= 12;
-      if (meridiem.toUpperCase() === "PM") hour += 12;
-    }
-    return validIso(
-      `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${String(hour).padStart(2, "0")}:${minute}:${second}+03:00`,
-    );
-  }
-
-  // ISO-shaped provider values without an explicit offset are Ethiopian local
-  // time, regardless of the operating system timezone of the CHEKMI server.
-  match = text.match(
-    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/,
-  );
-  if (match) {
-    const [, year, month, day, hour, minute, second = "00"] = match;
-    return validIso(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
-  }
-
-  return validIso(text);
-}
-
-function validIso(value: string): string | null {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? null : date.toISOString();
-}
-
-export function completedStatus(value: unknown): boolean {
-  const normalized = String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z]+/g, " ")
-    .trim();
-  return new Set([
-    "success",
-    "successful",
-    "completed",
-    "complete",
-    "settled",
-    "paid",
-    "transaction successful",
-    "transaction completed",
-    "transaction completed successfully",
-    "payment successful",
-    "payment completed",
-  ]).has(normalized);
-}
-
-export function referencesMatch(left: unknown, right: unknown): boolean {
-  const normalize = (value: unknown) =>
-    String(value ?? "")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "");
-  const normalizedLeft = normalize(left);
-  const normalizedRight = normalize(right);
-  return Boolean(normalizedLeft && normalizedLeft === normalizedRight);
-}
-
-/** Keep evidence useful without storing multi-megabyte PDF/base64 fields. */
-export function safeRaw(raw: Record<string, unknown>): Record<string, unknown> {
-  const copy = { ...raw };
-  delete copy.base64Data;
-  delete copy.pdf;
-  return copy;
-}
+export { nonEmpty, titleCase, ethiopianLocalDate, completedStatus, referencesMatch, safeRaw } from "../receiptFormat";
 
 export function toOwnedVerifierError(
   error: unknown,

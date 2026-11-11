@@ -37,6 +37,9 @@ migrate_working_dir/
 /backend-server/.env
 /config/production.json
 /config/staging.json
+/config/development.json
+/config/preview.json
+/config/iphone-test.json
 /android/key.properties
 *.jks
 *.keystore
@@ -51,3 +54,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local visual-review evidence
+/artifacts/
+/chekmi-*.png

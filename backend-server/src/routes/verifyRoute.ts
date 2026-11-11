@@ -12,11 +12,13 @@ import {
   authoritativeAbyssiniaSuffix,
   authoritativeEthiopianPhone,
   matchesCbeReceivingAccount,
+  matchesTelebirrReceivingAccount,
   matchesReceivingAccount,
   positiveAmount,
   validateTransactionFreshness,
 } from "../paymentSecurity";
 import { callServiceRpc, SupabaseRpcError } from "../supabaseRpc";
+import { verifierConfiguration, verifyWithVeritas } from "../veritasVerifier";
 import {
   FixtureProviderUnavailableError,
   fixtureVerification,
@@ -228,7 +230,10 @@ async function dispatch(provider: Provider, body: VerifyBody): Promise<NormResul
       // Exhaustiveness guard – should never be reached.
       throw new ClientError(`Unsupported provider: ${provider}`, 400, "INVALID_PROVIDER");
   }
-  return verifyWithOwnedRoute(provider, body);
+  const engine = verifierConfiguration().engine;
+  if (engine === "veritas") return verifyWithVeritas(provider, body);
+  if (engine === "owned") return verifyWithOwnedRoute(provider, body);
+  throw new OwnedVerifierError("Invalid verification engine configuration.", "VERIFIER_CONFIGURATION_ERROR", 503, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +331,7 @@ async function handleVerify(req: Request, res: Response): Promise<void> {
         status: d.status ?? d.statusText ?? null,
         serviceFee: typeof d.serviceFee === "number" ? d.serviceFee : null,
         expectedAmount: expected,
-        tipAmount: Math.max(0, amount - expected),
+        unresolvedExcess: Math.max(0, amount - expected),
         underpaymentDetected: false,
         fraudDetected: false,
       },
@@ -357,7 +362,7 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
   const providerRaw = body.provider || "";
   const expected = positiveAmount(body.expectedAmount);
   const reference = (body.reference ?? "").trim();
-  const tableNumber = (body.tableNumber ?? "").trim();
+  const tableNumber = (body.tableNumber ?? "").trim() || `Payment: ${reference.toUpperCase()}`;
   const token = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
   let provider: Provider | null = null;
   let verificationContextLoaded = false;
@@ -374,9 +379,9 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
         "INVALID_PROVIDER",
       );
     }
-    if (!reference || !tableNumber || expected === null) {
+    if (!reference || tableNumber.length > 320 || expected === null) {
       throw new ClientError(
-        "Reference, table number, and a positive expected amount are required.",
+        "Bank reference and a positive amount due are required.",
         400,
         "INVALID_TICKET",
       );
@@ -563,6 +568,8 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
             context.receiving_account,
             receiverAccount,
           )
+        : provider === "telebirr"
+        ? matchesTelebirrReceivingAccount(context.receiving_account, receiverAccount)
         : matchesReceivingAccount(
             context.receiving_account,
             receiverAccount,
@@ -601,7 +608,7 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
 
     const providerPayload = {
       ...data,
-      verificationRequest: { submittedReference: reference },
+      verificationRequest: { submittedReference: reference, engine: verifierConfiguration().engine, method: "transaction-id" },
       ...(destinationProof ? { destinationProof } : {}),
     };
     canonicalReference = String(data.reference ?? lookupReference).toUpperCase();
@@ -632,7 +639,8 @@ async function handleVerifyAndCreate(req: Request, res: Response): Promise<void>
         ...committed,
         amount: verifiedAmount,
         expectedAmount: expected,
-        tipAmount: Math.max(0, verifiedAmount - expected),
+        tipAmount: Number(committed.tip_amount ?? 0),
+        unresolvedExcess: Number(committed.unresolved_excess ?? 0),
         currency: data.currency ?? "ETB",
       },
     });

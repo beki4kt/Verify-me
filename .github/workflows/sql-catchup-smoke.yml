@@ -1,0 +1,68 @@
+name: Mesob SQL catch-up smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['sql/mesob-catchup-*']
+
+permissions:
+  contents: read
+
+jobs:
+  local-supabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Prepare isolated pre-upgrade project
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE"
+          mkdir -p "$RUNNER_TEMP/chekmi-sql-smoke"
+          cd "$RUNNER_TEMP/chekmi-sql-smoke"
+          supabase init
+          mkdir -p supabase/migrations
+          cp "$root/supabase/base_schema.sql" supabase/migrations/202607010001_base_schema.sql
+          for migration in "$root"/supabase/migrations/*.sql; do
+            name="$(basename "$migration")"
+            if [[ "$name" == '202610160001_inclusive_workspaces.sql' ]]; then
+              break
+            fi
+            cp "$migration" "supabase/migrations/$name"
+          done
+          cp "$root/supabase/seed.sql" supabase/seed.sql
+      - name: Start local Supabase and apply pre-upgrade migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/chekmi-sql-smoke"
+          supabase start
+      - name: Apply exact Mesob catch-up query
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          # The real Mesob workspace existed before the inclusive backfill.
+          PGPASSWORD=postgres psql -X -v ON_ERROR_STOP=1 \
+            -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -f "$GITHUB_WORKSPACE/supabase/migrations/202610160001_inclusive_workspaces.sql"
+          PGPASSWORD=postgres psql -X -v ON_ERROR_STOP=1 \
+            -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -f "$GITHUB_WORKSPACE/supabase/CHEKMI_MESOB_TEST_UPGRADE_20261020.sql"
+      - name: Verify Mesob staff login and new receipt schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          PGPASSWORD=postgres psql -X -v ON_ERROR_STOP=1 \
+            -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -f "$GITHUB_WORKSPACE/supabase/mesob_readiness.sql"
+          PGPASSWORD=postgres psql -X -v ON_ERROR_STOP=1 \
+            -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -f "$GITHUB_WORKSPACE/supabase/mesob_local_smoke.sql"

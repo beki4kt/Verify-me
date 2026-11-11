@@ -36,6 +36,12 @@ const telebirrHtml = `
     strict_1.default.equal(configuration.relays.cbe, false);
     strict_1.default.equal(configuration.newCbeDirectConfigured, true);
     strict_1.default.equal(JSON.stringify(configuration).includes("super-secret"), false);
+    strict_1.default.equal((0, ownedVerifier_1.ownedVerifierConfiguration)({ CHEKMI_PROVIDER_EGRESS: "proxy" }).configured, false);
+    strict_1.default.equal((0, ownedVerifier_1.ownedVerifierConfiguration)({ CHEKMI_PROVIDER_EGRESS: "proxy",
+        TELEBIRR_PROXY_URLS: "https://relay.example/verify.php", TELEBIRR_PROXY_KEY: "key",
+        CBE_PROXY_URL: "https://relay.example/verifyCbe.php", CBE_PROXY_KEY: "key",
+        MPESA_PROXY_URL: "https://relay.example/mpesa.php", MPESA_PROXY_KEY: "key",
+    }).configured, true);
 });
 (0, node_test_1.default)("Ethiopian provider timestamps are converted to UTC", () => {
     strict_1.default.equal((0, ownedVerifier_1.ethiopianLocalDate)("25-08-2026 14:30:00"), "2026-08-25T11:30:00.000Z");

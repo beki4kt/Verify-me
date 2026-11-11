@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme/app_colors.dart';
+import '../config/app_variant.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_shapes.dart';
 import '../theme/app_spacing.dart';
@@ -28,12 +29,13 @@ class SegmentedTabs extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final segmentWidth = constraints.maxWidth / tabs.length;
+        final iPhone = AppVariant.usesIPhoneUi;
+        final scheme = Theme.of(context).colorScheme;
         return Container(
-          height: 44,
-          padding: const EdgeInsets.all(4),
+          height: iPhone ? 48 : 44,
+          padding: EdgeInsets.all(iPhone ? 5 : 4),
           decoration: ShapeDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHigh
-                .withValues(alpha: .72),
+            color: scheme.surfaceContainerHigh.withValues(alpha: .82),
             shape: AppShapes.pill,
           ),
           child: Stack(
@@ -46,15 +48,16 @@ class SegmentedTabs extends StatelessWidget {
                 top: 0,
                 bottom: 0,
                 width: segmentWidth,
-                child: const DecoratedBox(
+                child: DecoratedBox(
                   decoration: ShapeDecoration(
-                    color: AppColors.primary,
+                    color: iPhone ? scheme.surface : AppColors.primary,
                     shape: AppShapes.pill,
-                    shadows: [
+                    shadows: const [
                       BoxShadow(
-                        color: AppColors.primary,
-                        blurRadius: 12,
-                        spreadRadius: -4,
+                        color: Color(0x26000000),
+                        blurRadius: 10,
+                        spreadRadius: -3,
+                        offset: Offset(0, 4),
                       ),
                     ],
                   ),
@@ -76,14 +79,22 @@ class SegmentedTabs extends StatelessWidget {
                         child: MotorScale(
                           scale: active ? 1 : .96,
                           child: Text(
-                            tabs[i],
-                            style: AppTypography.microLabel(
-                              color: active
-                                  ? Colors.white
-                                  : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                            ).copyWith(fontSize: 11),
+                            iPhone ? _sentenceCase(tabs[i]) : tabs[i],
+                            style: iPhone
+                                ? Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(
+                                        color: active
+                                            ? scheme.onSurface
+                                            : scheme.onSurfaceVariant,
+                                        fontWeight: active
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                      )
+                                : AppTypography.microLabel(
+                                    color: active
+                                        ? Colors.white
+                                        : scheme.onSurfaceVariant,
+                                  ).copyWith(fontSize: 11),
                           ),
                         ),
                       ),
@@ -96,6 +107,12 @@ class SegmentedTabs extends StatelessWidget {
         ).animate().fadeIn(duration: AppMotion.base);
       },
     );
+  }
+
+  String _sentenceCase(String value) {
+    if (value.isEmpty || value != value.toUpperCase()) return value;
+    final lower = value.toLowerCase();
+    return '${lower[0].toUpperCase()}${lower.substring(1)}';
   }
 }
 
